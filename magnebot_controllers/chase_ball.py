@@ -12,17 +12,23 @@ from magnebot.util import get_default_post_processing_commands
 from tdw.add_ons.first_person_avatar import FirstPersonAvatar
 import matplotlib.pyplot as plt
 import pdb
-from tdw.output_data import OutputData, Images
+from tdw.output_data import OutputData, Images, ScreenPosition, Transforms
 import cv2
 from tdw.add_ons.keyboard import Keyboard
 from tdw.add_ons.embodied_avatar import EmbodiedAvatar
 from tdw.add_ons.avatar_body import AvatarBody
 from tdw.output_data import Keyboard as KBoard
 import pyvirtualcam
+from magnebot import ArmJoint
+import time
+import cupy as cp
 
-cam0 = pyvirtualcam.Camera(width=640, height=480, fps=20, device='/dev/video0')
-cam1 = pyvirtualcam.Camera(width=640, height=480, fps=20, device='/dev/video1')
-#cam2 = pyvirtualcam.Camera(width=640, height=480, fps=20, device='/dev/video2')
+width = 256
+height = 256
+
+cam0 = pyvirtualcam.Camera(width=width, height=height, fps=20, device='/dev/video0')
+cam1 = pyvirtualcam.Camera(width=width, height=height, fps=20, device='/dev/video1')
+cam2 = pyvirtualcam.Camera(width=width, height=height, fps=20, device='/dev/video2')
 
 
 class State(Enum):
@@ -38,6 +44,13 @@ class State(Enum):
     backing_away_from_wall = 10
     backing_away_from_wall_with_ball = 12
 
+
+class Enchanced_Magnebot(Magnebot):
+
+    def __init__(self,robot_id, position,image_frequency):
+        super().__init__(robot_id=robot_id, position=position,image_frequency=image_frequency)
+        self.id = robot_id
+        
 
 class ChaseBall(Controller):
     """
@@ -57,15 +70,44 @@ class ChaseBall(Controller):
     def __init__(self, port: int = 1071, check_version: bool = True, launch_build: bool = True):
         super().__init__(port=port, check_version=check_version, launch_build=launch_build)
 
+        self.user_magnebots = []
+        self.ai_magnebots = []
+        self.keys_set = []
+
         # Add the robot, the Magnebot, and an object manager.
         self.robot: Robot = Robot(robot_id=self.get_unique_id(), name="ur5", position={"x": -1.4, "y": 0, "z": 2.6})
         self.magnebot: Magnebot = Magnebot(robot_id=self.get_unique_id(), position={"x": -1.4, "y": 0, "z": -1.1},
                                            image_frequency=ImageFrequency.never)
-        self.embodied_avatar_id = self.get_unique_id()
-        self.embodied_avatar = Magnebot(robot_id=self.embodied_avatar_id, position={"x": 2, "y": 0, "z": 2},
-                                           image_frequency=ImageFrequency.always)
-        self.embodied_avatar.collision_detection.objects = False
-        self.embodied_avatar.collision_detection.walls = False
+                                           
+        self.ai_magnebots.append(self.magnebot)
+
+        self.user_magnebots.append(Magnebot(robot_id=self.get_unique_id(), position={"x": 2, "y": 0, "z": 2},
+                                           image_frequency=ImageFrequency.always, pass_masks=['_img']))
+
+        self.keys_set = [["UpArrow"],["DownArrow"],["RightArrow"],["LeftArrow"]]
+
+        
+        #self.user_magnebots.append(Magnebot(robot_id=self.get_unique_id(), position={"x": 3, "y": 0, "z": 2},
+        #                                   image_frequency=ImageFrequency.always, pass_masks=['_img']))
+                                           
+        #self.keys_set = [[*self.keys_set[0],"W"],[*self.keys_set[1],"S"],[*self.keys_set[2],"D"],[*self.keys_set[3],"A"]]
+        
+        '''
+        self.user_magnebots.append(Magnebot(robot_id=self.get_unique_id(), position={"x": 0, "y": 0, "z": 2},
+                                           image_frequency=ImageFrequency.always, pass_masks=['_img']))
+                                           
+        self.keys_set.append(["T","G","H","F"])
+        self.user_magnebots.append(Magnebot(robot_id=self.get_unique_id(), position={"x": 3, "y": 0, "z": 1},
+                                           image_frequency=ImageFrequency.always, pass_masks=['_img']))  
+        self.keys_set.append(["I","K","L","J"])  
+                                           
+        '''
+        
+        
+        for um in self.user_magnebots:
+            um.collision_detection.objects = False
+            um.collision_detection.walls = False
+
         self.object_manager: ObjectManager = ObjectManager()
         # Add a ball.
         self.ball_id: int = self.get_unique_id()
@@ -84,28 +126,30 @@ class ChaseBall(Controller):
                                  position={"x": 2, "y": 1, "z": 2},
                                  rotation={"x": 0, "y": 30, "z": 0},
                                  color={"r": 0.6, "g": 0.3, "b": 0, "a": 1})
-        '''
+        
         
         self.embodied_avatar2 = EmbodiedAvatar(avatar_id="c",
                                  body=AvatarBody.capsule,
                                  position={"x": 3, "y": 1, "z": 2},
                                  rotation={"x": 0, "y": 30, "z": 0},
                                  color={"r": 0.6, "g": 0.3, "b": 0.5, "a": 1})
+        '''
         image_capture = ImageCapture(avatar_ids=["a"], path="")
         image_capture.set(avatar_ids=["a"],save=False)
-        self.keyboard = Keyboard()
+        #self.keyboard = Keyboard()
         #self.keyboard.listen(key="UpArrow", function=self.change_position, events = ["press", "hold"])
-        self.add_ons.extend([self.robot, self.magnebot,  self.embodied_avatar, self.object_manager, self.camera, self.keyboard, self.embodied_avatar2])#, image_capture]) #image_capture, self.person])
+        self.add_ons.extend([self.robot, self.magnebot,  *self.user_magnebots, self.object_manager]) #, self.keyboard])#, image_capture]) #image_capture, self.person])
         #self.add_ons.extend([self.object_manager, self.camera, image_capture])
 
         # Create the scene.
 
-        commands = [TDWUtils.create_empty_room(9, 9),
+        commands = [#{'$type': 'add_scene','name': 'tdw_room','url': 'file:///home/nesl/julian/magnebot/controllers/promos/tdw_room'}, 
+                    TDWUtils.create_empty_room(9, 9),
                     self.get_add_material("parquet_long_horizontal_clean",
                                           library="materials_high.json"),
                     {"$type": "set_screen_size",
-                     "width": 640,
-                     "height": 480},
+                     "width": width, #640,
+                     "height": height}, #480},
                     {"$type": "rotate_directional_light_by",
                      "angle": 30,
                      "axis": "pitch"}]
@@ -137,27 +181,87 @@ class ChaseBall(Controller):
                                                     bounciness=0.7,
                                                     mass=10))
         
+        commands.extend(self.get_add_physics_object(model_name="iron_box",
+                                         object_id=self.get_unique_id(),
+                                         position={"x": 0, "y": 0, "z": 0},
+                                         rotation={"x": 0, "y": 0, "z": 0}))
         
-        commands.extend([{"$type": "send_images",
-                  "frequency": "always",
-                  "ids": ["a"]},{"$type": "set_img_pass_encoding", "value": False}])
+        commands.extend(TDWUtils.create_avatar(position={"x": 0, "y": 10, "z": -1},
+                                                           look_at={"x": 0, "y": 0, "z": 0},
+                                                           avatar_id="a"))
+        commands.extend([{"$type": "set_pass_masks","pass_masks": ["_img"],"avatar_id": "a"},
+                  {"$type": "send_images","frequency": "always","ids": ["a"]},
+                  {"$type": "set_img_pass_encoding", "value": False},
+                  {"$type": "set_render_order", "render_order": 1, "sensor_name": "SensorContainer", "avatar_id": "a"},
+                  {"$type": "send_keyboard", "frequency": "always"}])
+
         
         self.communicate(commands)
         self.state = State.initializing
         self._frame: int = 0
 
 
+    def add_ui(self,original_image, id_image):
+    
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        # fontScale
+        fontScale = 0.5         
+        # Blue color in BGR
+        colorFont = (255, 255, 255)
+        # Line thickness of 2 px
+        thickness = 2
+        
+        for um_idx,um in enumerate(self.user_magnebots):
+            color = cp.asarray(um.static.joints[um.static.arm_joints[ArmJoint.torso]].segmentation_color)
+            tmp_mask = cp.where((id_image == color).all(axis=2))
+            if tmp_mask[0].size < 10:
+                continue
+
+            cv2.putText(original_image, 'U_'+str(um.robot_id), (int(tmp_mask[1][0].get()),int(tmp_mask[0][0].get())), font, fontScale, colorFont, thickness, cv2.LINE_AA)
+                                    
+        for um_idx,um in enumerate(self.ai_magnebots):
+            color = cp.asarray(um.static.joints[um.static.arm_joints[ArmJoint.torso]].segmentation_color)
+            tmp_mask = cp.where((id_image == color).all(axis=2))
+            if tmp_mask[0].size < 10:
+                continue
+
+            cv2.putText(original_image, 'A_'+str(um.robot_id), (int(tmp_mask[1][0].get()),int(tmp_mask[0][0].get())), font, fontScale, colorFont, thickness, cv2.LINE_AA)
+
+
+
+    def add_ui2(self, original_image, screen_positions):
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        # fontScale
+        fontScale = 0.5         
+        # Blue color in BGR
+        colorFont = (255, 255, 255)
+        # Line thickness of 2 px
+        thickness = 2
+        
+        for s_idx,s in enumerate(screen_positions['coords']):
+
+            cv2.putText(original_image, screen_positions['ids'][s_idx], (int(s[0]),int(s[1])), font, fontScale, colorFont, thickness, cv2.LINE_AA)
+    
     def run(self):
         done = False
         commands = []
         counter = 0
         key = ""
+        
+        user_magnebots_ids = [str(um.robot_id) for um in self.user_magnebots]
+        ai_magnebots_ids = [str(um.robot_id) for um in self.ai_magnebots]
+        keys_time_unheld = [0]*len(user_magnebots_ids)
+        all_ids = [*user_magnebots_ids,*ai_magnebots_ids]
+        
         while not done:
 
-   
-
+            user_magnebots_positions = [TDWUtils.array_to_vector3(um.dynamic.transform.position + np.array([0,0.5,0])) for um in self.user_magnebots]
+            ai_magnebots_positions = [TDWUtils.array_to_vector3(um.dynamic.transform.position + np.array([0,0.5,0])) for um in self.ai_magnebots]
+            commands = [{"$type": "send_screen_positions", "position_ids": list(range(0,len(all_ids))), "positions": [*user_magnebots_positions,*ai_magnebots_positions], "ids": ["a",*user_magnebots_ids], "frequency": "once"}]
+            commands_time = time.time()
             resp = self.communicate(commands)
             commands.clear()
+            #print('commands time', time.time()-commands_time)
 
             '''
             if self.person.right_button_pressed:
@@ -166,7 +270,7 @@ class ChaseBall(Controller):
                 if np.linalg.norm(self.object_manager.transforms[self.ball_id2].position - self.person.transform.position) < 3:
                     commands.extend([{"$type": "object_look_at_position","position": TDWUtils.array_to_vector3(self.person.transform.position),"id": self.ball_id2},
 {"$type": "apply_force_magnitude_to_object", "magnitude": 1,"id": self.ball_id2}])
-                if np.linalg.norm(self.object_manager.transforms[self.ball_id].position - self.person.transform.position) < 3:
+                if np.linalg.norm(self.object_mSegmentationColorsanager.transforms[self.ball_id].position - self.person.transform.position) < 3:
                     commands.extend([{"$type": "object_look_at_position","position": TDWUtils.array_to_vector3(self.person.transform.position),"id": self.ball_id},
 {"$type": "apply_force_magnitude_to_object", "magnitude": 1,"id": self.ball_id}])
             '''
@@ -250,7 +354,7 @@ class ChaseBall(Controller):
                     if self.magnebot.action.status == ActionStatus.tipping or counter % 15 == 0:
                         self.magnebot.move_to(target={"x": -0.871, "y": 0, "z": 3}, arrived_offset=0.3)
                         #self.magnebot.move_to(target=self.box, arrived_offset=0.1)
-                    print('hello', counter)
+                    #print('hello', counter)
                     print(self.magnebot.action.status)
                     counter += 1
                 else:
@@ -276,7 +380,14 @@ class ChaseBall(Controller):
             #print(self.state)
             
             all_images = []
+
+            output_loop = time.time()
+
+            screen_data = {}
+            magnebot_images = {}
+ 
             for i in range(len(resp) - 1):
+                
                 r_id = OutputData.get_data_type_id(resp[i])
                 # Get Images output data.
                 if r_id == "imag":
@@ -286,21 +397,101 @@ class ChaseBall(Controller):
                         # Iterate throught each capture pass.
                         for j in range(images.get_num_passes()):
                             # This is the _img pass.
+
                             if images.get_pass_mask(j) == "_img":
                                 #image_arr = images.get_image(j)
 
                                 # Get a PIL image.
                                 pil_image = TDWUtils.get_pil_image(images=images, index=j)
                                 all_images = np.asarray(pil_image)
-                                cam0.send(np.asarray(pil_image))
+                                img_image = np.asarray(pil_image)
+                                magnebot_images[images.get_avatar_id()] = np.asarray(pil_image)
+                                #cam0.send(img_image)
                                 #cv2.imshow('frame',np.asarray(pil_image))
                                 #cv2.waitKey(1)
+                                
+                            elif images.get_pass_mask(j) == "_id":
+                                start_time = time.time()
 
-                    elif images.get_avatar_id() == str(self.embodied_avatar_id):
-                        pil_image = self.embodied_avatar.dynamic.get_pil_images()['img']
-                        all_images = np.concatenate((all_images,np.asarray(pil_image)), axis=1)
-                        cam1.send(np.asarray(pil_image))
+                                pil_image_id = TDWUtils.get_pil_image(images=images, index=j)
+                                image_array = cp.asarray(pil_image_id)
+                                #image_array_np = np.asarray(pil_image)
+                                end_time = time.time()
+                                start_time2 = time.time()
+                                #mask = cv2.inRange(image_array,color,color)
+                                #pdb.set_trace()
+                                mask = []
+                                '''
+                                for um_idx,um in enumerate(self.user_magnebots):
+                                    color = cp.asarray(um.static.joints[um.static.arm_joints[ArmJoint.torso]].segmentation_color)
+                                    tmp_mask = cp.where((image_array == color).all(axis=2),1,0)
+                                    #tmp_mask = np.ma.masked_where((image_array == color).all(axis=2),image_array[:,:,0]).mask
+                                    if um_idx == 0:
+                                        mask = tmp_mask
+                                    else:
+                                        mask = cp.logical_or(mask,tmp_mask)
+                                '''
+                                
+                                
+                                #self.add_ui(img_image,image_array)
+                                
+
+                                end_time2 = time.time()
+                                start_time3 = time.time()
+                                #np.where((image_array == color).all(axis=2))
+                                #masked = cv2.bitwise_and(image_array.get(),image_array.get(), mask=mask.get().astype(np.uint8))
+                                cam0.send(img_image)
+                                #cv2.imshow('frame',img_image)
+                                #cv2.waitKey(1)
+                                #print(end_time-start_time, end_time2-start_time2,time.time()-start_time3)
+                            
+                    
+                    elif images.get_avatar_id() in user_magnebots_ids:
+                        idx = user_magnebots_ids.index(images.get_avatar_id())
+                        img_image = np.asarray(self.user_magnebots[idx].dynamic.get_pil_images()['img'])
+                        magnebot_images[images.get_avatar_id()] = img_image
+                    '''
+                    elif images.get_avatar_id() == str(self.user_magnebots[0].robot_id):
+                        img_image = np.asarray(self.user_magnebots[0].dynamic.get_pil_images()['img'])
+                        magnebot_images[images.get_avatar_id()] = img_image
+                        #id_image = cp.asarray(self.user_magnebots[0].dynamic.get_pil_images()['id'])
+                        all_images = np.concatenate((all_images,img_image), axis=1)
+                        #self.add_ui(img_image,id_image)
+
+                        cam1.send(img_image)
+                    elif images.get_avatar_id() == str(self.user_magnebots[1].robot_id):
+                        img_image = np.asarray(self.user_magnebots[1].dynamic.get_pil_images()['img'])
+                        magnebot_images[images.get_avatar_id()] = img_image
+                        #id_image = cp.asarray(self.user_magnebots[1].dynamic.get_pil_images()['id'])
+                        all_images = np.concatenate((all_images,img_image), axis=1)
+                        #self.add_ui(img_image,id_image)
+
+                        cam2.send(img_image)
+                    '''
                         
+    
+                elif r_id == "scre":
+                    scre = ScreenPosition(resp[i])
+                    scre_coords = scre.get_screen()
+
+                    scre_coords = (scre_coords[0],height-scre_coords[1],scre_coords[2])
+                    
+                    if not (scre_coords[0] < 0 or scre_coords[0] > width or scre_coords[1] < 0 or scre_coords[1] > height or scre_coords[2] < 0):
+                    
+                        mid = all_ids[scre.get_id()]
+                        
+                        if mid in ai_magnebots_ids:
+                            mid = 'A_'+mid
+                        else:
+                            mid = 'U_'+mid
+                        if scre.get_avatar_id() not in screen_data:
+                            screen_data[scre.get_avatar_id()] = {}
+                            screen_data[scre.get_avatar_id()]['coords'] = [scre_coords]
+                            screen_data[scre.get_avatar_id()]['ids'] = [mid]
+                        else:
+                            screen_data[scre.get_avatar_id()]['coords'].append(scre_coords)
+                            screen_data[scre.get_avatar_id()]['ids'].append(mid)
+
                     '''
                     if images.get_avatar_id() == "b":
                         # Iterate throught each capture pass.
@@ -315,54 +506,59 @@ class ChaseBall(Controller):
                                 cv2.waitKey(1)
                     '''
                     
-
+         
 
                 elif r_id == "keyb":
+
                     keys = KBoard(resp[i])
                     # Listen for events where the key was first pressed on the previous frame.
                     for j in range(keys.get_num_pressed()):
-                        key = keys.get_pressed(j)
-                        if keys.get_pressed(j) == 'UpArrow':
-                            #new_pos = TDWUtils.array_to_vector3(self.embodied_avatar.transform.position + [0.1,0,0])
-                            #commands.extend([{"$type": "move_avatar_towards_position", "position": new_pos, "speed": 0.1, "avatar_id": "b"}])
-                            #commands.extend([{"$type": "move_avatar_forward_by", "magnitude": 50, "avatar_id": "b"}])
+                        idx = -1
+                        if keys.get_pressed(j) in self.keys_set[0]:
+                            idx = self.keys_set[0].index(keys.get_pressed(j))
+                            #if self.user_magnebots[0].action.status != ActionStatus.ongoing:
+                            self.user_magnebots[idx].move_by(distance=10)
 
-                            self.embodied_avatar.move_by(distance=1)
-                        elif keys.get_pressed(j) == 'DownArrow':
-                         
-                            #commands.extend([{"$type": "move_avatar_forward_by", "magnitude": -50, "avatar_id": "b"}])
-                            self.embodied_avatar.move_by(distance=-0.5)
-                        elif keys.get_pressed(j) == 'RightArrow':
-                            self.embodied_avatar.turn_by(23)
-                            #commands.extend([{"$type": "turn_avatar_by", "torque": 50, "avatar_id": "b"}])
-                        elif keys.get_pressed(j) == 'LeftArrow':
-                            self.embodied_avatar.turn_by(-23)
-                            #commands.extend([{"$type": "turn_avatar_by", "torque": -50, "avatar_id": "b"}])
-                        elif keys.get_pressed(j) == 'W':
-                            commands.extend([{"$type": "move_avatar_forward_by", "magnitude": 50, "avatar_id": "c"}])
-                        elif keys.get_pressed(j) == 'S':
-                         
-                            commands.extend([{"$type": "move_avatar_forward_by", "magnitude": -50, "avatar_id": "c"}])
-                        elif keys.get_pressed(j) == 'D':
-                            commands.extend([{"$type": "turn_avatar_by", "torque": 50, "avatar_id": "c"}])
-                        elif keys.get_pressed(j) == 'A':
-                            commands.extend([{"$type": "turn_avatar_by", "torque": -50, "avatar_id": "c"}])
-
+                        elif keys.get_pressed(j) in self.keys_set[1]:
+                            idx = self.keys_set[1].index(keys.get_pressed(j))
+                            self.user_magnebots[idx].move_by(distance=-10)
+                        elif keys.get_pressed(j) in self.keys_set[2]:
+                            idx = self.keys_set[2].index(keys.get_pressed(j))
+                            self.user_magnebots[idx].turn_by(179)
+                        elif keys.get_pressed(j) in self.keys_set[3]:
+                            idx = self.keys_set[3].index(keys.get_pressed(j))
+                            self.user_magnebots[idx].turn_by(-179)
+                        elif keys.get_pressed(j) == "Q":
+                            self.user_magnebots[0].grasp(target=self.ball_id2, arm=Arm.right)
+                        elif keys.get_pressed(j) == "E":
+                            self.user_magnebots[0].drop(target=self.ball_id2, arm=Arm.right)
+                   
+                        if idx >= 0:
+                            keys_time_unheld[idx] = 0
                     # Listen for keys currently held down.
-                    for j in range(keys.get_num_held()):
-                        key = keys.get_pressed(j)
-                        
-                        if keys.get_held(j) == 'UpArrow':
-                            if self.embodied_avatar.action.status != ActionStatus.ongoing:
-                                self.embodied_avatar.move_by(distance=1)
 
-                        elif keys.get_held(j) == 'DownArrow':
-                         
-                            self.embodied_avatar.move_by(distance=-0.5)
-                        elif keys.get_held(j) == 'RightArrow':
-                            self.embodied_avatar.turn_by(23)
-                        elif keys.get_held(j) == 'LeftArrow':
-                            self.embodied_avatar.turn_by(-23)
+
+                    for j in range(keys.get_num_held()):
+                        
+                        idx = -1
+                        if keys.get_held(j) in self.keys_set[0]:
+                            idx = self.keys_set[0].index(keys.get_held(j))
+                            #if self.user_magnebots[0].action.status != ActionStatus.ongoing:
+                            self.user_magnebots[idx].move_by(distance=10)
+
+                        elif keys.get_held(j) in self.keys_set[1]:
+                            idx = self.keys_set[1].index(keys.get_held(j))
+                            self.user_magnebots[idx].move_by(distance=-10)
+                        elif keys.get_held(j) in self.keys_set[2]:
+                            idx = self.keys_set[2].index(keys.get_held(j))
+                            self.user_magnebots[idx].turn_by(179)
+                        elif keys.get_held(j) in self.keys_set[3]:
+                            idx = self.keys_set[3].index(keys.get_held(j))
+                            self.user_magnebots[idx].turn_by(-179)
+                   
+                        if idx >= 0:
+                            keys_time_unheld[idx] = 0
+                        '''
                         elif keys.get_held(j) == 'W':
                             #new_pos = TDWUtils.array_to_vector3(self.embodied_avatar.transform.position + [0.1,0,0])
                             #commands.extend([{"$type": "move_avatar_towards_position", "position": new_pos, "speed": 0.1, "avatar_id": "b"}])
@@ -374,16 +570,35 @@ class ChaseBall(Controller):
                             commands.extend([{"$type": "turn_avatar_by", "torque": 50, "avatar_id": "c"}])
                         elif keys.get_held(j) == 'A':
                             commands.extend([{"$type": "turn_avatar_by", "torque": -50, "avatar_id": "c"}])
+                        '''
+
                     # Listen for keys that were released.
                     for j in range(keys.get_num_released()):
-                        pass
+                        pdb.set_trace()
+                        if keys.get_released(j) == 'UpArrow':
+                            #if self.user_magnebots[0].action.status != ActionStatus.ongoing:
+                            print('stop')
+                            self.user_magnebots[0].stop()
 
+                        elif keys.get_released(j) == 'DownArrow':
+                         
+                            self.user_magnebots[0].stop()
+                        elif keys.get_released(j) == 'RightArrow':
+                            self.user_magnebots[0].stop()
+                        elif keys.get_released(j) == 'LeftArrow':
+                            self.user_magnebots[0].stop()
+
+                    if keys.get_num_held() == 0:
+                        for um_idx in range(len(self.user_magnebots)):
+                            keys_time_unheld[um_idx] += 1
+                            if keys_time_unheld[um_idx] == 3:
+                                self.user_magnebots[um_idx].stop()
             
             #print(pil_image)
             #cv2.imshow('frame',all_images)
             #cv2.waitKey(1)
             
-            print(self.embodied_avatar.action.status)
+            #print(self.user_magnebots[0].action.status)
             '''
             if self.embodied_avatar.action.status != ActionStatus.ongoing:
                 print(key)
@@ -391,7 +606,17 @@ class ChaseBall(Controller):
                     self.embodied_avatar.move_by(distance=0.2)
                 key = ''
             '''
+            
 
+
+            for key in magnebot_images.keys():
+                if key in screen_data:
+                    self.add_ui2(magnebot_images[key], screen_data[key])
+            
+            cv2.imshow('frame',magnebot_images[str(self.user_magnebots[0].robot_id)])
+            cv2.waitKey(1)
+            #print('output_loop',time.time()-output_loop)
+            #print('all',time.time()-commands_time)
         self.communicate({"$type": "terminate"})
 
 
