@@ -49,10 +49,23 @@ class State(Enum):
 
 class Enchanced_Magnebot(Magnebot):
 
-    def __init__(self,robot_id, position,image_frequency):
-        super().__init__(robot_id=robot_id, position=position,image_frequency=image_frequency)
-        self.id = robot_id
-        
+    def __init__(self,robot_id, position, controlled_by, key_set=None,image_frequency=ImageFrequency.never,pass_masks=['_img'],strength=1):
+        super().__init__(robot_id=robot_id, position=position,image_frequency=image_frequency,pass_masks=pass_masks)
+        self.key_set = key_set
+        self.ui = []
+        self.ui_elements = {}
+        self.strength = strength
+        self.danger_estimates = []
+        self.company = []
+        self.controlled_by = controlled_by
+
+"""
+class Enhanced_Object():
+    self.required_strength = 0
+    self.danger_level = 0
+    self.id = 0
+"""        
+
 
 class ChaseBall(Controller):
     """
@@ -77,28 +90,39 @@ class ChaseBall(Controller):
         self.graspable_objects = []
         self.keys_set = []
         self.uis = []
-        self.ui_elements = {}
-        self.strength = {}
-        self.grasped_object = []
+        self.timer = 1000.0
+        self.terminate = False
+        #self.ui_elements = []
+        #self.strength = {}
+        #self.grasped_object = []
 
         # Add the robot, the Magnebot, and an object manager.
-        self.robot: Robot = Robot(robot_id=self.get_unique_id(), name="ur5", position={"x": -1.4, "y": 0, "z": 2.6})#{"x": 1.88, "y": 0, "z": 0.37})#{"x": -1.4, "y": 0, "z": 2.6})
-        self.magnebot: Magnebot = Magnebot(robot_id=self.get_unique_id(), position={"x": -1.4, "y": 0, "z": -1.1},#position={"x": -1.97, "y": 0, "z": 3.11},  #{"x": -1.4, "y": 0, "z": -1.1},
-                                           image_frequency=ImageFrequency.never)
+        #self.robot: Robot = Robot(robot_id=self.get_unique_id(), name="ur5", position={"x": -1.4, "y": 0, "z": 2.6})#{"x": 1.88, "y": 0, "z": 0.37})#{"x": -1.4, "y": 0, "z": 2.6})
+        self.magnebot: Magnebot = Enchanced_Magnebot(robot_id=self.get_unique_id(), position={"x": -1.4, "y": 0, "z": -1.1},#position={"x": -1.97, "y": 0, "z": 3.11},  #{"x": -1.4, "y": 0, "z": -1.1},
+                                           image_frequency=ImageFrequency.never, controlled_by='ai')
                                            
         self.ai_magnebots.append(self.magnebot)
-        self.strength[self.magnebot.robot_id] = 1
 
-        self.user_magnebots.append(Magnebot(robot_id=self.get_unique_id(), position={"x": -3.3, "y": 0, "z": 1.6}, #{"x": 2, "y": 0, "z": 2},
-                                           image_frequency=ImageFrequency.always, pass_masks=['_img']))
+        self.ai_magnebots.append(Enchanced_Magnebot(robot_id=self.get_unique_id(), position={"x": 0, "y": 0, "z": -1.1},
+                                           image_frequency=ImageFrequency.never, controlled_by='ai'))
+
+        self.ai_magnebots.append(Enchanced_Magnebot(robot_id=self.get_unique_id(), position={"x": 0, "y": 0, "z": -2.1},
+                                           image_frequency=ImageFrequency.never, controlled_by='ai'))
+        #self.strength[self.magnebot.robot_id] = 1
+
+        self.user_magnebots.append(Enchanced_Magnebot(robot_id=self.get_unique_id(), position={"x": 0, "y": 0, "z": 1.1}, #{"x": 2, "y": 0, "z": 2},
+                                           image_frequency=ImageFrequency.always, pass_masks=['_img'],key_set=["UpArrow","DownArrow","RightArrow","LeftArrow","Z","X","C","V","B"], controlled_by='human'))
                                            
-        self.strength[self.user_magnebots[0].robot_id] = 1
+        #self.strength[self.user_magnebots[0].robot_id] = 1
 
-        self.keys_set = [["UpArrow"],["DownArrow"],["RightArrow"],["LeftArrow"],["Z"],["X"],["C"],["V"]]
+        #self.keys_set = [["UpArrow"],["DownArrow"],["RightArrow"],["LeftArrow"],["Z"],["X"],["C"],["V"],["B"]]
 
         
-        #self.user_magnebots.append(Magnebot(robot_id=self.get_unique_id(), position={"x": 3, "y": 0, "z": 1.6},
-        #                                   image_frequency=ImageFrequency.always, pass_masks=['_img']))
+        self.user_magnebots.append(Enchanced_Magnebot(robot_id=self.get_unique_id(), position={"x": 0, "y": 0, "z": 2.1},
+                                           image_frequency=ImageFrequency.always, pass_masks=['_img'], key_set=["W","S","D","A","H","J","K","L","G"], controlled_by='human'))
+
+        #self.user_magnebots.append(Enchanced_Magnebot(robot_id=self.get_unique_id(), position={"x": 4, "y": 0, "z": 1.6},
+         #                                  image_frequency=ImageFrequency.always, pass_masks=['_img'], key_set=["Alpha5","R","E","Y","U","I","O","P","Alpha0"], controlled_by='human'))
                                            
         #self.keys_set = [[*self.keys_set[0],"W"],[*self.keys_set[1],"S"],[*self.keys_set[2],"D"],[*self.keys_set[3],"A"], [*self.keys_set[4],"H"],[*self.keys_set[5],"J"],[*self.keys_set[6],"K"],[*self.keys_set[7],"L"]]
         
@@ -128,6 +152,12 @@ class ChaseBall(Controller):
             ui = UI(canvas_id=um_idx)
             ui.attach_canvas_to_avatar(avatar_id=str(um.robot_id))
             
+            if um_idx == 0:
+                self.keys_set = [[um.key_set[0]],[um.key_set[1]],[um.key_set[2]],[um.key_set[3]],[um.key_set[4]],[um.key_set[5]],[um.key_set[6]],[um.key_set[7]],[um.key_set[8]]]
+            else:
+                for kidx in range(len(self.keys_set)):
+                    self.keys_set[kidx].append(um.key_set[kidx])
+
             # Add the background sprite.
             ui.add_image(image=image,
                                  position=self.progress_bar_position,
@@ -152,19 +182,34 @@ class ChaseBall(Controller):
                                   anchor=self.progress_bar_anchor,
                                   pivot=self.progress_bar_pivot,
                                   font_size=18)
+            # Add some text.
+            mins, remainder = divmod(self.timer, 60)
+            secs,millisecs = divmod(remainder,1)
+
+            #Add timer
+            timer_text_id = ui.add_text(text='{:02d}:{:02d}'.format(int(mins), int(secs)),
+                                  position= {"x": -60, "y": -30},
+                                  anchor = {"x": 1, "y": 1},
+                                  font_size=35,
+                                  color={"r": 0, "g": 0, "b": 1, "a": 1})
             
             self.uis.append(ui)
-            self.ui_elements[um.robot_id] = ((bar_id,text_id))
-            self.grasped_object.append("")
+            um.ui = ui
+            um.ui_elements = ((bar_id,text_id,timer_text_id))
+            #self.ui_elements[um.robot_id] = ((bar_id,text_id))
+            #self.grasped_object.append("")
 
         self.object_manager: ObjectManager = ObjectManager()
         # Add a ball.
         self.ball_id: int = self.get_unique_id()
         self.ball_id2: int = self.get_unique_id()
         self.box: int = self.get_unique_id()
+        self.rug: int = self.get_unique_id()
         self.graspable_objects.extend([self.ball_id,self.ball_id2,self.box])
         self.required_strength = {self.ball_id:1,self.ball_id2:1,self.box:2}
-        
+        self.danger_level = {self.ball_id:1,self.ball_id2:1,self.box:2}
+        self.dangerous_objects = []
+        self.dangerous_objects.append(self.box)
         # Add a camera and enable image capture.
         #self.camera: ThirdPersonCamera = ThirdPersonCamera(position={"x": 0, "y": 10, "z": -1},
         #                                                   look_at={"x": 0, "y": 0, "z": 0},
@@ -190,13 +235,13 @@ class ChaseBall(Controller):
         image_capture.set(avatar_ids=["a"],save=False)
         #self.keyboard = Keyboard()
         #self.keyboard.listen(key="UpArrow", function=self.change_position, events = ["press", "hold"])
-        self.add_ons.extend([self.robot, self.magnebot,  *self.user_magnebots, self.object_manager, *self.uis]) #, self.keyboard])#, image_capture]) #image_capture, self.person])
+        self.add_ons.extend([*self.ai_magnebots,  *self.user_magnebots, self.object_manager, *self.uis]) #, self.keyboard])#, image_capture]) #image_capture, self.person])
         #self.add_ons.extend([self.object_manager, self.camera, image_capture])
 
         # Create the scene.
 
-        commands = [{'$type': 'add_scene','name': 'building_site','url': 'https://tdw-public.s3.amazonaws.com/scenes/linux/2019.1/building_site'}, 
-                    #TDWUtils.create_empty_room(9, 9),
+        commands = [#{'$type': 'add_scene','name': 'building_site','url': 'https://tdw-public.s3.amazonaws.com/scenes/linux/2019.1/building_site'}, 
+                    TDWUtils.create_empty_room(20, 20),
                     self.get_add_material("parquet_long_horizontal_clean",
                                           library="materials_high.json"),
                     {"$type": "set_screen_size",
@@ -204,10 +249,60 @@ class ChaseBall(Controller):
                      "height": height}, #480},
                     {"$type": "rotate_directional_light_by",
                      "angle": 30,
-                     "axis": "pitch"}]
+                     "axis": "pitch"},
+                    {"$type": "create_interior_walls", "walls": [{"x": 6, "y": 1}, {"x": 6, "y": 2},{"x": 6, "y": 3},{"x": 6, "y": 4},{"x": 6, "y": 5},{"x": 1, "y": 6},{"x": 2, "y": 6},{"x": 3, "y": 6},{"x": 4, "y": 6},{"x": 5, "y": 6}]},
+                    {"$type": "create_interior_walls", "walls": [{"x": 14, "y": 1}, {"x": 14, "y": 2},{"x": 14, "y": 3},{"x": 14, "y": 4},{"x": 14, "y": 5},{"x": 19, "y": 6},{"x": 18, "y": 6},{"x": 17, "y": 6},{"x": 16, "y": 6},{"x": 15, "y": 6}]},   
+                    {"$type": "create_interior_walls", "walls": [{"x": 6, "y": 19}, {"x": 6, "y": 18},{"x": 6, "y": 17},{"x": 6, "y": 16},{"x": 6, "y": 15},{"x": 1, "y": 14},{"x": 2, "y": 14},{"x": 3, "y": 14},{"x": 4, "y": 14},{"x": 5, "y": 14}]},
+                    {"$type": "create_interior_walls", "walls": [{"x": 14, "y": 19}, {"x": 14, "y": 18},{"x": 14, "y": 17},{"x": 14, "y": 16},{"x": 14, "y": 15},{"x": 19, "y": 14},{"x": 18, "y": 14},{"x": 17, "y": 14},{"x": 16, "y": 14},{"x": 15, "y": 14}]}]
         
         #self.communicate(self.get_add_scene(scene_name="tdw_room"))
         #commands = []
+
+
+        #Instantiate objects
+        max_coord = 8
+        object_models = ['iron_box','4ft_shelf_metal','trunck','lg_table_marble_green','b04_backpack','36_in_wall_cabinet_wood_beach_honey']
+        coords = {}
+        
+        coords[object_models[0]] = [[max_coord,max_coord],[max_coord-1,max_coord-0.1],[max_coord-0.5,max_coord-0.2],[max_coord-0.4,max_coord],[max_coord,max_coord-0.5]]
+        coords[object_models[1]] = [[max_coord-3,max_coord]]
+
+        coords[object_models[2]] = [[max_coord,max_coord-3]]
+        coords[object_models[3]] = [[max_coord-2,max_coord-2]]
+        coords[object_models[4]] = [[max_coord-1,max_coord-2]]
+        coords[object_models[5]] = [[max_coord-3,max_coord-3]]
+
+        modifications = [[1.0,1.0],[-1.0,1.0],[1.0,-1.0],[-1.0,-1.0]]
+
+        final_coords = {}
+
+        for objm in object_models:
+            final_coords[objm] = []
+        
+
+        for fc in final_coords.keys():
+            for m in modifications:
+                final_coords[fc].extend(np.array(coords[fc])*m)
+
+        for fc in final_coords.keys():
+            for c in final_coords[fc]:
+                object_id = self.get_unique_id()
+                self.graspable_objects.append(object_id)
+                self.required_strength[object_id] = np.random.choice([1,2,3],1)[0]
+                self.danger_level[object_id] = np.random.choice([1,2],1,p=[0.9,0.1])[0]
+                commands.extend(self.get_add_physics_object(model_name=fc,
+                                                 object_id=object_id,
+                                                 position={"x": c[0], "y": 0, "z": c[1]},
+                                                 rotation={"x": 0, "y": 0, "z": 0},
+                                                 default_physics_values=False,
+                                                 mass=10,
+                                                 scale_mass=False))
+                if self.danger_level[object_id] == 2:
+                    self.dangerous_objects.append(object_id)
+
+
+
+
         # Add post-processing.
         commands.extend(get_default_post_processing_commands())
         commands.extend(self.get_add_physics_object(model_name="prim_sphere",
@@ -237,6 +332,11 @@ class ChaseBall(Controller):
                                          object_id=self.box,
                                          position={"x": 0, "y": 0, "z": 0},
                                          rotation={"x": 0, "y": 0, "z": 0}))
+
+        commands.extend(self.get_add_physics_object(model_name="carpet_rug",
+                                         object_id=self.rug,
+                                         position={"x": 0, "y": 0, "z": 0},
+                                         rotation={"x": 0, "y": 0, "z": 0}))
         
         commands.extend(TDWUtils.create_avatar(position={"x": -3.15, "y": 10, "z": 0.22},#{"x": 0, "y": 10, "z": -1},
                                                            look_at={"x": 0, "y": 0, "z": 0},
@@ -249,7 +349,7 @@ class ChaseBall(Controller):
 
         
         self.communicate(commands)
-        self.state = State.initializing
+        self.state = State.moving_to_ball
         self._frame: int = 0
 
 
@@ -286,13 +386,15 @@ class ChaseBall(Controller):
         # fontScale
         fontScale = 0.5         
         # Blue color in BGR
-        colorFont = (255, 255, 255)
+        colorFont = screen_positions['color']
         # Line thickness of 2 px
         thickness = 2
         
         for s_idx,s in enumerate(screen_positions['coords']):
-
-            cv2.putText(original_image, screen_positions['ids'][s_idx], (int(s[0]),int(s[1])), font, fontScale, colorFont, thickness, cv2.LINE_AA)
+            try:
+                cv2.putText(original_image, screen_positions['ids'][s_idx], (int(s[0]),int(s[1])), font, fontScale, colorFont[s_idx], thickness, cv2.LINE_AA)
+            except:
+                pdb.set_trace()
     
     def run(self):
         done = False
@@ -301,6 +403,8 @@ class ChaseBall(Controller):
         key = ""
         messages = []
         once = 0
+        extra_commands = []
+        duration = []
         
         user_magnebots_ids = [str(um.robot_id) for um in self.user_magnebots]
         ai_magnebots_ids = [str(um.robot_id) for um in self.ai_magnebots]
@@ -314,8 +418,19 @@ class ChaseBall(Controller):
             user_magnebots_positions = [TDWUtils.array_to_vector3(um.dynamic.transform.position + np.array([0,0.5,0])) for um in self.user_magnebots]
             ai_magnebots_positions = [TDWUtils.array_to_vector3(um.dynamic.transform.position + np.array([0,0.5,0])) for um in self.ai_magnebots]
             
-            commands = [{"$type": "send_screen_positions", "position_ids": list(range(0,len(all_ids))), "positions": [*user_magnebots_positions,*ai_magnebots_positions], "ids": ["a",*user_magnebots_ids], "frequency": "once"}]
+            commands.append({"$type": "send_screen_positions", "position_ids": list(range(0,len(all_ids))), "positions": [*user_magnebots_positions,*ai_magnebots_positions], "ids": ["a",*user_magnebots_ids], "frequency": "once"})
             commands_time = time.time()
+            
+            to_eliminate = []
+            for ex_idx in range(len(extra_commands)):
+                duration[ex_idx] -= 1
+                if not duration[ex_idx]:
+                    to_eliminate.append(ex_idx)
+                commands.append(extra_commands[ex_idx])
+            
+            for e in to_eliminate:
+                del duration[e]
+                del extra_commands[e]
 
             resp = self.communicate(commands)
 
@@ -324,21 +439,41 @@ class ChaseBall(Controller):
 
             for idx in range(len(all_magnebots)):
                 robot_id = all_magnebots[idx].robot_id
-                self.strength[robot_id] = 1
+                all_magnebots[idx].strength = 1
+                all_magnebots[idx].company = []
                 for idx2 in range(len(all_magnebots)):
                     if idx == idx2:
                         continue
                     if np.linalg.norm(all_magnebots[idx].dynamic.transform.position - all_magnebots[idx2].dynamic.transform.position) < 2: #Check only two dimensions not three
-                        self.strength[robot_id] += 1
-                if robot_id in self.ui_elements:
+                        all_magnebots[idx].strength += 1
+                        all_magnebots[idx].company.append(all_magnebots[idx2].controlled_by)
+                            
+                if all_magnebots[idx].ui_elements:
                     #We assume self.uis and all_magnebots have the same sequence
-                    self.uis[idx].set_text(ui_id=self.ui_elements[robot_id][1],text=f"Strength: {self.strength[robot_id]}")
-                    self.uis[idx].set_size(ui_id=self.ui_elements[robot_id][0], size={"x": int(self.progress_bar_size["x"] * self.progress_bar_scale["x"] * (self.strength[robot_id]-1)/10),    "y": int(self.progress_bar_size["y"] * self.progress_bar_scale["y"])})
+                    all_magnebots[idx].ui.set_text(ui_id=all_magnebots[idx].ui_elements[1],text=f"Strength: {all_magnebots[idx].strength}")
+                    all_magnebots[idx].ui.set_size(ui_id=all_magnebots[idx].ui_elements[0], size={"x": int(self.progress_bar_size["x"] * self.progress_bar_scale["x"] * (all_magnebots[idx].strength-1)/10),    "y": int(self.progress_bar_size["y"] * self.progress_bar_scale["y"])})
 
+                    mins, remainder = divmod(self.timer, 60)
+                    secs,millisecs = divmod(remainder,1)
+                    all_magnebots[idx].ui.set_text(ui_id=all_magnebots[idx].ui_elements[2],text='{:02d}:{:02d}'.format(int(mins), int(secs)))
                 for arm in [Arm.right,Arm.left]:
                     if all_magnebots[idx].dynamic.held[arm].size > 0:
-                        if self.required_strength[all_magnebots[idx].dynamic.held[arm][0]] > self.strength[robot_id]:
+                        #Drop object if strength decreases
+                        if self.required_strength[all_magnebots[idx].dynamic.held[arm][0]] > all_magnebots[idx].strength:
                             all_magnebots[idx].drop(target=all_magnebots[idx].dynamic.held[arm][0], arm=arm)
+                        #Terminate game if dangerous object held alone
+                        if all_magnebots[idx].dynamic.held[arm][0] in self.dangerous_objects:
+                            if (all_magnebots[idx].controlled_by == 'ai' and 'human' not in all_magnebots[idx].company) or (all_magnebots[idx].controlled_by == 'human' and 'ai' not in all_magnebots[idx].company):
+                                for um in self.user_magnebots:
+                                    txt = um.ui.add_text(text="Dangerous object picked without help!",
+                                     position={"x": 0, "y": 0},
+                                     color={"r": 0, "g": 0, "b": 1, "a": 1},
+                                     font_size=20
+                                     )
+                                    messages.append([idx,txt,0])
+                                self.terminate = True
+                            
+                 
                         
                 
 
@@ -353,29 +488,8 @@ class ChaseBall(Controller):
                     commands.extend([{"$type": "object_look_at_position","position": TDWUtils.array_to_vector3(self.person.transform.position),"id": self.ball_id},
 {"$type": "apply_force_magnitude_to_object", "magnitude": 1,"id": self.ball_id}])
             '''
-            # Initialize the robots.
-            if self.state == State.initializing:
-                # Stop initializing and start swinging.
-                if not self.robot.joints_are_moving() and self.magnebot.action.status != ActionStatus.ongoing:
-                    # Now that the robot isn't intersecting with the floor, it is safe to request collision data.
-                    commands.append({"$type": "send_collisions",
-                                     "enter": True,
-                                     "stay": False,
-                                     "exit": False,
-                                     "collision_types": ["obj"]})
-                    # Rotate the shoulder to swing at the ball.
-                    self.robot.set_joint_targets(targets={self.robot.static.joint_ids_by_name["shoulder_link"]: -70})
-                    self.state = State.swinging
-            elif self.state == State.swinging:
-                for collision in self.robot.dynamic.collisions_with_objects:
-                    # The first element in `collision` is always a body part and the second element is always an object.
-                    if collision[1] == self.ball_id:
-                        # Start moving the Magnebot towards the ball.
-                        self.state = State.moving_to_ball
-                        self.magnebot.move_to(target=self.ball_id, arrived_offset=0.3)
-                        # Reset the robot.
-                        self.robot.set_joint_targets(targets={self.robot.static.joint_ids_by_name["shoulder_link"]: 0})
-            elif self.state == State.moving_to_ball:
+                
+            if self.state == State.moving_to_ball:
                 # Collided with a wall. Back away.
                 if self.magnebot.action.status == ActionStatus.collision:
                     self.state = State.backing_away_from_wall
@@ -449,13 +563,13 @@ class ChaseBall(Controller):
                     self.state = State.backing_away
                     self.magnebot.move_by(-4)
                     # Swing again.
-            elif self.state == State.backing_away:
+            #elif self.state == State.backing_away:
                 # The Magnebot has moved away from the robot. We're done!
-                if np.linalg.norm([-0.871,0,3] - self.magnebot.dynamic.transform.position) > 2 and np.linalg.norm([-0.871,0,3]-self.object_manager.transforms[self.ball_id2].position) < 1:
-                    self.robot.set_joint_targets(targets={self.robot.static.joint_ids_by_name["shoulder_link"]: -70})
+                #if np.linalg.norm([-0.871,0,3] - self.magnebot.dynamic.transform.position) > 2 and np.linalg.norm([-0.871,0,3]-self.object_manager.transforms[self.ball_id2].position) < 1:
+                    #self.robot.set_joint_targets(targets={self.robot.static.joint_ids_by_name["shoulder_link"]: -70})
 
-                    if self.magnebot.action.status != ActionStatus.ongoing and not self.robot.joints_are_moving():
-                        done = True
+                    #if self.magnebot.action.status != ActionStatus.ongoing and not self.robot.joints_are_moving():
+                    #    done = True
             #print(self.state)
             
             all_images = []
@@ -557,19 +671,34 @@ class ChaseBall(Controller):
                     
                     if not (scre_coords[0] < 0 or scre_coords[0] > width or scre_coords[1] < 0 or scre_coords[1] > height or scre_coords[2] < 0):
                     
-                        mid = all_ids[scre.get_id()]
-                        
+                        temp_all_ids = all_ids + self.graspable_objects
+                        mid = temp_all_ids[scre.get_id()]
+                        color = (255, 255, 255)                        
+
+
                         if mid in ai_magnebots_ids:
                             mid = 'A_'+mid
-                        else:
+                        elif mid in user_magnebots_ids:
                             mid = 'U_'+mid
+                        else:
+                            danger_estimate = self.user_magnebots[user_magnebots_ids.index(scre.get_avatar_id())].danger_estimates[mid]
+                            mid = str(mid)
+                            
+              
+                            if danger_estimate >= 2:
+                                color = (0, 0, 255)
+                            else:
+                                color = (0, 255, 0)
+
                         if scre.get_avatar_id() not in screen_data:
                             screen_data[scre.get_avatar_id()] = {}
                             screen_data[scre.get_avatar_id()]['coords'] = [scre_coords]
                             screen_data[scre.get_avatar_id()]['ids'] = [mid]
+                            screen_data[scre.get_avatar_id()]['color'] = [color]
                         else:
                             screen_data[scre.get_avatar_id()]['coords'].append(scre_coords)
                             screen_data[scre.get_avatar_id()]['ids'].append(mid)
+                            screen_data[scre.get_avatar_id()]['color'].append(color)
 
                     '''
                     if images.get_avatar_id() == "b":
@@ -600,20 +729,20 @@ class ChaseBall(Controller):
                             self.user_magnebots[idx].move_by(distance=10)
                                 
 
-                            keys_time_unheld[idx] = 0
+                            keys_time_unheld[idx] = -20
 
                         elif keys.get_pressed(j) in self.keys_set[1]: #Back
                             idx = self.keys_set[1].index(keys.get_pressed(j))
                             self.user_magnebots[idx].move_by(distance=-10)
-                            keys_time_unheld[idx] = 0
+                            keys_time_unheld[idx] = -20
                         elif keys.get_pressed(j) in self.keys_set[2]: #Right
                             idx = self.keys_set[2].index(keys.get_pressed(j))
                             self.user_magnebots[idx].turn_by(179)
-                            keys_time_unheld[idx] = 0
+                            keys_time_unheld[idx] = -20
                         elif keys.get_pressed(j) in self.keys_set[3]: #Left
                             idx = self.keys_set[3].index(keys.get_pressed(j))
                             self.user_magnebots[idx].turn_by(-179)
-                            keys_time_unheld[idx] = 0
+                            keys_time_unheld[idx] = -20
                         elif keys.get_pressed(j) in self.keys_set[4] or keys.get_pressed(j) in self.keys_set[5]: #Pick up/Drop
                             if keys.get_pressed(j) in self.keys_set[4]:
                                 arm = Arm.left
@@ -655,8 +784,8 @@ class ChaseBall(Controller):
                                             break
                                 if grasp_object:
                                     print("grasping", grasp_object, arm, idx)
-                                    if self.strength[self.user_magnebots[idx].robot_id] < self.required_strength[o]:
-                                        txt = self.uis[idx].add_text(text="Too heavy to carry alone!!",
+                                    if self.user_magnebots[idx].strength < self.required_strength[o]:
+                                        txt = self.user_magnebots[idx].ui.add_text(text="Too heavy to carry alone!!",
                                          position={"x": 0, "y": 0},
                                          color={"r": 0, "g": 0, "b": 1, "a": 1},
                                          font_size=20
@@ -664,6 +793,17 @@ class ChaseBall(Controller):
                                         messages.append([idx,txt,0])
                                     else:
                                         self.user_magnebots[idx].grasp(target=grasp_object, arm=arm)
+                                        self.user_magnebots[idx].in_danger = True
+                                        if o in self.dangerous_objects and 'ai' not in self.user_magnebots[idx].company:
+                                            for um in self.user_magnebots:
+                                                txt = um.ui.add_text(text="Dangerous object picked without help!",
+                                                 position={"x": 0, "y": 0},
+                                                 color={"r": 0, "g": 0, "b": 1, "a": 1},
+                                                 font_size=20
+                                                 )
+                                                messages.append([idx,txt,0])
+                                            self.terminate = True
+                                        
                                     #self.user_magnebots[0].grasp(target=self.box, arm=Arm.right)
                                 
                         elif keys.get_pressed(j) in self.keys_set[6]:
@@ -672,6 +812,32 @@ class ChaseBall(Controller):
                         elif keys.get_pressed(j) in self.keys_set[7]:
                             idx = self.keys_set[7].index(keys.get_pressed(j))
                             self.user_magnebots[idx].rotate_camera(pitch=-10)
+                        elif keys.get_pressed(j) in self.keys_set[8]:
+                            idx = self.keys_set[8].index(keys.get_pressed(j))
+
+                            near_items_pos = []
+                            near_items_idx = []
+                            danger_estimates = {}
+                            possible_danger_levels = [1,2]
+                            for o_idx,o in enumerate(self.graspable_objects):
+                                if np.linalg.norm(self.object_manager.transforms[o].position -
+                                        self.user_magnebots[idx].dynamic.transform.position) < 2:
+                                    near_items_idx.append(len(all_ids)+o_idx)
+                                    near_items_pos.append(TDWUtils.array_to_vector3(self.object_manager.transforms[o].position))
+                                    actual_danger_level = self.danger_level[o]
+                                    possible_danger_levels_tmp = possible_danger_levels.copy()
+                                    possible_danger_levels_tmp.remove(actual_danger_level)
+                                    danger_estimate = np.random.choice([actual_danger_level,*possible_danger_levels_tmp],1,p=[0.9,0.1])
+                                    danger_estimates[o] = danger_estimate[0]
+                            if near_items_pos:
+                                extra_commands.append({"$type": "send_screen_positions", "position_ids": near_items_idx, "positions": near_items_pos, "ids": [self.user_magnebots[idx].robot_id], "frequency": "once"})                
+                                duration.append(100)
+                                self.user_magnebots[idx].danger_estimates = danger_estimates
+                                #actual_danger_level = self.danger_level[temp_all_ids[scre.get_id()]]
+                            
+                                
+                                
+                                #extra_positions.append(o)
 
                         #elif keys.get_pressed(j) == "E":
                         #    self.user_magnebots[0].drop(target=self.ball_id2, arm=Arm.right)
@@ -743,7 +909,7 @@ class ChaseBall(Controller):
 
                         for um_idx in range(len(self.user_magnebots)):
                             keys_time_unheld[um_idx] += 1
-                            print(keys_time_unheld[um_idx])
+                            #print(keys_time_unheld[um_idx])
                             if keys_time_unheld[um_idx] == 3: #3
                                 print("aqui")
                                 self.user_magnebots[um_idx].stop()
@@ -762,23 +928,59 @@ class ChaseBall(Controller):
                     self.embodied_avatar.move_by(distance=0.2)
                 key = ''
             '''
-            
+            #Destroy messages after some time
+            to_eliminate = []
             for m_idx in range(len(messages)):
                 messages[m_idx][2] += 1
                 if messages[m_idx][2] == 100:
                     self.uis[messages[m_idx][0]].destroy(messages[m_idx][1])
-                    del messages[m_idx]
+                    to_eliminate.append(m_idx)
+                    if self.terminate:
+                        done = True
                 
+            for te in to_eliminate:
+                del messages[te]
 
+            #Draw ui objects
             for key in magnebot_images.keys():
                 if key in screen_data:
                     self.add_ui2(magnebot_images[key], screen_data[key])
-            
+
+            #Game ends when all dangerous objects are left in the rug
+            goal_counter = 0
+            for sd in self.dangerous_objects:
+                if np.linalg.norm(self.object_manager.transforms[sd].position-self.object_manager.transforms[self.rug].position) < 1:
+                    goal_counter += 1
+            if goal_counter == len(self.dangerous_objects):
+                txt = um.ui.add_text(text="Success!",
+                                     position={"x": 0, "y": 0},
+                                     color={"r": 0, "g": 0, "b": 1, "a": 1},
+                                     font_size=20
+                                     )
+                messages.append([idx,txt,0])
+                self.terminate = True
+                    
+            #Show view of magnebot
             cv2.imshow('frame',magnebot_images[str(self.user_magnebots[0].robot_id)])
             cv2.waitKey(1)
             #print('output_loop',time.time()-output_loop)
             #print('all',time.time()-commands_time)
             #print(time.time()-start_time)
+
+            #If timer expires end game, else keep going
+            if self.timer <= 0:
+                txt = um.ui.add_text(text="Failure!",
+                                     position={"x": 0, "y": 0},
+                                     color={"r": 0, "g": 0, "b": 1, "a": 1},
+                                     font_size=20
+                                     )
+                messages.append([idx,txt,0])
+                self.terminate = True
+            else:
+                self.timer -= 0.1
+
+            
+            
         self.communicate({"$type": "terminate"})
 
 
