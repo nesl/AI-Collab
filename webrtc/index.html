@@ -6,9 +6,78 @@
     <link href="/styles.css" rel="stylesheet" />
   </head>
   <body>
+
+    <div class="sidebar">
+		<header>
+		<h1>Chat</h1>
+		</header>
+
+		<div class="sidechat">
+		  <section class="chat" id="chat">
+		
+		  </section>
+
+		  
+
+			<button class="send" onclick="sendCommand()">Send</button>
+		  
+		</div>
+		<button class="collapsible">Commands</button>
+		<div class="collapsible_content">
+			<div class='wrapper' >
+				<input type="radio" id="help_accept" name="command" value="I will help [agent]">
+				<label for="help_accept">I will help [agent]</label><br>
+			</div>
+			<div class='wrapper' >
+				<input type="radio" id="help_request_sensing" name="command" value="I need help with sensing [object]">
+				<label for="help_request_sensing">I need help with sensing [object]</label><br>
+			</div>
+			<div class='wrapper' >
+				<input type="radio" id="help_request_lifting" name="command" value="I need help with lifting [object]">
+				<label for="help_request_lifting">I need help with lifting [object]</label><br>
+			</div>
+			<div class='wrapper' >
+				<input type="radio" id="reject_request" name="command" value="I cannot help you right now [agent]">
+				<label for="reject_request">I cannot help you right now [agent]</label><br>
+			</div>
+			<div class='wrapper' >
+				<input type="radio" id="cancel_request" name="command" value="No more need for help">
+				<label for="cancel_request">No more need to help</label><br>
+			</div>
+			
+			
+		</div>
+		<button class="collapsible" id="collapsible_nearby_team_members_tag">Nearby Team Members (0)</button>
+		<div class="collapsible_content" id="collapsible_nearby_team_members">
+	
+		</div>
+		<button class="collapsible" id="collapsible_object_tag">Object Information (0)</button>
+		<div class="collapsible_content" id="collapsible_object_information">
+
+		</div>
+	
+	</div>
+    <video playsinline autoplay muted></video>
     <video playsinline autoplay muted></video>
 
     <script src="/socket.io/socket.io.js"></script>
     <script src="/watch.js"></script>
+
+	<script>
+	var coll = document.getElementsByClassName("collapsible");
+	var i;
+
+	for (i = 0; i < coll.length; i++) {
+	  coll[i].addEventListener("click", function() {
+		this.classList.toggle("active");
+		var content = this.nextElementSibling;
+		if (content.style.maxHeight){
+		  content.style.maxHeight = null;
+		} else {
+		  content.style.maxHeight = content.scrollHeight + "px";
+		} 
+	  });
+	}
+	</script>
   </body>
 </html>

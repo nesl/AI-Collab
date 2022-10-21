@@ -20,17 +20,23 @@ socket.on("answer", (id, description) => {
 
 
 
-var current_idx = 0;
+var current_idx = 1;
 var connectedPeers = [];
+
 socket.on("watcher", id => {
   const peerConnection = new RTCPeerConnection(config);
   peerConnections[id] = peerConnection;
   console.log(current_idx);
   console.log(id)
   connectedPeers.push(id);
+  
   let stream = videoElements[current_idx].srcObject;
   current_idx += 1;
   stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
+
+  let stream2 = videoElements[0].srcObject;
+
+  stream2.getTracks().forEach(track => peerConnection.addTrack(track, stream2));
 
   peerConnection.onicecandidate = event => {
     if (event.candidate) {
@@ -59,6 +65,8 @@ socket.on("key", (id,key) => {
   console.log(id)
   console.log(key)
 });
+
+
 
 window.onunload = window.onbeforeunload = () => {
   socket.close();
