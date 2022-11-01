@@ -23,14 +23,15 @@ socket.on("answer", (id, description) => {
 var current_idx = 1;
 var connectedPeers = [];
 
-socket.on("watcher", id => {
+socket.on("watcher", (id, client_number) => {
   const peerConnection = new RTCPeerConnection(config);
   peerConnections[id] = peerConnection;
   console.log(current_idx);
   console.log(id)
   connectedPeers.push(id);
   
-  let stream = videoElements[current_idx].srcObject;
+  //For each connected client, we send both the third person view and a first person view of one of the user agents
+  let stream = videoElements[client_number].srcObject;
   current_idx += 1;
   stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
 

@@ -19,6 +19,11 @@ var client_id;
 
 var num_video = 0;
 
+const queryString = window.location.search;
+const urlParams = new URLSearchParams(queryString);
+const client_number = urlParams.get('client');
+
+//We set here the video streams
 socket.on("offer", (id, description, new_client_id) => {
 
   client_id = new_client_id;
@@ -57,11 +62,11 @@ socket.on("get_id", id => {
 });
 
 socket.on("connect", () => {
-  socket.emit("watcher");
+  socket.emit("watcher", client_number);
 });
 
 socket.on("broadcaster", () => {
-  socket.emit("watcher");
+  socket.emit("watcher", client_number);
 });
 
 window.onunload = window.onbeforeunload = () => {
@@ -69,13 +74,17 @@ window.onunload = window.onbeforeunload = () => {
   peerConnection.close();
 };
 
-document.onkeydown = function(evt) {
+var play_area = document.getElementById("play_area");
+
+//Only in the play area do we catch keyboard events
+play_area.onkeydown = function(evt) {
     console.log(evt.key);
     socket.emit("key", evt.key);
 };
 
 var object_list_store = {};
 
+//Update object info
 socket.on("objects_update", object_list => {
 
 
@@ -96,9 +105,36 @@ socket.on("objects_update", object_list => {
 		input_element.setAttribute("value", String(key));
 		var label_element = document.createElement("label");
 		label_element.setAttribute("for", String(key));
+		label_element.setAttribute("id", "label_" + String(key));
 		var weight = object_list[key].weight
-		var danger = object_list[key].sensor
-		label_element.appendChild(document.createTextNode(String(key) + " (weight: " + String(weight) + ")"));
+		console.log(object_list)
+		if(object_list[key].hasOwnProperty("sensor")){
+			sensor_key_list = Object.keys(object_list[key].sensor);
+
+			var confidence_max = 0;
+			var sensor_user;
+			for(s in sensor_key_list){
+				if(object_list[key].sensor[sensor_key_list[s]].confidence > confidence_max){
+					confidence_max = object_list[key].sensor[sensor_key_list[s]].confidence;
+					sensor_user = sensor_key_list[s];
+				}
+			}
+			//sensor_user = sensor_key_list[0];
+			var danger = object_list[key].sensor[sensor_user].value;
+			var color;
+			if(danger == 1){
+				color = 'green';
+			}
+			else{
+				color = 'red';
+			}
+
+			label_element.innerHTML = String(key) + " (weight: " + String(weight) + ") <div style=\"color:" + color + "\">&#9632;</div> "+ String(object_list[key].sensor[sensor_user].confidence*100)+"%";
+		} else {
+			label_element.innerHTML = String(key) + " (weight: " + String(weight) + ")";
+		}
+		
+		//label_element.appendChild(document.createTextNode(String(key) + " (weight: " + String(weight) + ")"));
 		
 		div_element.appendChild(input_element);	
 		div_element.appendChild(label_element);
@@ -107,13 +143,14 @@ socket.on("objects_update", object_list => {
 		object_list_store[key] = object_list[key]
 
 		
-	} else {
+	} else { //TODO update estimation
 		
 		if(object_list_store[key].hasOwnProperty("sensor")){
 			var object_list_store_keys = Object.keys(object_list_store[key].sensor)
 			Object.keys(object_list[key].sensor).forEach(function(key2) {
 				if(object_list_store_keys.indexOf(key2) == -1){
 					object_list_store[key].sensor[key2] = object_list[key].sensor[key2]
+
 				}
 			});
 		}
@@ -129,6 +166,7 @@ socket.on("objects_update", object_list => {
 
 var neighbors_list_store = {};
 
+//Update neighbors info
 socket.on("neighbors_update", neighbors_list => {
 
 
@@ -208,7 +246,8 @@ function newMessage(message, id){
 
 var help_requests = {};
 
-function sendCommand (){
+//Set Command based on templates
+function setCommand (){
 
 	var final_string = "";
 
@@ -233,6 +272,17 @@ function sendCommand (){
 	if(final_string.length == 0){
 		return;
 	}
+
+	
+	document.getElementById('command_text').value = final_string;
+
+	
+}
+
+function sendCommand() {
+
+	final_string = document.getElementById('command_text').value;
+	document.getElementById('command_text').value = "";
 	newMessage(final_string, client_id);
 
 	if(final_string.includes("I will help ")){
@@ -241,12 +291,8 @@ function sendCommand (){
 		socket.emit("set_goal", help_requests[final_string.substring(12)]);
 	}
 	
-	socket.emit("message", final_string);
-
-	
+	socket.emit("message", final_string, neighbors_list_store, client_id);
 }
-
-
 
 socket.on("message", (message, id) => {
 	console.log("Received message");

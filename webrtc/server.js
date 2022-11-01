@@ -34,7 +34,7 @@ var window_name = '';
 var char_replacement = [{'Up':'Up','Down':'Down','Left':'Left','Right':'Right'},{'Up':'W','Down':'S','Left':'A','Right':'D'}];
 var clients_ids = [];
 var user_ids_list = [];
-
+var init_xdotool = false;
 
 
 io.sockets.on("error", e => console.log(e));
@@ -42,13 +42,17 @@ io.sockets.on("connection", socket => {
   socket.on("broadcaster", () => {
     broadcaster = socket.id;
     socket.broadcast.emit("broadcaster");
-    exec('xdotool search --name TDW', (error, stdout, stderr) => {
-        console.log("window_name: " + stdout);
-        window_name = stdout.trim();
-    });
+    if(! init_xdotool){
+        exec('xdotool search --name TDW', (error, stdout, stderr) => {
+            console.log("window_name: " + stdout);
+            window_name = stdout.trim();
+        });
+        init_xdotool = true;
+    }
   });
-  socket.on("watcher", () => {
-    socket.to(broadcaster).emit("watcher", socket.id);
+  socket.on("watcher", (client_number) => {
+
+    socket.to(broadcaster).emit("watcher", socket.id, client_number);
     if (clients_ids.includes(socket.id) == false){
         clients_ids.push(socket.id);
     }
@@ -73,15 +77,34 @@ io.sockets.on("connection", socket => {
   socket.on("disconnect", () => {
     socket.to(broadcaster).emit("disconnectPeer", socket.id);
   });
-  socket.on("message", message => {
+  socket.on("message", (message,neighbors_list, source_id) => {
 
+    /*
+    var neighbor_keys = Object.keys(neighbors_list);
     for(let c in clients_ids){
         if(! (clients_ids[c] === socket.id)){
-            console.log("really sent message")
+            //console.log("really sent message")
             socket.to(clients_ids[c]).emit("message", message, user_ids_list[clients_ids.indexOf(socket.id)]);
         }
     }
+    */
+    //const origin_id = user_ids_list[clients_ids.indexOf(socket.id)]
+    console.log(source_id)
+    console.log(neighbors_list)
+    for (const [key, value] of Object.entries(neighbors_list)) {
+        console.log(key)
+        console.log(value)
+        if(value === 'human'){
+            let c = clients_ids[user_ids_list.indexOf(key)]; 
+            console.log(c)
+            socket.to(c).emit("message", message, source_id);
+        } else if(value === 'ai'){
+            socket.to(simulator).emit('ai_message', message, source_id, key);
+        }
+    }
+
   });
+  //Every time a key is pressed by someone in their browser, emulate that keypress using xdotool
   socket.on("key", key => {
     //socket.to(broadcaster).emit("key", socket.id, key);
     if (window_name){

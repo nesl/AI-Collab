@@ -18,8 +18,9 @@
 		  </section>
 
 		  
-
+			<input type="text" id="command_text">
 			<button class="send" onclick="sendCommand()">Send</button>
+			<button class="send" onclick="setCommand()">Set Command</button>
 		  
 		</div>
 		<button class="collapsible">Commands</button>
@@ -55,11 +56,13 @@
 		<div class="collapsible_content" id="collapsible_object_information">
 
 		</div>
+		
 	
 	</div>
+	<div id="play_area">
     <video playsinline autoplay muted></video>
     <video playsinline autoplay muted></video>
-
+	</div>
     <script src="/socket.io/socket.io.js"></script>
     <script src="/watch.js"></script>
 

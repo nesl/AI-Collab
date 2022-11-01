@@ -1,0 +1,7 @@
+numpy==1.21.6
+opencv-python==4.6.0.66
+pyvirtualcam==0.9.1
+pillow==9.2.0
+scipy==1.7.3
+tdw==1.10.4.0
+python-socketio==5.7.2
