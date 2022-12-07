@@ -1,10 +1,11 @@
 const express = require("express");
 const app = express();
 
+
 let broadcaster;
 let simulator;
 const port = 4000;
-const host = '172.17.15.69'; //'localhost';
+const host = '172.17.15.69';//'172.17.15.69'; //'localhost';
 
 const https = require("https");
 
@@ -28,12 +29,13 @@ const server = https.createServer(options, app)
 const io = require("socket.io")(server);
 app.use(express.static(__dirname + "/public"));
 
+
+
 const { exec } = require("child_process");
 var window_name = '';
 
 var char_replacement = [{'Up':'Up','Down':'Down','Left':'Left','Right':'Right'},{'Up':'W','Down':'S','Left':'A','Right':'D'}];
-var clients_ids = [];
-var user_ids_list = [];
+var clients_ids = [], user_ids_list = [], ai_ids_list = [], ai_ids = [], all_ids = [], all_ids_list = [];
 var init_xdotool = false;
 
 
@@ -53,13 +55,42 @@ io.sockets.on("connection", socket => {
   socket.on("watcher", (client_number) => {
 
     socket.to(broadcaster).emit("watcher", socket.id, client_number);
+
+    clients_ids[client_number-1] = socket.id;
+    all_ids[client_number-1] = socket.id;
+        
+    
+    /*
     if (clients_ids.includes(socket.id) == false){
         clients_ids.push(socket.id);
+        all_ids.push(socket.id);
     }
+    */
   });
-  socket.on("simulator", (user_ids) => {
+  socket.on("watcher_ai", (client_number, server_address) => {
+
+    socket.to(broadcaster).emit("watcher_ai", socket.id, client_number, server_address, ai_ids_list[client_number-1]);
+    ai_ids[client_number-1] = socket.id;
+    all_ids[client_number-1+user_ids_list.length] = socket.id;
+
+    /*
+    if (ai_ids.includes(socket.id) == false){
+        ai_ids.push(socket.id);
+        all_ids.push(socket.id);
+    }
+    */
+
+
+  });
+  socket.on("simulator", (user_ids, ai_agents_ids) => {
     simulator = socket.id;
     user_ids_list = user_ids;
+    ai_ids_list = ai_agents_ids;
+    all_ids_list = user_ids.concat(ai_agents_ids);
+    clients_ids = Array.apply(null, Array(user_ids_list.length));
+    ai_ids = Array.apply(null, Array(ai_ids.length));
+    all_ids = Array.apply(null, Array(ai_ids.length+user_ids_list.length));
+  
 
   });
   socket.on("offer", (id, message) => {
@@ -76,6 +107,12 @@ io.sockets.on("connection", socket => {
   });
   socket.on("disconnect", () => {
     socket.to(broadcaster).emit("disconnectPeer", socket.id);
+  });
+  socket.on("ai_action", (action_message, source_id) => {
+    socket.to(simulator).emit("ai_action",action_message,source_id);
+  });
+  socket.on("ai_status", (idx, status) => {
+    socket.to(all_ids[idx]).emit("ai_status",status);
   });
   socket.on("message", (message,neighbors_list, source_id) => {
 
@@ -99,7 +136,8 @@ io.sockets.on("connection", socket => {
             console.log(c)
             socket.to(c).emit("message", message, source_id);
         } else if(value === 'ai'){
-            socket.to(simulator).emit('ai_message', message, source_id, key);
+            let c = ai_ids[ai_ids_list.indexOf(key)];
+            socket.to(c).emit('message', message, source_id);
         }
     }
 
@@ -124,11 +162,11 @@ io.sockets.on("connection", socket => {
   });
   socket.on("objects_update", (idx, objects_list) => {
     //console.log("stdout: " + socket.id + " " + broadcaster);
-    socket.to(clients_ids[idx]).emit("objects_update", objects_list);
+    socket.to(all_ids[idx]).emit("objects_update", objects_list);
   });
 
   socket.on("neighbors_update", (idx, neighbors_list) => {
-    socket.to(clients_ids[idx]).emit("neighbors_update", neighbors_list);
+    socket.to(all_ids[idx]).emit("neighbors_update", neighbors_list);
   });
   socket.on("set_goal", (obj_id) => {
     socket.to(simulator).emit("set_goal",clients_ids.indexOf(socket.id), obj_id);

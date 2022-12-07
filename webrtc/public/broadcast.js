@@ -1,5 +1,7 @@
 const peerConnections = {};
 const config = {
+  sdpSemantics: 'unified-plan',
+
   iceServers: [
     { 
       "urls": "stun:stun.l.google.com:19302",
@@ -15,6 +17,8 @@ const config = {
 const socket = io.connect(window.location.origin);
 
 socket.on("answer", (id, description) => {
+  console.log("description", description)
+  //peerConnections[id].setRemoteDescription(JSON.parse(description));
   peerConnections[id].setRemoteDescription(description);
 });
 
@@ -29,7 +33,7 @@ socket.on("watcher", (id, client_number) => {
   console.log(current_idx);
   console.log(id)
   connectedPeers.push(id);
-  
+
   //For each connected client, we send both the third person view and a first person view of one of the user agents
   let stream = videoElements[client_number].srcObject;
   current_idx += 1;
@@ -41,8 +45,13 @@ socket.on("watcher", (id, client_number) => {
 
   peerConnection.onicecandidate = event => {
     if (event.candidate) {
+      console.log(event.candidate)
       socket.emit("candidate", id, event.candidate);
     }
+  };
+  peerConnection.onicecandidateerror = event => {
+    console.log("error", event);
+    
   };
 
   peerConnection
@@ -51,9 +60,95 @@ socket.on("watcher", (id, client_number) => {
     .then(() => {
       socket.emit("offer", id, peerConnection.localDescription);
     });
+    
+
+  
 });
 
+socket.on("watcher_ai", (id, client_number, server_address, robot_id) => {
+  const peerConnection = new RTCPeerConnection(config);
+  peerConnections[id] = peerConnection;
+  console.log(current_idx);
+  console.log(id)
+  connectedPeers.push(id);
+  console.log("gelloS", server_address)
+  //For each connected client, we send both the third person view and a first person view of one of the user agents
+  let stream = videoElements[client_number].srcObject;
+  current_idx += 1;
+  stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
+
+  let stream2 = videoElements[0].srcObject;
+
+  stream2.getTracks().forEach(track => peerConnection.addTrack(track, stream2));
+
+  peerConnection.onicecandidate = event => {
+    if (event.candidate) {
+      console.log(event.candidate)
+      socket.emit("candidate", id, event.candidate);
+    }
+  };
+  peerConnection.onicecandidateerror = event => {
+    console.log("error", event);
+    
+  };
+
+  peerConnection
+    .createOffer()
+    .then(sdp => peerConnection.setLocalDescription(sdp))
+    
+    .then(function() {
+        // wait for ICE gathering to complete
+        
+        return new Promise(function(resolve) {
+            if (peerConnection.iceGatheringState === 'complete') {
+                resolve();
+            } else {
+                function checkState() {
+                    if (peerConnection.iceGatheringState === 'complete') {
+                        peerConnection.removeEventListener('icegatheringstatechange', checkState);
+                        resolve();
+                    }
+                }
+                peerConnection.addEventListener('icegatheringstatechange', checkState);
+            }
+        });
+    })
+    .then(function() {
+        var offer = peerConnection.localDescription;
+        var codec;
+        console.log("sending to ", server_address)
+        return fetch(server_address, { //'https://172.17.15.69:8080/offer', {
+            body: JSON.stringify({
+                sdp: offer.sdp,
+                type: offer.type,
+                id: robot_id
+            }),
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            method: 'POST'
+        });
+    }).then(function(response) {
+        console.log(response)
+        return response.json();
+    }).then(function(answer) {
+
+        return peerConnection.setRemoteDescription(answer);
+    }).catch(function(e) {
+        alert(e);
+    });
+    /*
+    .then(() => {
+      socket.emit("offer", id, peerConnection.localDescription);
+    });
+    */
+
+  
+});
+
+
 socket.on("candidate", (id, candidate) => {
+  console.log("new_candidate", candidate)
   peerConnections[id].addIceCandidate(new RTCIceCandidate(candidate));
 });
 
@@ -101,8 +196,9 @@ const currentDiv = document.getElementById("videos_div");
 		const constraints = {
 		video: { deviceId: deviceInfo.deviceId }
 		};
-
+		
 		//console.log(constraints)
+		
 		await navigator.mediaDevices
 		.getUserMedia(constraints)
 		.then(function(result){return gotStream(result, v)})

@@ -17,6 +17,8 @@ from tdw.add_ons.keyboard import Keyboard
 from magnebot import Magnebot, Arm, ActionStatus, ImageFrequency
 from magnebot.util import get_default_post_processing_commands
 
+from tdw.add_ons.occupancy_map import OccupancyMap
+
 from PIL import Image
 
 from ai_magnebot_controller import AI_Magnebot_Controller
@@ -58,6 +60,7 @@ class Enhanced_Magnebot(Magnebot):
         self.refresh_sensor = global_refresh_sensor
         self.messages = []
         self.grasping = False
+        self.past_status = ActionStatus.ongoing
 
     
 
@@ -76,6 +79,7 @@ class Simulation(Controller):
         self.timer = 1000.0
         self.terminate = False
         self.local = args.local
+        self.ai_actions = []
 
         ai_spawn_positions = [{"x": -1.4, "y": 0, "z": -1.1},{"x": 0, "y": 0, "z": -1.1}, {"x": 0, "y": 0, "z": -2.1}]
         user_spawn_positions = [{"x": 0, "y": 0, "z": 1.1},{"x": 0, "y": 0, "z": 2.1}, {"x": 4, "y": 0, "z": 1.6}]
@@ -190,6 +194,10 @@ class Simulation(Controller):
             um.ui = ui
             um.ui_elements = ((bar_id,text_id,timer_text_id))
           
+        #Creating occupancy map
+        self.static_occupancy_map = OccupancyMap(cell_size=0.5)        
+
+
         #Needed to get objects positions
         self.object_manager: ObjectManager = ObjectManager()
 
@@ -198,7 +206,7 @@ class Simulation(Controller):
         self.dangerous_objects = []
         
         #Add-ons
-        self.add_ons.extend([*self.ai_magnebots,  *self.user_magnebots, self.object_manager, *self.uis])
+        self.add_ons.extend([*self.ai_magnebots,  *self.user_magnebots, self.object_manager, *self.uis, self.static_occupancy_map])
 
 
         # Create the scene.
@@ -265,6 +273,21 @@ class Simulation(Controller):
 
 
 
+        fc = 'iron_box'
+        object_id = self.get_unique_id()
+        self.graspable_objects.append(object_id)
+        self.required_strength[object_id] = 1
+        self.danger_level[object_id] = 1
+        commands.extend(self.get_add_physics_object(model_name=fc,
+                                         object_id=object_id,
+                                         position={"x": 0, "y": 0, "z": 0},
+                                         rotation={"x": 0, "y": 0, "z": 0},
+                                         default_physics_values=False,
+                                         mass=10,
+                                         scale_mass=False))
+        if self.danger_level[object_id] == 2:
+            self.dangerous_objects.append(object_id)
+
         # Add post-processing.
         commands.extend(get_default_post_processing_commands())
 
@@ -286,9 +309,20 @@ class Simulation(Controller):
                   {"$type": "send_keyboard", "frequency": "always"}])
 
         
+        
+
         self.communicate(commands)
 
-        
+        #Generate occupancy map with only environment objects
+        ignore_objects = [um.robot_id for um in self.user_magnebots]
+        ignore_objects.extend([um.robot_id for um in self.ai_magnebots])
+        ignore_objects.extend(self.graspable_objects)
+        self.static_occupancy_map.generate(ignore_objects=ignore_objects)
+
+        self.communicate([])
+
+        #print(self.static_occupancy_map.occupancy_map)
+
 
         #Initializing communication with server
         
@@ -307,8 +341,8 @@ class Simulation(Controller):
             @self.sio.event
             def connect():
                 print("I'm connected!")
-                
-                self.sio.emit("simulator", [*self.user_magnebots_ids, *self.ai_magnebots_ids])
+
+                self.sio.emit("simulator", (self.user_magnebots_ids,self.ai_magnebots_ids))#[*self.user_magnebots_ids, *self.ai_magnebots_ids])
 
             @self.sio.event
             def connect_error(data):
@@ -328,6 +362,20 @@ class Simulation(Controller):
                 ai_magnebot = self.ai_magnebots[self.ai_magnebots_ids.index(agent_id)]
                 ai_magnebot.messages.append((source_agent_id,message))
                 print("message", message, source_agent_id, agent_id)
+
+            @self.sio.event
+            def ai_action(action_message, agent_id):
+                ai_agent_idx = self.ai_magnebots_ids.index(agent_id)
+                ai_agent = self.ai_magnebots[ai_agent_idx]
+
+                for actions in action_message:
+                    eval_string = "ai_agent." + actions[0]+"("
+
+                    for argument in actions:
+                        eval_string += argument
+
+                    eval(eval_string + ")")
+
                 
             self.sio.connect(address)
 
@@ -382,7 +430,7 @@ class Simulation(Controller):
                 self.user_magnebots[u_idx].item_info[o_id]['weight'] = int(self.required_strength[o_id])
 
                 if not self.local:
-                    self.sio.emit('objects_update', (u_idx,self.user_magnebots[idx].item_info))
+                    self.sio.emit('objects_update', (u_idx,self.user_magnebots[u_idx].item_info))
 
 
     def screen_output(self, resp, screen_data, all_magnebots, all_ids):
@@ -571,6 +619,7 @@ class Simulation(Controller):
                         self.user_magnebots[idx].danger_estimates = danger_estimates
                         
                         if not self.local:
+                            #print("objects_update", (idx,self.user_magnebots[idx].item_info))
                             self.sio.emit('objects_update', (idx,self.user_magnebots[idx].item_info))
                        
                 
@@ -701,8 +750,28 @@ class Simulation(Controller):
             user_magnebots_positions = [TDWUtils.array_to_vector3(um.dynamic.transform.position + np.array([0,0.5,0])) for um in self.user_magnebots]
             ai_magnebots_positions = [TDWUtils.array_to_vector3(um.dynamic.transform.position + np.array([0,0.5,0])) for um in self.ai_magnebots]
             
+            object_type_coords_map = np.copy(self.static_occupancy_map.occupancy_map)
+            min_pos = self.static_occupancy_map.get_occupancy_position(0,0)[0]
+            multiple = 0.5
+            object_attributes_id = {}
+            for o in self.graspable_objects:
+                pos = self.object_manager.transforms[o].position
+                pos_new = [int((multiple*round(pos[0]/multiple)+min_pos)/multiple), int((multiple*round(pos[2]/multiple)+min_pos)/multiple)]
+                object_type_coords_map[pos_new[0],pos_new[1]] = 2
+                if str(pos_new[0])+str(pos_new[1]) not in object_attributes_id:
+                    object_attributes_id[str(pos_new[0])+str(pos_new[1])] = []
+                object_attributes_id[str(pos_new[0])+str(pos_new[1])].append(o)
+
+            for o in [*self.user_magnebots,*self.ai_magnebots]:
+                pos = o.dynamic.transform.position
+                pos_new = [int((multiple*round(pos[0]/multiple)+min_pos)/multiple), int((multiple*round(pos[2]/multiple)+min_pos)/multiple)]
+                object_type_coords_map[pos_new[0],pos_new[1]] = 3
+                if str(pos_new[0])+str(pos_new[1]) not in object_attributes_id:
+                    object_attributes_id[str(pos_new[0])+str(pos_new[1])] = []
+                object_attributes_id[str(pos_new[0])+str(pos_new[1])].append(o.robot_id)
+
+            pdb.set_trace()
             
-                
 
             #Set a visual target whenever the user wants to help
             if self.target:
@@ -821,7 +890,8 @@ class Simulation(Controller):
                             del all_magnebots[idx].screen_positions['positions'][e]    
                             del all_magnebots[idx].screen_positions['duration'][e]    
                         except:
-                            pdb.set_trace()
+                            print("Error deleting")
+                            #pdb.set_trace()
 
                 for arm in [Arm.right,Arm.left]:
                     if all_magnebots[idx].dynamic.held[arm].size > 0:
@@ -841,6 +911,11 @@ class Simulation(Controller):
                                      )
                                     messages.append([idx,txt,0])
                                 self.terminate = True
+
+                if not self.local and all_magnebots[idx] in self.ai_magnebots:
+                    if all_magnebots[idx].action.status != all_magnebots[idx].past_status:
+                        all_magnebots[idx].past_status = all_magnebots[idx].action.status
+                        self.sio.emit("ai_status", (idx,all_magnebots[idx].action.status.value))
                             
             #Share object info
             object_info_update = list(set(object_info_update))

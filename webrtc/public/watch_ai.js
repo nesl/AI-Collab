@@ -23,6 +23,7 @@ const queryString = window.location.search;
 const urlParams = new URLSearchParams(queryString);
 const client_number = urlParams.get('client');
 
+
 //We set here the video streams
 socket.on("offer", (id, description, new_client_id) => {
 
@@ -36,9 +37,24 @@ socket.on("offer", (id, description, new_client_id) => {
       socket.emit("answer", id, peerConnection.localDescription);
     });
   peerConnection.ontrack = event => {
-    if(num_video == 0){
-    	video[num_video].srcObject = event.streams[0];
-    	num_video += 1;
+
+    video[num_video].srcObject = event.streams[0];
+
+    num_video += 1;
+
+    if(num_video == 1){
+        pc = createPeerConnection();
+        var constraints = {
+            audio: false,
+            video: true
+        };
+
+        pc.addTrack(event.track);
+       
+        negotiate();
+            
+       
+
     }
 
   };
@@ -48,11 +64,17 @@ socket.on("offer", (id, description, new_client_id) => {
       socket.emit("candidate", id, event.candidate);
     }
   };
+
+  peerConnection.oniceconnectionstatechange = () => {
+    if (peerConnection.iceConnectionState === "completed"){
+        start_streaming();
+    }    
+  };
 });
 
 
 socket.on("candidate", (id, candidate) => {
-  console.log(candidate)
+
   peerConnection
     .addIceCandidate(new RTCIceCandidate(candidate))
     .catch(e => console.error(e));
@@ -292,12 +314,6 @@ function sendCommand() {
 	if(final_string.includes("I will help ")){
 		console.log(help_requests)
 		console.log(help_requests[final_string.substring(12)])
-		selector = document.getElementById('select_channel');
-		option_element = document.createElement("option");
-		option_element.setAttribute("value",help_requests[final_string.substring(12)]);
-		option_element.appendChild(document.createTextNode(help_requests[final_string.substring(12)]));
-		selector.appendChild(option_element);
-		
 		socket.emit("set_goal", help_requests[final_string.substring(12)]);
 	}
 	
@@ -307,10 +323,131 @@ function sendCommand() {
 socket.on("message", (message, id) => {
 	console.log("Received message");
 	newMessage(message, id);
-
+    dc.send(message);
 	
 	if(message.includes("I need help with ")){
 		help_requests[id] = message.substring(25);
 	}
 });
+
+
+
+// peer connection
+var pc = null;
+
+// data channel
+var dc = null, dcInterval = null;
+
+var num_track = 0;
+var moment = 0;
+
+function createPeerConnection() {
+    var config = {
+        sdpSemantics: 'unified-plan',
+	iceServers: [
+	      { 
+		"urls": "stun:stun.l.google.com:19302",
+	      },
+	      // { 
+	      //   "urls": "turn:TURN_IP?transport=tcp",
+	      //   "username": "TURN_USERNAME",
+	      //   "credential": "TURN_CREDENTIALS"
+	      // }
+	  ]
+    };
+
+
+    pc = new RTCPeerConnection(config);
+
+    // register some listeners to help debugging
+    pc.addEventListener('icegatheringstatechange', function() {
+       console.log(pc.iceGatheringState);
+    }, false);
+
+
+    pc.addEventListener('iceconnectionstatechange', function() {
+        console.log(pc.iceConnectionState);
+    }, false);
+
+    pc.addEventListener('signalingstatechange', function() {
+        console.log(pc.signalingState);
+    }, false);
+
+
+    return pc;
+}
+
+function negotiate() {
+    return pc.createOffer().then(function(offer) {
+
+        return pc.setLocalDescription(offer);
+    }).then(function() {
+        // wait for ICE gathering to complete
+        return new Promise(function(resolve) {
+            if (pc.iceGatheringState === 'complete') {
+                resolve();
+            } else {
+                function checkState() {
+                    if (pc.iceGatheringState === 'complete') {
+                        pc.removeEventListener('icegatheringstatechange', checkState);
+                        resolve();
+                    }
+                }
+                pc.addEventListener('icegatheringstatechange', checkState);
+            }
+        });
+    }).then(function() {
+        var offer = pc.localDescription;
+        var codec;
+        
+        return fetch('https://172.17.15.69:8080/offer', {
+            body: JSON.stringify({
+                sdp: offer.sdp,
+                type: offer.type
+            }),
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            method: 'POST'
+        });
+    }).then(function(response) {
+
+        return response.json();
+    }).then(function(answer) {
+
+        return pc.setRemoteDescription(answer);
+    }).catch(function(e) {
+        alert(e);
+    });
+}
+
+
+function create_data_channel() {
+    dc = pc.createDataChannel('chat', parameters);
+    dc.onclose = function() {
+        clearInterval(dcInterval);
+        dataChannelLog.textContent += '- close\n';
+    };
+    /*
+    dc.onopen = function() {
+        dataChannelLog.textContent += '- open\n';
+        dcInterval = setInterval(function() {
+            var message = 'ping ' + current_stamp();
+            dataChannelLog.textContent += '> ' + message + '\n';
+            dc.send(message);
+        }, 1000);
+    };
+    */
+    dc.onmessage = function(evt) {
+
+        newMessage(evt.data, client_id);
+        
+    };
+}
+
+
+
+
+
+
 
