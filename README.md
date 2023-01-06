@@ -56,6 +56,10 @@ The implementation of the WebRTC server was based on [https://github.com/TannerG
 
 1. Change to the **ai_controller** directory and run the **server_command** script. You have to also create a new certificate + key as this script executes an HTTPS server to setup the WebRTC parameters. Inside the **server_command**, specify the certificate, key and host address associated with this server.
 
+#### Note
+
+To allow the HTTPS certifcate to work, you first have to run **server_command**, access through the web browser to the address provided by the HTTPS server and accept the certificate. Then try again and it should work!
+
 ## AI controller
 
 The **ai_controller.py** program uses an HTTPS server to negotiate the WebRTC parameters. Socket.IO is used for normal commmunication with the simulator server. The controller uses the same API functions defined in the [Magnebot repository](https://github.com/alters-mit/magnebot/blob/main/doc/manual/magnebot/actions.md). To receive occupancy maps instead of camera images, you can run the **ai_controller.py** program as `python ai_controller.py --use-occupancy`, this way you don't need to make use of the HTTPS server. A sample controller is coded in the **controller** function.
