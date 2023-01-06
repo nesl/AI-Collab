@@ -27,7 +27,7 @@ socket.on("answer", (id, description) => {
 var current_idx = 1;
 var connectedPeers = [];
 
-socket.on("watcher", (id, client_number) => {
+socket.on("watcher", (id, client_number) => { //When human controlled robot connects, setup WebRTC and forward correct video track
   const peerConnection = new RTCPeerConnection(config);
   peerConnections[id] = peerConnection;
   console.log(current_idx);
@@ -65,7 +65,7 @@ socket.on("watcher", (id, client_number) => {
   
 });
 
-socket.on("watcher_ai", (id, client_number, server_address, robot_id) => {
+socket.on("watcher_ai", (id, client_number, server_address, robot_id) => { //When AI controlled robot connects, setup WebRTC and forward correct video track
   const peerConnection = new RTCPeerConnection(config);
   peerConnections[id] = peerConnection;
   console.log(current_idx);
@@ -147,7 +147,7 @@ socket.on("watcher_ai", (id, client_number, server_address, robot_id) => {
 });
 
 
-socket.on("candidate", (id, candidate) => {
+socket.on("candidate", (id, candidate) => { //WebRTC exchange candidates
   console.log("new_candidate", candidate)
   peerConnections[id].addIceCandidate(new RTCIceCandidate(candidate));
 });
@@ -181,6 +181,8 @@ getDevices().then(gotDevices);
 function getDevices() {
   return navigator.mediaDevices.enumerateDevices();
 }
+
+//Get simulated webcams and their video streams
 
 async function gotDevices(deviceInfos) {
 var v = 0;

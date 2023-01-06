@@ -1,0 +1,5 @@
+num_humans: 2 #number of human controlled robots
+num_ais: 1 #number of ai controlled robots
+width: 640 #width of camera view
+height: 480 #height of camera view
+timer: 10000 #play time in seconds

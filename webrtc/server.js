@@ -40,10 +40,11 @@ var init_xdotool = false;
 
 
 io.sockets.on("error", e => console.log(e));
-io.sockets.on("connection", socket => {
-  socket.on("broadcaster", () => {
+io.sockets.on("connection", socket => { //When a client connects
+  socket.on("broadcaster", () => { //When the broadcaster client connects
     broadcaster = socket.id;
     socket.broadcast.emit("broadcaster");
+    //Initiate key press forwarding to the simulator through xdotool by getting the simulators window name
     if(! init_xdotool){
         exec('xdotool search --name TDW', (error, stdout, stderr) => {
             console.log("window_name: " + stdout);
@@ -52,7 +53,8 @@ io.sockets.on("connection", socket => {
         init_xdotool = true;
     }
   });
-  socket.on("watcher", (client_number) => {
+
+  socket.on("watcher", (client_number) => { //When a human client connects
 
     socket.to(broadcaster).emit("watcher", socket.id, client_number);
 
@@ -67,12 +69,18 @@ io.sockets.on("connection", socket => {
     }
     */
   });
-  socket.on("watcher_ai", (client_number, server_address) => {
-
-    socket.to(broadcaster).emit("watcher_ai", socket.id, client_number, server_address, ai_ids_list[client_number-1]);
+  socket.on("watcher_ai", (client_number, use_occupancy, server_address) => { //When an ai client connects
+    
+    if(! use_occupancy){
+        client_number_adapted = client_number + user_ids_list.length;
+        socket.to(broadcaster).emit("watcher_ai", socket.id, client_number_adapted, server_address, ai_ids_list[client_number-1]);
+    } else {
+        socket.to(simulator).emit("watcher_ai", ai_ids_list[client_number-1])
+    }
     ai_ids[client_number-1] = socket.id;
     all_ids[client_number-1+user_ids_list.length] = socket.id;
 
+    socket.to(socket.id).emit("watcher_ai", ai_ids_list[client_number-1]);
     /*
     if (ai_ids.includes(socket.id) == false){
         ai_ids.push(socket.id);
@@ -82,7 +90,14 @@ io.sockets.on("connection", socket => {
 
 
   });
-  socket.on("simulator", (user_ids, ai_agents_ids) => {
+
+
+  socket.on("occupancy_map", (client_number, static_occupancy_map, object_type_coords_map, object_attributes_id) => { //Occupancy maps forwarding
+    //console.log(`Sending to ${client_number}`);
+    socket.to(all_ids[client_number]).emit("occupancy_map", static_occupancy_map, object_type_coords_map, object_attributes_id)
+  });
+
+  socket.on("simulator", (user_ids, ai_agents_ids) => { //When simulator connects
     simulator = socket.id;
     user_ids_list = user_ids;
     ai_ids_list = ai_agents_ids;
@@ -93,6 +108,8 @@ io.sockets.on("connection", socket => {
   
 
   });
+
+  //WEBRTC connection setup
   socket.on("offer", (id, message) => {
     socket.to(id).emit("offer", socket.id, message, user_ids_list[clients_ids.indexOf(id)]);
   });
@@ -102,19 +119,22 @@ io.sockets.on("connection", socket => {
   socket.on("candidate", (id, message) => {
     socket.to(id).emit("candidate", socket.id, message);
   });
+
   socket.on("get_id", () => {
     socket.to(socket.id).emit("get_id", clients_ids.indexOf(socket.id));
   });
   socket.on("disconnect", () => {
     socket.to(broadcaster).emit("disconnectPeer", socket.id);
   });
-  socket.on("ai_action", (action_message, source_id) => {
+
+  
+  socket.on("ai_action", (action_message, source_id) => {//AI action forwarding
     socket.to(simulator).emit("ai_action",action_message,source_id);
   });
-  socket.on("ai_status", (idx, status) => {
+  socket.on("ai_status", (idx, status) => {//AI status forwarding
     socket.to(all_ids[idx]).emit("ai_status",status);
   });
-  socket.on("message", (message,neighbors_list, source_id) => {
+  socket.on("message", (message,neighbors_list, source_id) => { //Forwarding messages between robots
 
     /*
     var neighbor_keys = Object.keys(neighbors_list);
@@ -160,15 +180,15 @@ io.sockets.on("connection", socket => {
         });
     }
   });
-  socket.on("objects_update", (idx, objects_list) => {
+  socket.on("objects_update", (idx, objects_list) => { //Every time someone discovers/shares an object
     //console.log("stdout: " + socket.id + " " + broadcaster);
     socket.to(all_ids[idx]).emit("objects_update", objects_list);
   });
 
-  socket.on("neighbors_update", (idx, neighbors_list) => {
+  socket.on("neighbors_update", (idx, neighbors_list) => { //Evertime someone gets close to other robots
     socket.to(all_ids[idx]).emit("neighbors_update", neighbors_list);
   });
-  socket.on("set_goal", (obj_id) => {
+  socket.on("set_goal", (obj_id) => { //Set visual goal
     socket.to(simulator).emit("set_goal",clients_ids.indexOf(socket.id), obj_id);
   });
 });

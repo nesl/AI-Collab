@@ -47,7 +47,18 @@ The implementation of the WebRTC server was based on [https://github.com/TannerG
 1. Run the server using `node server`
 2. Run the simulator using `python simulation.py --address "https://address:port"`
 3. Using your web browser, go to **https://address:port/broadcast.html**. This will present a view with all the camera views being streamed.
-4. Using your web browser in the same or a different computer, go to **https://address:port/?client=1**, where the client parameter controls which robot you get assigned. This parameter goes from 1 to the number of user controllabel robots you have in the simulation.
+
+### User control of a robot 
+
+1. Using your web browser in the same or a different computer, go to **https://address:port/?client=1**, where the client parameter controls which robot you get assigned. This parameter goes from 1 to the number of user controllable robots you have in the simulation.
+
+### AI control of a robot
+
+1. Change to the **ai_controller** directory and run the **server_command** script. You have to also create a new certificate + key as this script executes an HTTPS server to setup the WebRTC parameters. Inside the **server_command**, specify the certificate, key and host address associated with this server.
+
+## AI controller
+
+The **ai_controller.py** program uses an HTTPS server to negotiate the WebRTC parameters. Socket.IO is used for normal commmunication with the simulator server. The controller uses the same API functions defined in the [Magnebot repository](https://github.com/alters-mit/magnebot/blob/main/doc/manual/magnebot/actions.md). To receive occupancy maps instead of camera images, you can run the **ai_controller.py** program as `python ai_controller.py --use-occupancy`, this way you don't need to make use of the HTTPS server. A sample controller is coded in the **controller** function.
 
 ## Interface
 

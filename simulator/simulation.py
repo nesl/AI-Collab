@@ -6,6 +6,8 @@ import socketio
 import argparse
 import pyvirtualcam
 import csv
+import json_numpy
+import yaml
 from scipy.spatial.transform import Rotation
 from tdw.controller import Controller
 from tdw.tdw_utils import TDWUtils
@@ -21,7 +23,6 @@ from tdw.add_ons.occupancy_map import OccupancyMap
 
 from PIL import Image
 
-from ai_magnebot_controller import AI_Magnebot_Controller
 
 
 
@@ -61,14 +62,15 @@ class Enhanced_Magnebot(Magnebot):
         self.messages = []
         self.grasping = False
         self.past_status = ActionStatus.ongoing
+        self.occupancy = False
 
     
 
-
+#Main class
 class Simulation(Controller):
   
 
-    def __init__(self, args, port: int = 1071, check_version: bool = True, launch_build: bool = True):
+    def __init__(self, args, cfg, port: int = 1071, check_version: bool = True, launch_build: bool = True):
         super().__init__(port=port, check_version=check_version, launch_build=launch_build)
 
         self.user_magnebots = []
@@ -76,7 +78,7 @@ class Simulation(Controller):
         self.graspable_objects = []
         self.keys_set = []
         self.uis = []
-        self.timer = 1000.0
+        self.timer = float(cfg['timer'])
         self.terminate = False
         self.local = args.local
         self.ai_actions = []
@@ -96,7 +98,7 @@ class Simulation(Controller):
 
         #Create ai magnebots
         for ai_idx in range(num_ais):                                   
-            self.ai_magnebots.append(Enhanced_Magnebot(robot_id=self.get_unique_id(), position=ai_spawn_positions[ai_idx],image_frequency=ImageFrequency.never, controlled_by='ai'))
+            self.ai_magnebots.append(Enhanced_Magnebot(robot_id=self.get_unique_id(), position=ai_spawn_positions[ai_idx],image_frequency=ImageFrequency.always, controlled_by='ai'))
 
         #Create user magnebots
         for us_idx in range(num_users):
@@ -228,6 +230,8 @@ class Simulation(Controller):
         
         
 
+        
+
 
         #Instantiate and locate objects
         max_coord = 8
@@ -256,37 +260,15 @@ class Simulation(Controller):
 
         for fc in final_coords.keys():
             for c in final_coords[fc]:
-                object_id = self.get_unique_id()
-                self.graspable_objects.append(object_id)
-                self.required_strength[object_id] = int(np.random.choice([1,2,3],1)[0])
-                self.danger_level[object_id] = np.random.choice([1,2],1,p=[0.9,0.1])[0]
-                commands.extend(self.get_add_physics_object(model_name=fc,
-                                                 object_id=object_id,
-                                                 position={"x": c[0], "y": 0, "z": c[1]},
-                                                 rotation={"x": 0, "y": 0, "z": 0},
-                                                 default_physics_values=False,
-                                                 mass=10,
-                                                 scale_mass=False))
-                if self.danger_level[object_id] == 2:
-                    self.dangerous_objects.append(object_id)
+
+                weight = int(np.random.choice([1,2,3],1)[0])
+                danger_level = np.random.choice([1,2],1,p=[0.9,0.1])[0]
+                commands.extend(self.instantiate_object(fc,{"x": c[0], "y": 0, "z": c[1]},{"x": 0, "y": 0, "z": 0},10,danger_level,weight))
 
 
+        commands.extend(self.instantiate_object('iron_box',{"x": 0, "y": 0, "z": 0},{"x": 0, "y": 0, "z": 0},10,1,1))
 
 
-        fc = 'iron_box'
-        object_id = self.get_unique_id()
-        self.graspable_objects.append(object_id)
-        self.required_strength[object_id] = 1
-        self.danger_level[object_id] = 1
-        commands.extend(self.get_add_physics_object(model_name=fc,
-                                         object_id=object_id,
-                                         position={"x": 0, "y": 0, "z": 0},
-                                         rotation={"x": 0, "y": 0, "z": 0},
-                                         default_physics_values=False,
-                                         mass=10,
-                                         scale_mass=False))
-        if self.danger_level[object_id] == 2:
-            self.dangerous_objects.append(object_id)
 
         # Add post-processing.
         commands.extend(get_default_post_processing_commands())
@@ -335,6 +317,7 @@ class Simulation(Controller):
 
         self.sio = None
 
+        #Socket io event functions
         if not self.local:
             self.sio = socketio.Client(ssl_verify=False)
             
@@ -357,12 +340,15 @@ class Simulation(Controller):
                 print("Received new goal")
                 self.target[agent_id] = obj_id
                 
+            """
             @self.sio.event
             def ai_message(message, source_agent_id, agent_id):
                 ai_magnebot = self.ai_magnebots[self.ai_magnebots_ids.index(agent_id)]
                 ai_magnebot.messages.append((source_agent_id,message))
                 print("message", message, source_agent_id, agent_id)
+            """
 
+            #Receive action for ai controlled robot
             @self.sio.event
             def ai_action(action_message, agent_id):
                 ai_agent_idx = self.ai_magnebots_ids.index(agent_id)
@@ -371,17 +357,44 @@ class Simulation(Controller):
                 for actions in action_message:
                     eval_string = "ai_agent." + actions[0]+"("
 
-                    for argument in actions:
+                    for a_idx, argument in enumerate(actions[1:]):
+                        if a_idx:
+                            eval_string += ','
                         eval_string += argument
 
                     eval(eval_string + ")")
 
+            #Indicate use of occupancy maps
+            @self.sio.event
+            def watcher_ai(agent_id):
+                ai_agent_idx = self.ai_magnebots_ids.index(agent_id)
+                self.ai_magnebots[ai_agent_idx].occupancy = True
+                
                 
             self.sio.connect(address)
 
 
     
+    #Function to instantiate objects
+    def instantiate_object(self, model_name, position, rotation, mass, danger_level, required_strength):
 
+        object_id = self.get_unique_id()
+        self.graspable_objects.append(object_id)
+        self.required_strength[object_id] = required_strength
+        self.danger_level[object_id] = danger_level
+        command = self.get_add_physics_object(model_name=model_name,
+                                         object_id=object_id,
+                                         position=position,
+                                         rotation=rotation,
+                                         default_physics_values=False,
+                                         mass=mass,
+                                         scale_mass=False)
+        if self.danger_level[object_id] == 2:
+            self.dangerous_objects.append(object_id)
+
+        return command
+
+    #Function to add ui to camera frames
     def add_ui(self, original_image, screen_positions):
         font = cv2.FONT_HERSHEY_SIMPLEX
         # fontScale
@@ -398,7 +411,7 @@ class Simulation(Controller):
                 pdb.set_trace()
     
 
-
+    #Process raycasting
     def raycast_output(self, resp, all_ids):
 
         raycast = Raycast(resp)
@@ -432,7 +445,7 @@ class Simulation(Controller):
                 if not self.local:
                     self.sio.emit('objects_update', (u_idx,self.user_magnebots[u_idx].item_info))
 
-
+    #Get screen coordinates of objects
     def screen_output(self, resp, screen_data, all_magnebots, all_ids):
 
         scre = ScreenPosition(resp)
@@ -486,6 +499,7 @@ class Simulation(Controller):
                     screen_data[scre.get_avatar_id()]['color'].append(color)
 
 
+    #Process keyboard presses
     def keyboard_output(self, resp, extra_commands, duration, keys_time_unheld, all_ids, messages):
 
         keys = KBoard(resp)
@@ -712,7 +726,7 @@ class Simulation(Controller):
 
 
         
-
+    #### Main Loop
     def run(self):
         done = False
         commands = []
@@ -732,10 +746,7 @@ class Simulation(Controller):
             um.screen_positions["positions"].extend([-1]*len(all_ids))
             um.screen_positions["duration"].extend([-1]*len(all_ids))
             
-        #We initialize the controller for ai agents
-        ai_controllers = []
-        for am in self.ai_magnebots:
-            ai_controllers.append(AI_Magnebot_Controller(am))
+       
         
         print("User ids: ", self.user_magnebots_ids, "AI ids: ", self.ai_magnebots_ids)
         
@@ -750,6 +761,7 @@ class Simulation(Controller):
             user_magnebots_positions = [TDWUtils.array_to_vector3(um.dynamic.transform.position + np.array([0,0.5,0])) for um in self.user_magnebots]
             ai_magnebots_positions = [TDWUtils.array_to_vector3(um.dynamic.transform.position + np.array([0,0.5,0])) for um in self.ai_magnebots]
             
+            #Prepare occupancy maps and associated metadata
             object_type_coords_map = np.copy(self.static_occupancy_map.occupancy_map)
             min_pos = self.static_occupancy_map.get_occupancy_position(0,0)[0]
             multiple = 0.5
@@ -770,7 +782,7 @@ class Simulation(Controller):
                     object_attributes_id[str(pos_new[0])+str(pos_new[1])] = []
                 object_attributes_id[str(pos_new[0])+str(pos_new[1])].append(o.robot_id)
 
-            pdb.set_trace()
+            #pdb.set_trace()
             
 
             #Set a visual target whenever the user wants to help
@@ -834,7 +846,7 @@ class Simulation(Controller):
                         all_magnebots[idx].strength += 1 #Increase strength
                         company[all_magnebots[idx2].robot_id] = all_magnebots[idx2].controlled_by #Add information about neighbors
                         
-                        #Update object info entries when closeby
+                        #Update object info entries when nearby
                         if not all_magnebots[idx].item_info == all_magnebots[idx2].item_info:
                             for it_element in all_magnebots[idx2].item_info.keys():
                                 if it_element not in all_magnebots[idx].item_info:
@@ -912,6 +924,7 @@ class Simulation(Controller):
                                     messages.append([idx,txt,0])
                                 self.terminate = True
 
+                #Transmit ai controlled robots status
                 if not self.local and all_magnebots[idx] in self.ai_magnebots:
                     if all_magnebots[idx].action.status != all_magnebots[idx].past_status:
                         all_magnebots[idx].past_status = all_magnebots[idx].action.status
@@ -936,11 +949,6 @@ class Simulation(Controller):
 
 
             commands.clear()
-            
-            
-            #Step through controllers for ai
-            for aic in ai_controllers:
-                aic.controller(self.object_manager, self.sio)
 
             
             
@@ -979,10 +987,15 @@ class Simulation(Controller):
                                 
                             
                     
-                    #Process images from magnebot cameras
+                    #Process images from user magnebot cameras
                     elif images.get_avatar_id() in self.user_magnebots_ids:
                         idx = self.user_magnebots_ids.index(images.get_avatar_id())
                         img_image = np.asarray(self.user_magnebots[idx].dynamic.get_pil_images()['img'])
+                        magnebot_images[images.get_avatar_id()] = img_image
+                    #Process images from ai magnebot cameras
+                    elif images.get_avatar_id() in self.ai_magnebots_ids:
+                        idx = self.ai_magnebots_ids.index(images.get_avatar_id())
+                        img_image = np.asarray(self.ai_magnebots[idx].dynamic.get_pil_images()['img'])
                         magnebot_images[images.get_avatar_id()] = img_image
                         
                     
@@ -1048,10 +1061,20 @@ class Simulation(Controller):
             cv2.imshow('frame',magnebot_images[str(self.user_magnebots[0].robot_id)])
             cv2.waitKey(1)
             
-            #Send frames to virtual cameras in system
+            #Send frames to virtual cameras in system and occupancy maps if required
             if cams:
-                for idx in range(len(self.user_magnebots_ids)):
-                    cams[idx+1].send(magnebot_images[self.user_magnebots_ids[idx]])
+                idx = 0
+
+                for magnebot_id in self.user_magnebots_ids:
+                    cams[idx+1].send(magnebot_images[magnebot_id])
+                    idx += 1
+                for m_idx, magnebot_id in enumerate(self.ai_magnebots_ids):
+                    cams[idx+1].send(magnebot_images[magnebot_id])
+                    if self.ai_magnebots[m_idx].occupancy:
+                        all_idx = all_ids.index(magnebot_id)
+                        self.sio.emit('occupancy_map', (all_idx, json_numpy.dumps(self.static_occupancy_map.occupancy_map), json_numpy.dumps(object_type_coords_map), object_attributes_id))
+
+                    idx += 1
                 
                 
             
@@ -1084,13 +1107,24 @@ if __name__ == "__main__":
     parser.add_argument('--address', type=str, default='https://172.17.15.69:4000' ,help='adress to connect to')
     args = parser.parse_args()
 
+    with open('config.yaml', 'r') as file:
+        cfg = yaml.safe_load(file)
+
+    num_users = cfg['num_humans']
+    num_ais = cfg['num_ais']
+    
+    width = cfg['width']
+    height = cfg['height']
+
     #The web interface expects to get frames from camera devices. We simulate this by using v4l2loopback to create some virtual webcams to which we forward the frames generated in here
     if not args.no_virtual_cameras:
         for user in range(num_users+1):
             cams.append(pyvirtualcam.Camera(width=width, height=height, fps=20, device='/dev/video'+str(user)))
+        for ai in range(num_users+1,num_users+1+num_ais):
+            cams.append(pyvirtualcam.Camera(width=width, height=height, fps=20, device='/dev/video'+str(ai)))
 
     address = args.address
 
-    c = Simulation(args)
+    c = Simulation(args, cfg)
 
     c.run()
