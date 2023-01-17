@@ -81,6 +81,7 @@ class Simulation(Controller):
         self.timer = float(cfg['timer'])
         self.terminate = False
         self.local = args.local
+        self.options = args
         self.ai_actions = []
 
         ai_spawn_positions = [{"x": -1.4, "y": 0, "z": -1.1},{"x": 0, "y": 0, "z": -1.1}, {"x": 0, "y": 0, "z": -2.1}]
@@ -325,7 +326,7 @@ class Simulation(Controller):
             def connect():
                 print("I'm connected!")
 
-                self.sio.emit("simulator", (self.user_magnebots_ids,self.ai_magnebots_ids))#[*self.user_magnebots_ids, *self.ai_magnebots_ids])
+                self.sio.emit("simulator", (self.user_magnebots_ids,self.ai_magnebots_ids, self.options.video_index))#[*self.user_magnebots_ids, *self.ai_magnebots_ids])
 
             @self.sio.event
             def connect_error(data):
@@ -1105,6 +1106,7 @@ if __name__ == "__main__":
     parser.add_argument('--local', action='store_true', help='run locally only')
     parser.add_argument('--no_virtual_cameras', action='store_true', help='do not stream frames to virtual cameras')
     parser.add_argument('--address', type=str, default='https://172.17.15.69:4000' ,help='adress to connect to')
+    parser.add_argument('--video-index', type=int, default=0 ,help='index of the first /dev/video device to start streaming to')
     args = parser.parse_args()
 
     with open('config.yaml', 'r') as file:
@@ -1118,9 +1120,9 @@ if __name__ == "__main__":
 
     #The web interface expects to get frames from camera devices. We simulate this by using v4l2loopback to create some virtual webcams to which we forward the frames generated in here
     if not args.no_virtual_cameras:
-        for user in range(num_users+1):
+        for user in range(args.video_index,args.video_index+num_users+1): #One extra camera for the debug video
             cams.append(pyvirtualcam.Camera(width=width, height=height, fps=20, device='/dev/video'+str(user)))
-        for ai in range(num_users+1,num_users+1+num_ais):
+        for ai in range(args.video_index+num_users+1,args.video_index+num_users+1+num_ais):
             cams.append(pyvirtualcam.Camera(width=width, height=height, fps=20, device='/dev/video'+str(ai)))
 
     address = args.address
