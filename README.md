@@ -44,7 +44,7 @@ The implementation of the WebRTC server was based on [https://github.com/TannerG
 
 ## Operation
 
-1. Run the server using `node server`
+1. Run the server using `node server --address "address" --port "port"`. The simulator assumes the virtual devices to be used are the ones starting at /dev/video0, but if you already have some real webcams, you need to specify the parameter `--video-index <number>` and include the index number of your first simulated webcam corresponding to the ones created for the simulator.
 2. Run the simulator using `python simulation.py --address "https://address:port"`
 3. Using your web browser, go to **https://address:port/broadcast.html**. This will present a view with all the camera views being streamed.
 
@@ -54,11 +54,14 @@ The implementation of the WebRTC server was based on [https://github.com/TannerG
 
 ### AI control of a robot
 
-1. Change to the **ai_controller** directory and run the **server_command** script. You have to also create a new certificate + key as this script executes an HTTPS server to setup the WebRTC parameters. Inside the **server_command**, specify the certificate, key and host address associated with this server.
+1. Change to the **ai_controller** directory and run the **server_command** script. You have to also create a new certificate + key as this script executes an HTTPS server to setup the WebRTC parameters. Inside the **server_command**, specify the certificate, key and host address associated with this server, as well as the address to connect to.
 
 #### Note
 
-To allow the HTTPS certifcate to work, you first have to run **server_command**, access through the web browser to the address provided by the HTTPS server and accept the certificate. Then try again and it should work!
+To allow the HTTPS self-signed certificate to work:
+1. Run **server_command**
+2. Access through the web browser to the address provided by the HTTPS server and accept the certificate
+3. Try again running **server_command** and it should work!
 
 ## AI controller
 

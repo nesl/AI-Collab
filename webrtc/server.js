@@ -1,11 +1,21 @@
 const express = require("express");
 const app = express();
 
+const commander = require('commander');
+
+commander
+  .version('1.0.0', '-v, --version')
+  .usage('[OPTIONS]...')
+  .option('--address <value>', 'IP address', '172.17.15.69')
+  .option('--port <number>', 'Port', 4000)
+  .parse(process.argv);
+
+const command_line_options = commander.opts();
 
 let broadcaster;
 let simulator;
-const port = 4000;
-const host = '172.17.15.69';//'172.17.15.69'; //'localhost';
+const port = parseInt(command_line_options.port);
+const host = command_line_options.address;//'172.17.15.69'; //'localhost';
 
 const https = require("https");
 
@@ -37,13 +47,21 @@ var window_name = '';
 var char_replacement = [{'Up':'Up','Down':'Down','Left':'Left','Right':'Right'},{'Up':'W','Down':'S','Left':'A','Right':'D'}];
 var clients_ids = [], user_ids_list = [], ai_ids_list = [], ai_ids = [], all_ids = [], all_ids_list = [];
 var init_xdotool = false;
+var video_idx_broadcaster = 0;
 
 
 io.sockets.on("error", e => console.log(e));
 io.sockets.on("connection", socket => { //When a client connects
+  socket.on("broadcaster_load", () => {
+    console.log("broadcaster_log", video_idx_broadcaster, socket.id)
+    socket.emit("simulator", video_idx_broadcaster);
+  });
+
   socket.on("broadcaster", () => { //When the broadcaster client connects
     broadcaster = socket.id;
     socket.broadcast.emit("broadcaster");
+    
+    
     //Initiate key press forwarding to the simulator through xdotool by getting the simulators window name
     if(! init_xdotool){
         exec('xdotool search --name TDW', (error, stdout, stderr) => {
@@ -97,7 +115,7 @@ io.sockets.on("connection", socket => { //When a client connects
     socket.to(all_ids[client_number]).emit("occupancy_map", static_occupancy_map, object_type_coords_map, object_attributes_id)
   });
 
-  socket.on("simulator", (user_ids, ai_agents_ids) => { //When simulator connects
+  socket.on("simulator", (user_ids, ai_agents_ids, video_idx) => { //When simulator connects
     simulator = socket.id;
     user_ids_list = user_ids;
     ai_ids_list = ai_agents_ids;
@@ -105,7 +123,7 @@ io.sockets.on("connection", socket => { //When a client connects
     clients_ids = Array.apply(null, Array(user_ids_list.length));
     ai_ids = Array.apply(null, Array(ai_ids.length));
     all_ids = Array.apply(null, Array(ai_ids.length+user_ids_list.length));
-  
+    video_idx_broadcaster = video_idx;
 
   });
 

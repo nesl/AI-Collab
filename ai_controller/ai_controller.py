@@ -276,6 +276,7 @@ async def offer(request):
     #async def offer_async(server_id, params):
     params = await request.json()
     print(params)
+
     offer = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
     robot_id = params["id"]
     pc = RTCPeerConnection()
@@ -349,6 +350,7 @@ async def offer(request):
     answer = await pc.createAnswer()
     await pc.setLocalDescription(answer)
     print("offer",json.dumps({"sdp": pc.localDescription.sdp, "type": pc.localDescription.type}))
+    
     return web.Response(
         content_type="application/json",
         text=json.dumps(

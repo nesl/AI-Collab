@@ -1,2 +1,2 @@
 #!/bin/bash
-python ai_controller.py --cert-file server.cert --key-file server.key --host 172.17.15.69 
+python ai_controller.py --cert-file server.cert --key-file server.key --host localhost --address "https://localhost:4000"

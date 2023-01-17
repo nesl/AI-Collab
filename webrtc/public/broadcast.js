@@ -171,7 +171,13 @@ window.onunload = window.onbeforeunload = () => {
 const videoElements = [];
 //deviceInfos = navigator.mediaDevices.enumerateDevices();
 
-getDevices().then(gotDevices);
+var first_video_idx = 0;
+socket.on("simulator", (video_idx) => {
+    console.log("simulator")
+    first_video_idx = video_idx;
+    getDevices().then(gotDevices);
+});
+
 
 
 //getStream()
@@ -185,9 +191,19 @@ function getDevices() {
 //Get simulated webcams and their video streams
 
 async function gotDevices(deviceInfos) {
-var v = 0;
-const currentDiv = document.getElementById("videos_div");
-	for (const deviceInfo of deviceInfos) {
+    var v = 0;
+    const currentDiv = document.getElementById("videos_div");
+
+    /*
+    var first_video = 0;
+    const searchParams = new URLSearchParams(window.location.search);
+    
+    if (searchParams.has('v_idx')){
+        first_video = parseInt(searchParams.get('v_idx'));
+    }
+    */
+
+    for (let i = first_video_idx; i < deviceInfos.length; i++) {
 		let videoElement = document.createElement('video')
 		videoElement.playsinline = true;
 		videoElement.autoplay = true;
@@ -196,7 +212,7 @@ const currentDiv = document.getElementById("videos_div");
 		
 		videoElements.push(videoElement);
 		const constraints = {
-		video: { deviceId: deviceInfo.deviceId }
+		video: { deviceId: deviceInfos[i].deviceId }
 		};
 		
 		//console.log(constraints)
@@ -245,3 +261,5 @@ function gotStream(stream,idx) {
 function handleError(error) {
   console.error("Error: ", error);
 }
+
+socket.emit("broadcaster_load");
