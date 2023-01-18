@@ -62,7 +62,7 @@ class Enhanced_Magnebot(Magnebot):
         self.messages = []
         self.grasping = False
         self.past_status = ActionStatus.ongoing
-        self.occupancy = False
+        self.view_radius = 0
 
     
 
@@ -82,6 +82,7 @@ class Simulation(Controller):
         self.terminate = False
         self.local = args.local
         self.options = args
+        self.cfg = cfg
         self.ai_actions = []
 
         ai_spawn_positions = [{"x": -1.4, "y": 0, "z": -1.1},{"x": 0, "y": 0, "z": -1.1}, {"x": 0, "y": 0, "z": -2.1}]
@@ -198,7 +199,7 @@ class Simulation(Controller):
             um.ui_elements = ((bar_id,text_id,timer_text_id))
           
         #Creating occupancy map
-        self.static_occupancy_map = OccupancyMap(cell_size=0.5)        
+        self.static_occupancy_map = OccupancyMap(cell_size=self.cfg['cell_size'])        
 
 
         #Needed to get objects positions
@@ -274,6 +275,7 @@ class Simulation(Controller):
         # Add post-processing.
         commands.extend(get_default_post_processing_commands())
 
+        
         #Create a rug
         self.rug: int = self.get_unique_id()
         commands.extend(self.get_add_physics_object(model_name="carpet_rug",
@@ -297,9 +299,20 @@ class Simulation(Controller):
         self.communicate(commands)
 
         #Generate occupancy map with only environment objects
-        ignore_objects = [um.robot_id for um in self.user_magnebots]
-        ignore_objects.extend([um.robot_id for um in self.ai_magnebots])
+        ignore_objects = []
+        #ignore_objects = [um.robot_id for um in self.user_magnebots]
+        #ignore_objects.extend([um.robot_id for um in self.ai_magnebots])
+        for um in [*self.user_magnebots,*self.ai_magnebots]:
+            ignore_objects.append(um.robot_id)
+            for k in um.static.wheels.keys():
+                ignore_objects.append(um.static.wheels[k])
+            for k in um.static.arm_joints.keys():
+                ignore_objects.append(um.static.arm_joints[k])
+            for k in um.static.magnets.keys():
+                ignore_objects.append(um.static.magnets[k])
+
         ignore_objects.extend(self.graspable_objects)
+        ignore_objects.append(self.rug)
         self.static_occupancy_map.generate(ignore_objects=ignore_objects)
 
         self.communicate([])
@@ -367,9 +380,10 @@ class Simulation(Controller):
 
             #Indicate use of occupancy maps
             @self.sio.event
-            def watcher_ai(agent_id):
+            def watcher_ai(agent_id, view_radius):
                 ai_agent_idx = self.ai_magnebots_ids.index(agent_id)
-                self.ai_magnebots[ai_agent_idx].occupancy = True
+
+                self.ai_magnebots[ai_agent_idx].view_radius = int(view_radius)
                 
                 
             self.sio.connect(address)
@@ -763,21 +777,26 @@ class Simulation(Controller):
             ai_magnebots_positions = [TDWUtils.array_to_vector3(um.dynamic.transform.position + np.array([0,0.5,0])) for um in self.ai_magnebots]
             
             #Prepare occupancy maps and associated metadata
+            #object_attributes_id stores the ids of the objects and magnebots
+            #object_type_coords_map creates a second occupancy map with objects and magnebots
             object_type_coords_map = np.copy(self.static_occupancy_map.occupancy_map)
             min_pos = self.static_occupancy_map.get_occupancy_position(0,0)[0]
-            multiple = 0.5
+            multiple = self.cfg['cell_size']
             object_attributes_id = {}
+            
             for o in self.graspable_objects:
                 pos = self.object_manager.transforms[o].position
-                pos_new = [int((multiple*round(pos[0]/multiple)+min_pos)/multiple), int((multiple*round(pos[2]/multiple)+min_pos)/multiple)]
+                pos_new = [round((pos[0]+abs(min_pos))/multiple), round((pos[2]+abs(min_pos))/multiple)]
+                #2 is for objects
                 object_type_coords_map[pos_new[0],pos_new[1]] = 2
                 if str(pos_new[0])+str(pos_new[1]) not in object_attributes_id:
                     object_attributes_id[str(pos_new[0])+str(pos_new[1])] = []
                 object_attributes_id[str(pos_new[0])+str(pos_new[1])].append(o)
-
+            #pdb.set_trace()
             for o in [*self.user_magnebots,*self.ai_magnebots]:
                 pos = o.dynamic.transform.position
-                pos_new = [int((multiple*round(pos[0]/multiple)+min_pos)/multiple), int((multiple*round(pos[2]/multiple)+min_pos)/multiple)]
+                pos_new = [round((pos[0]+abs(min_pos))/multiple), round((pos[2]+abs(min_pos))/multiple)]
+                #3 is for other magnebots
                 object_type_coords_map[pos_new[0],pos_new[1]] = 3
                 if str(pos_new[0])+str(pos_new[1]) not in object_attributes_id:
                     object_attributes_id[str(pos_new[0])+str(pos_new[1])] = []
@@ -1044,9 +1063,11 @@ class Simulation(Controller):
 
             #Game ends when all dangerous objects are left in the rug
             goal_counter = 0
+            
             for sd in self.dangerous_objects:
                 if np.linalg.norm(self.object_manager.transforms[sd].position-self.object_manager.transforms[self.rug].position) < 1:
                     goal_counter += 1
+            
             if goal_counter == len(self.dangerous_objects):
                 for idx,um in enumerate(self.user_magnebots):
                     txt = um.ui.add_text(text="Success!",
@@ -1069,11 +1090,66 @@ class Simulation(Controller):
                 for magnebot_id in self.user_magnebots_ids:
                     cams[idx+1].send(magnebot_images[magnebot_id])
                     idx += 1
+
+                locations_magnebot_map = {}
                 for m_idx, magnebot_id in enumerate(self.ai_magnebots_ids):
                     cams[idx+1].send(magnebot_images[magnebot_id])
-                    if self.ai_magnebots[m_idx].occupancy:
+
+
+
+
+                    if self.ai_magnebots[m_idx].view_radius:
                         all_idx = all_ids.index(magnebot_id)
-                        self.sio.emit('occupancy_map', (all_idx, json_numpy.dumps(self.static_occupancy_map.occupancy_map), json_numpy.dumps(object_type_coords_map), object_attributes_id))
+                        view_radius = self.ai_magnebots[m_idx].view_radius
+                        if not locations_magnebot_map:
+                            magnebots_locations = np.where(object_type_coords_map == 3)
+                            locations_magnebot_map = {str(j):[magnebots_locations[0][i],magnebots_locations[1][i]] for i in range(len(magnebots_locations[0])) for j in object_attributes_id[str(magnebots_locations[0][i])+str(magnebots_locations[1][i])]}
+
+                        x = locations_magnebot_map[magnebot_id][0]
+                        y = locations_magnebot_map[magnebot_id][1]
+
+                        x_min = max(0,x-view_radius)
+                        y_min = max(0,y-view_radius)
+                        x_max = min(object_type_coords_map.shape[0]-1,x+view_radius)
+                        y_max = min(object_type_coords_map.shape[1]-1,y+view_radius)
+                        #limited_map = np.zeros_like(self.static_occupancy_map.occupancy_map)
+                        
+                        limited_map = np.zeros((view_radius*2+1,view_radius*2+1)) #+1 as we separately count the row/column where the magnebot is currently in
+                        #limited_map[:,:] = self.static_occupancy_map.occupancy_map[x_min:x_max+1,y_min:y_max+1]
+                        limited_map[:,:] = object_type_coords_map[x_min:x_max+1,y_min:y_max+1]
+                        objects_locations = np.where(limited_map > 1)
+                        reduced_metadata = {}
+                        limited_map[x-x_min,y-y_min] = 5
+
+                        for ol in range(len(objects_locations[0])):
+                            rkey = str(objects_locations[0][ol]+x_min)+str(objects_locations[1][ol]+y_min)
+                            rkey2 = str(objects_locations[0][ol])+str(objects_locations[1][ol])
+                            reduced_metadata[rkey2] = object_attributes_id[rkey]
+                        """
+                        for ol in range(len(objects_locations[0])):
+                            rkey = str(objects_locations[0][ol]+x_min)+str(objects_locations[1][ol]+y_min)
+                            pdb.set_trace()
+                            if magnebot_id in object_attributes_id[rkey]:
+                                limited_map[x,y] = 5
+                            else:
+                                limited_map[objects_locations[0][ol],objects_locations[1][ol]] = reduced_object_type_coords_map[objects_locations[0][ol],objects_locations[1][ol]]
+                                rkey2 = str(objects_locations[0][ol])+str(objects_locations[1][ol])
+                                
+                                reduced_metadata[rkey2] = object_attributes_id[rkey]
+                        
+                        
+                        for om in range(len(magnebots_locations[0])):
+                            if magnebots_locations[0][om] >= x_min and magnebots_locations[0][om] <= x_max and magnebots_locations[1][om] >= y_min and magnebots_locations[1][om] <= y_max:
+                                rkey = str(magnebots_locations[0][om])+str(magnebots_locations[1][om])
+                                if not magnebot_id in object_attributes_id[rkey]:
+                                    limited_map[magnebots_locations[0][om]-x_min,magnebots_locations[1][om]-y_min] = 3
+                                    rkey2 = str(magnebots_locations[0][om]-x_min)+str(magnebots_locations[1][om]-y_min)
+                                    reduced_metadata[rkey2] = object_attributes_id[rkey]
+                            
+                        """
+                        #pdb.set_trace()
+                        #limited_map[x_min:x_max+1,y_min:y_max+1] = self.static_occupancy_map.occupancy_map[x_min:x_max+1,y_min:y_max+1]
+                        self.sio.emit('occupancy_map', (all_idx, json_numpy.dumps(limited_map), reduced_metadata))
 
                     idx += 1
                 

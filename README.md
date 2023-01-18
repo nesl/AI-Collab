@@ -48,11 +48,11 @@ The implementation of the WebRTC server was based on [https://github.com/TannerG
 2. Run the simulator using `python simulation.py --address "https://address:port"`
 3. Using your web browser, go to **https://address:port/broadcast.html**. This will present a view with all the camera views being streamed.
 
-### User control of a robot 
+### User Control of a Robot 
 
 1. Using your web browser in the same or a different computer, go to **https://address:port/?client=1**, where the client parameter controls which robot you get assigned. This parameter goes from 1 to the number of user controllable robots you have in the simulation.
 
-### AI control of a robot
+### AI Control of a Robot
 
 1. Change to the **ai_controller** directory and run the **server_command** script. You have to also create a new certificate + key as this script executes an HTTPS server to setup the WebRTC parameters. Inside the **server_command**, specify the certificate, key and host address associated with this server, as well as the address to connect to.
 
@@ -63,9 +63,23 @@ To allow the HTTPS self-signed certificate to work:
 2. Access through the web browser to the address provided by the HTTPS server and accept the certificate
 3. Try again running **server_command** and it should work!
 
-## AI controller
+## AI Controller
 
-The **ai_controller.py** program uses an HTTPS server to negotiate the WebRTC parameters. Socket.IO is used for normal commmunication with the simulator server. The controller uses the same API functions defined in the [Magnebot repository](https://github.com/alters-mit/magnebot/blob/main/doc/manual/magnebot/actions.md). To receive occupancy maps instead of camera images, you can run the **ai_controller.py** program as `python ai_controller.py --use-occupancy`, this way you don't need to make use of the HTTPS server. A sample controller is coded in the **controller** function.
+The **ai_controller.py** program uses an HTTPS server to negotiate the WebRTC parameters. Socket.IO is used for normal commmunication with the simulator server. The controller uses the same API functions defined in the [Magnebot repository](https://github.com/alters-mit/magnebot/blob/main/doc/manual/magnebot/actions.md). To receive occupancy maps of a certain view radius instead of camera images, you can run the **ai_controller.py** program as `python ai_controller.py --use-occupancy --view-radius <number>`, this way you don't need to make use of the HTTPS server. A sample controller is coded in the **controller** function.
+
+### Occupancy Maps
+
+For occupancy maps, the map is divided into cells of the size defined in **simulator/config.yaml**. The parameter *view_radius* specifies how many of these cells will conform the current view around the magnebot being controlled. The next values conform the occupancy map:
+
+*-1: Map boundaries
+*0: No obstacle present
+*1: Ambient obstacle (wall)
+*2: Manipulable object
+*3: Magnebot
+*5: Magnebot being controlled
+
+Note: Right now for some reason there are 1 values around the magnebot
+
 
 ## Interface
 

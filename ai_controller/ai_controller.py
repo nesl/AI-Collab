@@ -33,6 +33,7 @@ frame_queue = ""
 client_number = 1
 robot_id = 0
 use_occupancy = False
+view_radius = 0
 
 address = ''
 
@@ -81,9 +82,9 @@ sio = socketio.Client(ssl_verify=False)
 def connect():
     print("I'm connected!")
     if not use_occupancy:
-        sio.emit("watcher_ai", (client_number, use_occupancy, "https://"+args.host+":"+str(args.port)+"/offer"))
+        sio.emit("watcher_ai", (client_number, use_occupancy, "https://"+args.host+":"+str(args.port)+"/offer", 0))
     else:
-        sio.emit("watcher_ai", (client_number, use_occupancy, ""))
+        sio.emit("watcher_ai", (client_number, use_occupancy, "", view_radius))
     #asyncio.run(main_ai(tracks_received))
 
 #Receiving simulator's robot id
@@ -101,13 +102,15 @@ def watcher_ai(robot_id_r):
 maps = []
 map_ready = False
 @sio.event
-def occupancy_map(static_occupancy_map, object_type_coords_map, object_attributes_id):
+def occupancy_map(object_type_coords_map, object_attributes_id):
     global maps, map_ready
     print("occupancy_map received")
-    s_map = json_numpy.loads(static_occupancy_map)
+    #s_map = json_numpy.loads(static_occupancy_map)
     c_map = json_numpy.loads(object_type_coords_map)
-    maps = (s_map,c_map, object_attributes_id)
+    maps = (c_map, object_attributes_id)
     map_ready = True
+    print(c_map)
+
 
 #Connection error
 @sio.event
@@ -386,7 +389,8 @@ if __name__ == "__main__":
     parser.add_argument("--verbose", "-v", action="count")
     parser.add_argument("--use-occupancy", action='store_true', help="Use occupancy maps instead of images")
     parser.add_argument("--address", default='https://172.17.15.69:4000', help="Address where our simulation is running")
-    parser.add_argument("--robot_number", default=1, help="Robot number to control")
+    parser.add_argument("--robot-number", default=1, help="Robot number to control")
+    parser.add_argument("--view-radius", default=0, help="When using occupancy maps, the view radius")
 
     args = parser.parse_args()
 
@@ -396,6 +400,7 @@ if __name__ == "__main__":
         logging.basicConfig(level=logging.INFO)
 
     use_occupancy = args.use_occupancy 
+    view_radius = args.view_radius
 
     address = args.address
     client_number = int(args.robot_number)
