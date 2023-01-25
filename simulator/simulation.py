@@ -98,18 +98,60 @@ class Simulation(Controller):
 
         #proposed_key_sets = [["UpArrow","DownArrow","RightArrow","LeftArrow","Z","X","C","V","B","N"],["W","S","D","A","H","J","K","L","G","F"],["Alpha5","R","E","Y","U","I","O","P","Alpha0","Alpha9"]]
 
+        
+
+        #Creating occupancy map
+        self.static_occupancy_map = OccupancyMap(cell_size=self.cfg['cell_size'])       
+
+        self.required_strength = {}
+        self.danger_level = {} 
+        self.dangerous_objects = []
+        
+
+        #Add-ons
+        self.add_ons.extend([self.static_occupancy_map])
+
+
+        # Create the scene.
+
+        commands = [#{'$type': 'add_scene','name': 'building_site','url': 'https://tdw-public.s3.amazonaws.com/scenes/linux/2019.1/building_site'}, 
+                    TDWUtils.create_empty_room(20, 20),
+                    self.get_add_material("parquet_long_horizontal_clean",
+                                          library="materials_high.json"),
+                    {"$type": "set_screen_size",
+                     "width": width, #640,
+                     "height": height}, #480},
+                    {"$type": "rotate_directional_light_by",
+                     "angle": 30,
+                     "axis": "pitch"},
+                    {"$type": "create_interior_walls", "walls": [{"x": 6, "y": 1}, {"x": 6, "y": 2},{"x": 6, "y": 3},{"x": 6, "y": 4},{"x": 6, "y": 5},{"x": 1, "y": 6},{"x": 2, "y": 6},{"x": 3, "y": 6},{"x": 4, "y": 6},{"x": 5, "y": 6}]},
+                    {"$type": "create_interior_walls", "walls": [{"x": 14, "y": 1}, {"x": 14, "y": 2},{"x": 14, "y": 3},{"x": 14, "y": 4},{"x": 14, "y": 5},{"x": 19, "y": 6},{"x": 18, "y": 6},{"x": 17, "y": 6},{"x": 16, "y": 6},{"x": 15, "y": 6}]},   
+                    {"$type": "create_interior_walls", "walls": [{"x": 6, "y": 19}, {"x": 6, "y": 18},{"x": 6, "y": 17},{"x": 6, "y": 16},{"x": 6, "y": 15},{"x": 1, "y": 14},{"x": 2, "y": 14},{"x": 3, "y": 14},{"x": 4, "y": 14},{"x": 5, "y": 14}]},
+                    {"$type": "create_interior_walls", "walls": [{"x": 14, "y": 19}, {"x": 14, "y": 18},{"x": 14, "y": 17},{"x": 14, "y": 16},{"x": 14, "y": 15},{"x": 19, "y": 14},{"x": 18, "y": 14},{"x": 17, "y": 14},{"x": 16, "y": 14},{"x": 15, "y": 14}]}]
+        
+        
+
+        
+
+        self.communicate(commands)
+
+        self.static_occupancy_map.generate() #Get occupancy map only with walls
+        
+        self.communicate([])
+        
+        #print(self.static_occupancy_map.occupancy_map[:20,:20])
+        #pdb.set_trace()
+
         #Create ai magnebots
         for ai_idx in range(num_ais):                                   
             self.ai_magnebots.append(Enhanced_Magnebot(robot_id=self.get_unique_id(), position=ai_spawn_positions[ai_idx],image_frequency=ImageFrequency.always, controlled_by='ai'))
-
+        
         #Create user magnebots
         for us_idx in range(num_users):
             self.user_magnebots.append(Enhanced_Magnebot(robot_id=self.get_unique_id(), position=user_spawn_positions[us_idx], image_frequency=ImageFrequency.always, pass_masks=['_img'],key_set=proposed_key_sets[us_idx], controlled_by='human'))
-                                           
-                                           
-                  
-        
-        
+
+
+
         reticule_size = 9
         # Create a reticule.
         arr = np.zeros(shape=(reticule_size, reticule_size), dtype=np.uint8)
@@ -197,43 +239,16 @@ class Simulation(Controller):
             self.uis.append(ui)
             um.ui = ui
             um.ui_elements = ((bar_id,text_id,timer_text_id))
-          
-        #Creating occupancy map
-        self.static_occupancy_map = OccupancyMap(cell_size=self.cfg['cell_size'])        
 
 
         #Needed to get objects positions
         self.object_manager: ObjectManager = ObjectManager()
 
-        self.required_strength = {}
-        self.danger_level = {} 
-        self.dangerous_objects = []
-        
-        #Add-ons
-        self.add_ons.extend([*self.ai_magnebots,  *self.user_magnebots, self.object_manager, *self.uis, self.static_occupancy_map])
+        self.add_ons.extend([*self.ai_magnebots,  *self.user_magnebots, self.object_manager, *self.uis])
 
+        #self.communicate([])
 
-        # Create the scene.
-
-        commands = [#{'$type': 'add_scene','name': 'building_site','url': 'https://tdw-public.s3.amazonaws.com/scenes/linux/2019.1/building_site'}, 
-                    TDWUtils.create_empty_room(20, 20),
-                    self.get_add_material("parquet_long_horizontal_clean",
-                                          library="materials_high.json"),
-                    {"$type": "set_screen_size",
-                     "width": width, #640,
-                     "height": height}, #480},
-                    {"$type": "rotate_directional_light_by",
-                     "angle": 30,
-                     "axis": "pitch"},
-                    {"$type": "create_interior_walls", "walls": [{"x": 6, "y": 1}, {"x": 6, "y": 2},{"x": 6, "y": 3},{"x": 6, "y": 4},{"x": 6, "y": 5},{"x": 1, "y": 6},{"x": 2, "y": 6},{"x": 3, "y": 6},{"x": 4, "y": 6},{"x": 5, "y": 6}]},
-                    {"$type": "create_interior_walls", "walls": [{"x": 14, "y": 1}, {"x": 14, "y": 2},{"x": 14, "y": 3},{"x": 14, "y": 4},{"x": 14, "y": 5},{"x": 19, "y": 6},{"x": 18, "y": 6},{"x": 17, "y": 6},{"x": 16, "y": 6},{"x": 15, "y": 6}]},   
-                    {"$type": "create_interior_walls", "walls": [{"x": 6, "y": 19}, {"x": 6, "y": 18},{"x": 6, "y": 17},{"x": 6, "y": 16},{"x": 6, "y": 15},{"x": 1, "y": 14},{"x": 2, "y": 14},{"x": 3, "y": 14},{"x": 4, "y": 14},{"x": 5, "y": 14}]},
-                    {"$type": "create_interior_walls", "walls": [{"x": 14, "y": 19}, {"x": 14, "y": 18},{"x": 14, "y": 17},{"x": 14, "y": 16},{"x": 14, "y": 15},{"x": 19, "y": 14},{"x": 18, "y": 14},{"x": 17, "y": 14},{"x": 16, "y": 14},{"x": 15, "y": 14}]}]
-        
-        
-
-        
-
+        commands = []
 
         #Instantiate and locate objects
         max_coord = 8
@@ -298,25 +313,15 @@ class Simulation(Controller):
 
         self.communicate(commands)
 
-        #Generate occupancy map with only environment objects
-        ignore_objects = []
-        #ignore_objects = [um.robot_id for um in self.user_magnebots]
-        #ignore_objects.extend([um.robot_id for um in self.ai_magnebots])
-        for um in [*self.user_magnebots,*self.ai_magnebots]:
-            ignore_objects.append(um.robot_id)
-            for k in um.static.wheels.keys():
-                ignore_objects.append(um.static.wheels[k])
-            for k in um.static.arm_joints.keys():
-                ignore_objects.append(um.static.arm_joints[k])
-            for k in um.static.magnets.keys():
-                ignore_objects.append(um.static.magnets[k])
 
-        ignore_objects.extend(self.graspable_objects)
-        ignore_objects.append(self.rug)
-        self.static_occupancy_map.generate(ignore_objects=ignore_objects)
 
-        self.communicate([])
 
+
+        
+
+        #pdb.set_trace()
+
+        
         #print(self.static_occupancy_map.occupancy_map)
 
 
@@ -1096,7 +1101,7 @@ class Simulation(Controller):
                     cams[idx+1].send(magnebot_images[magnebot_id])
 
 
-
+                    #self.ai_magnebots[m_idx].view_radius = 5 #DEBUG
 
                     if self.ai_magnebots[m_idx].view_radius:
                         all_idx = all_ids.index(magnebot_id)
@@ -1147,6 +1152,8 @@ class Simulation(Controller):
                                     reduced_metadata[rkey2] = object_attributes_id[rkey]
                             
                         """
+                        #print(limited_map)
+
                         #pdb.set_trace()
                         #limited_map[x_min:x_max+1,y_min:y_max+1] = self.static_occupancy_map.occupancy_map[x_min:x_max+1,y_min:y_max+1]
                         self.sio.emit('occupancy_map', (all_idx, json_numpy.dumps(limited_map), reduced_metadata))

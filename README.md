@@ -58,7 +58,7 @@ The implementation of the WebRTC server was based on [https://github.com/TannerG
 
 #### Note
 
-To allow the HTTPS self-signed certificate to work:
+To make the HTTPS self-signed certificate work:
 1. Run **server_command**
 2. Access through the web browser to the address provided by the HTTPS server and accept the certificate
 3. Try again running **server_command** and it should work!
@@ -71,14 +71,13 @@ The **ai_controller.py** program uses an HTTPS server to negotiate the WebRTC pa
 
 For occupancy maps, the map is divided into cells of the size defined in **simulator/config.yaml**. The parameter *view_radius* specifies how many of these cells will conform the current view around the magnebot being controlled. The next values conform the occupancy map:
 
-*-1: Map boundaries
-*0: No obstacle present
-*1: Ambient obstacle (wall)
-*2: Manipulable object
-*3: Magnebot
-*5: Magnebot being controlled
+* -1: Map boundaries
+* 0: No obstacle present
+* 1: Ambient obstacle (wall)
+* 2: Manipulable object
+* 3: Magnebot
+* 5: Magnebot being controlled
 
-Note: Right now for some reason there are 1 values around the magnebot
 
 
 ## Interface
