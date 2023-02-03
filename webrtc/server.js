@@ -14,6 +14,7 @@ const command_line_options = commander.opts();
 
 let broadcaster;
 let simulator;
+var map_config;
 const port = parseInt(command_line_options.port);
 const host = command_line_options.address;//'172.17.15.69'; //'localhost';
 
@@ -87,18 +88,18 @@ io.sockets.on("connection", socket => { //When a client connects
     }
     */
   });
-  socket.on("watcher_ai", (client_number, use_occupancy, server_address, view_radius) => { //When an ai client connects
-    
+  socket.on("watcher_ai", (client_number, use_occupancy, server_address, view_radius, centered) => { //When an ai client connects
+    console.log("watcher_ai")
     if(! use_occupancy){
         client_number_adapted = client_number + user_ids_list.length;
         socket.to(broadcaster).emit("watcher_ai", socket.id, client_number_adapted, server_address, ai_ids_list[client_number-1]);
     } else {
-        socket.to(simulator).emit("watcher_ai", ai_ids_list[client_number-1], view_radius)
+        socket.to(simulator).emit("watcher_ai", ai_ids_list[client_number-1], view_radius, centered)
     }
     ai_ids[client_number-1] = socket.id;
     all_ids[client_number-1+user_ids_list.length] = socket.id;
 
-    socket.to(socket.id).emit("watcher_ai", ai_ids_list[client_number-1]);
+    socket.emit("watcher_ai", ai_ids_list[client_number-1], map_config);
     /*
     if (ai_ids.includes(socket.id) == false){
         ai_ids.push(socket.id);
@@ -115,7 +116,7 @@ io.sockets.on("connection", socket => { //When a client connects
     socket.to(all_ids[client_number]).emit("occupancy_map", object_type_coords_map, object_attributes_id)
   });
 
-  socket.on("simulator", (user_ids, ai_agents_ids, video_idx) => { //When simulator connects
+  socket.on("simulator", (user_ids, ai_agents_ids, video_idx, config) => { //When simulator connects
     simulator = socket.id;
     user_ids_list = user_ids;
     ai_ids_list = ai_agents_ids;
@@ -124,6 +125,7 @@ io.sockets.on("connection", socket => { //When a client connects
     ai_ids = Array.apply(null, Array(ai_ids.length));
     all_ids = Array.apply(null, Array(ai_ids.length+user_ids_list.length));
     video_idx_broadcaster = video_idx;
+    map_config = config;
 
   });
 

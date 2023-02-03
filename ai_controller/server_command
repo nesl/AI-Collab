@@ -1,2 +1,2 @@
 #!/bin/bash
-python ai_controller.py --cert-file server.cert --key-file server.key --host 172.17.15.69 --address "https://172.17.15.69:4000" --use-occupancy --view-radius 5
+python ai_controller.py --cert-file server.cert --key-file server.key --host localhost --address "https://localhost:50000"  --use-occupancy --view-radius 5

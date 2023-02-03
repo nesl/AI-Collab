@@ -8,370 +8,653 @@ import uuid
 
 import json_numpy
 
-from magnebot import ActionStatus
+from magnebot import ActionStatus, Arm
 import cv2
 from aiohttp import web
 from av import VideoFrame
 import aiohttp_cors
 import socketio
 import pdb
+import numpy as np
 
 from enum import Enum
 
 from aiortc import MediaStreamTrack, RTCPeerConnection, RTCSessionDescription
 from aiortc.contrib.media import MediaBlackhole, MediaPlayer, MediaRecorder, MediaRelay
 
-ROOT = os.path.dirname(__file__)
-
-logger = logging.getLogger("pc")
-pcs = set()
-relay = MediaRelay()
-tracks_received = 0
-
-frame_queue = ""
-
-client_number = 1
-robot_id = 0
-use_occupancy = False
-view_radius = 0
-
-address = ''
+import gymnasium as gym
+from gym import spaces
 
 
+class AICollabEnv(gym.Env):
 
-#### ROBOT API ######################################################################################
-
-#Forwarded magnebot API from https://github.com/alters-mit/magnebot/blob/main/doc/manual/magnebot/actions.md\
-
-def turn_by(angle, aligned_at=1):
-    return ["turn_by", str(angle), "aligned_at=" + str(aligned_at)]
-def turn_to(target, aligned_at=1):
-    return ["turn_to", str(target), "aligned_at=" + str(aligned_at)]
-def move_by(distance, arrived_at=0.1):
-    return ["move_by", str(distance), "arrived_at=" + str(arrived_at)]
-def move_to(target, arrived_at=0.1, aligned_at=1, arrived_offset=0):
-    return ["move_to", str(target), "arrived_at=" + str(arrived_at), "aligned_at=" + str(aligned_at), "arrived_offset="+ str(arrived_offset)]
-def reach_for(target, arm):
-    return ["reach_for", str(target), str(arm)]
-def grasp(target, arm):
-    return ["grasp", str(target), str(arm)]
-def drop(target, arm):
-    return ["drop", str(target), str(arm)]
-def reset_arm(arm):
-    return ["reset_arm", str(arm)]
-def reset_position():
-    return ["reset_position"]
-def rotate_camera(roll, pitch, yaw):
-    return ["rotate_camera", str(roll), str(pitch), str(yaw)]
-def look_at(target):
-    return ["look_at", str(target)]
-def move_camera(position):
-    return ["move_camera", str(position)]
-def reset_camera():
-    return ["reset_camera"]
-def slide_torso(height):
-    return ["slide_torso", str(height)]
+    #### MAIN & SETUP OF HTTP SERVER ##############################################################################
 
 
-#### SOCKET IO message function definitions ########################################################
+    def __init__(self, use_occupancy,view_radius, client_number, host, port):
 
-sio = socketio.Client(ssl_verify=False)
+        self.pcs = set()
+        self.relay = MediaRelay()
+        self.tracks_received = 0
 
-#When first connecting
-@sio.event
-def connect():
-    print("I'm connected!")
-    if not use_occupancy:
-        sio.emit("watcher_ai", (client_number, use_occupancy, "https://"+args.host+":"+str(args.port)+"/offer", 0))
-    else:
-        sio.emit("watcher_ai", (client_number, use_occupancy, "", view_radius))
-    #asyncio.run(main_ai(tracks_received))
+        self.frame_queue = ""
 
-#Receiving simulator's robot id
-@sio.event
-def watcher_ai(robot_id_r):
-    global robot_id
-    print("Received id", robot_id_r)
-    robot_id = robot_id_r
-
-    if use_occupancy: #When using only occupancy maps, run the main processing function here
-        asyncio.run(main_ai())
+        self.client_number = client_number
+        self.robot_id = 0
+        self.use_occupancy = use_occupancy
+        self.view_radius = view_radius
+        self.centered_view = 0
+        self.host = host
+        self.port = port
+        
 
 
-#Receiving occupancy map
-maps = []
-map_ready = False
-@sio.event
-def occupancy_map(object_type_coords_map, object_attributes_id):
-    global maps, map_ready
-    print("occupancy_map received")
-    #s_map = json_numpy.loads(static_occupancy_map)
-    c_map = json_numpy.loads(object_type_coords_map)
-    maps = (c_map, object_attributes_id)
-    map_ready = True
-    print(c_map)
+        #### SOCKET IO message function definitions ########################################################
+
+        self.sio = socketio.Client(ssl_verify=False)
+
+        #When first connecting
+        @self.sio.event
+        def connect():
+            print("I'm connected!")
+            if not self.use_occupancy:
+                self.sio.emit("watcher_ai", (self.client_number, self.use_occupancy, "https://"+self.host+":"+str(self.port)+"/offer", 0, 0))
+            else:
+                self.sio.emit("watcher_ai", (self.client_number, self.use_occupancy, "", self.view_radius, self.centered_view))
+            #asyncio.run(main_ai(tracks_received))
+
+        #Receiving simulator's robot id
+        @self.sio.event
+        def watcher_ai(robot_id_r, occupancy_map_config):
+
+            print("Received id", robot_id_r)
+            self.robot_id = robot_id_r
+
+            if self.use_occupancy: #When using only occupancy maps, run the main processing function here
+                self.map_config = occupancy_map_config
+                asyncio.run(self.main_ai())
 
 
-#Connection error
-@sio.event
-def connect_error(data):
-    print("The connection failed!")
+        #Receiving occupancy map
+        self.maps = []
+        self.map_ready = False
+        self.map_config = {}
+        @self.sio.event
+        def occupancy_map(object_type_coords_map, object_attributes_id):
+
+            #print("occupancy_map received")
+            #s_map = json_numpy.loads(static_occupancy_map)
+            c_map = json_numpy.loads(object_type_coords_map)
+            self.maps = (c_map, object_attributes_id)
+            self.map_ready = True
+            #print(c_map)
 
 
-#Disconnect
-@sio.event
-def disconnect():
-    print("I'm disconnected!")
+        #Connection error
+        @self.sio.event
+        def connect_error(data):
+            print("The connection failed!")
 
-#Received a target object
-@sio.event
-def set_goal(agent_id,obj_id):
-    print("Received new goal")
-    #self.target[agent_id] = obj_id
 
-#Update neighbor list
-neighbors = []
-@sio.event
-def neighbors_update(neighbors_list):
-    global neighbors
-    print('neighbors update', neighbors_list)
-    neighbors = neighbors_list
+        #Disconnect
+        @self.sio.event
+        def disconnect():
+            print("I'm disconnected!")
 
-#Update object list
-objects = []
-@sio.event
-def objects_update(object_list):
-    global objects
-    objects = object_list
+        #Received a target object
+        @self.sio.event
+        def set_goal(agent_id,obj_id):
+            print("Received new goal")
+            #self.target[agent_id] = obj_id
+
+        #Update neighbor list
+        self.neighbors = {}
+        self.new_neighbors = False
+        @self.sio.event
+        def neighbors_update(neighbors_dict):
+
+            print('neighbors update', neighbors_dict)
+            self.neighbors.update(neighbors_dict)
+            self.new_neighbors = True
+
+        #Update object list
+        self.objects = {}
+        self.new_objects = False
+        @self.sio.event
+        def objects_update(object_dict):
+
+            
+            self.objects.update(object_dict)
+            
+            print("objects_update", object_dict)
+            self.new_objects = True
+            
+        #Receive messages from other agents
+        self.messages = []
+        @self.sio.event
+        def message(message, source_agent_id):
+
+            self.messages.append((source_agent_id,message))
+            print("message", message, source_agent_id)
+
+        #Receive status updates of our agent
+        self.action_status = -1
+        @self.sio.event
+        def ai_status(status):
+
+            self.action_status = ActionStatus(status)
+            print("status", ActionStatus(status))
+
+
+
+        
+    def run(self, address, cert_file, key_file):
     
-#Receive messages from other agents
-messages = []
-@sio.event
-def message(message, source_agent_id):
-    global messages
-    messages.append((source_agent_id,message))
-    print("message", message, source_agent_id)
-
-#Receive status updates of our agent
-action_status = -1
-@sio.event
-def ai_status(status):
-    global action_status
-    action_status = ActionStatus(status)
-    print("status", ActionStatus(status))
-
-
-
-
-#### CONTROLLER DEFINITION #####################################################################
-
-#Function that retrieves the newest occupancy map and makes some pre-processing if needed
-async def get_map(frame_queue): 
-    global map_ready
-
-    while True:
-
-        if map_ready: #Maps has all the occupancy maps and metadata
-            map_ready = False
-            await frame_queue.put(maps)
+        if self.use_occupancy:
+            self.sio.connect(address)
+            #main_thread()
         else:
-            await asyncio.sleep(0.01)
-        
+            if cert_file:
+                #ssl_context = ssl.SSLContext()
+                ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+                ssl_context.load_cert_chain(cert_file, key_file)
+            else:
+                ssl_context = None
+
+            app = web.Application()
             
-#Function that retrieves the newest video frame and makes some pre-processing if needed
-async def get_frame(track,frame_queue):
-
-    while True:
-        frame = await track.recv()
-        print("Processing frame")
-        #frame.to_image() (av.VideoFrame)
-        await frame_queue.put(frame)
-
-#Controller states
-class State(Enum):
-    waiting = 1
-    moving_to_objective = 2
-    moving_to_objective_waiting = 3
-
-
-#Function that waits for input and then makes the robot actuate 
-async def actuate(frame_queue):
-    global messages
-
-    state = State.waiting
-    data = ""
-
-    #Robot controller: messages are received async from other robots and data is whatever needs to be saved for future calls to the controller
-    def controller(state, messages, data):
-        action_message = []
-
-        #Wait until specific message is received from a human controlled robot
-        if state == State.waiting:
-            if messages:
+            async def on_shutdown(app):
+                # close peer connections
+                coros = [pc.close() for pc in self.pcs]
+                await asyncio.gather(*coros)
+                self.pcs.clear()
                 
-                message = messages.pop(0)
-                if "I need help with " in message[1]:
-                    if "sensing" in message[1]:
-                        pass
-                    elif "lifting" in message[1]:
-                        data = int(message[1][25:])
-                        if sio:
-                            sio.emit("message", ("I will help " + message[0], neighbors,str(robot_id)))
-                        state = State.moving_to_objective
-                        
-        #Move close to object specified by human controlled robot
-        elif state == State.moving_to_objective:
-            #pdb.set_trace()
-            if action_status == ActionStatus.tipping:
-                action_message.append(reset_position())
-            elif action_status != ActionStatus.ongoing:
-                print("moving to objective")
-                action_message.append(move_to(target=data, arrived_offset=0.5))
-                state = State.moving_to_objective_waiting
+            app.on_shutdown.append(on_shutdown)
+            #app.router.add_get("/", index)
+            #app.router.add_get("/client.js", javascript)
+            app.router.add_post("/offer", self.offer)
 
-        #Wait until the robot starts actuating
-        elif state == State.moving_to_objective_waiting:
+            cors = aiohttp_cors.setup(app, defaults={
+              "*": aiohttp_cors.ResourceOptions(
+                allow_credentials=True,
+                expose_headers="*",
+                allow_headers="*"
+              )
+            })
 
-            if action_status == ActionStatus.ongoing or action_status == ActionStatus.success:
-                print("waited for moving to objective")
-                state = State.moving_to_objective
+            for route in list(app.router.routes()):
+                cors.add(route)
+
+            self.sio.connect(address)
+            web.run_app(
+                app, access_log=None, host=self.host, port=self.port, ssl_context=ssl_context
+            )
 
 
-        return action_message,state,data
 
-    while True:
-        frame = await frame_queue.get()
-        print("Frame actuated")
+    #### GYM SETUP ######################################################################################
+    
+    def gym_setup(self):
+    
+        map_size = self.map_config['num_cells'][0]
+        self.action_space = spaces.Discrete(11)
         
-        action_message,state,data = controller(state,messages, data)
+        self.observation_space = spaces.Box(0, map_size - 1, shape=(2,), dtype=int)
+        """
+        self.observation_space = spaces.Dict(
+            {
+                "frame" : spaces.Box(0, map_size - 1, shape=(2,), dtype=int),
+                "message" : spaces.Text(1000)
+            }
+        )
+        """
+    
+    def step(self, action):
+        
+        world_state, objects_info, neighbors_info = self.take_action(action)
+        #observed_state = {"frame": world_state, "message": self.messages}
+        observed_state = world_state
+        info = {}
+        info['objects'] = objects_info
+        info['neighbors'] = neighbors_info
+        info['messages'] = self.messages
+        
+        reward = 0
+        terminated = False
+        
 
-        if action_message: #Action message is an action to take by the robot that will be communicated to the simulator
-            print("action", action_message)
-            sio.emit("ai_action", (action_message, str(robot_id)))
 
+        return observation, reward, terminated, False, info
+        
+        
+    #### ROBOT API ######################################################################################
 
-#These two next functions are used to initiate the control for the robot when using only occupancy maps
-def main_thread():
-    asyncio.run(main_ai())
+    #Forwarded magnebot API from https://github.com/alters-mit/magnebot/blob/main/doc/manual/magnebot/actions.md\
 
-async def main_ai():
-    #global tracks_received,frame_queue
+    def turn_by(self, angle, aligned_at=1):
+        return ["turn_by", str(angle), "aligned_at=" + str(aligned_at)]
+    def turn_to(self, target, aligned_at=1):
+        return ["turn_to", str(target), "aligned_at=" + str(aligned_at)]
+    def move_by(self, distance, arrived_at=0.1):
+        return ["move_by", str(distance), "arrived_at=" + str(arrived_at)]
+    def move_to(self, target, arrived_at=0.1, aligned_at=1, arrived_offset=0):
+        return ["move_to", str(target), "arrived_at=" + str(arrived_at), "aligned_at=" + str(aligned_at), "arrived_offset="+ str(arrived_offset)]
+    def reach_for(self, target, arm):
+        return ["reach_for", str(target), str(arm)]
+    def grasp(self, target, arm):
+        return ["grasp", str(target), str(arm)]
+    def drop(self, target, arm):
+        return ["drop", str(target), str(arm)]
+    def reset_arm(self, arm):
+        return ["reset_arm", str(arm)]
+    def reset_position(self):
+        return ["reset_position"]
+    def rotate_camera(self, roll, pitch, yaw):
+        return ["rotate_camera", str(roll), str(pitch), str(yaw)]
+    def look_at(self, target):
+        return ["look_at", str(target)]
+    def move_camera(self, position):
+        return ["move_camera", str(position)]
+    def reset_camera(self):
+        return ["reset_camera"]
+    def slide_torso(self, height):
+        return ["slide_torso", str(height)]
+    def danger_sensor_reading(self, robot_id):
+        return ["danger_sensor_reading", str(robot_id)]
+
 
     
-    #tracks_received = asyncio.Queue()
-    
-    frame_queue = asyncio.Queue()
-    #print("waiting queue")
-    #track = await tracks_received.get()
-    print("waiting gather")
-    #await asyncio.gather(get_frame(track,frame_queue),actuate(frame_queue))
-    await asyncio.gather(get_map(frame_queue),actuate(frame_queue))
 
 
 
-#### WEBRTC SETUP #####################################################################################
 
-#This function is used as part of the setup of WebRTC
-async def offer(request):
-    global tracks_received,frame_queue,robot_id
+    #### CONTROLLER DEFINITION #####################################################################
 
-    print("offer here")
-    #async def offer_async(server_id, params):
-    params = await request.json()
-    print(params)
-
-    offer = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
-    robot_id = params["id"]
-    pc = RTCPeerConnection()
-    pc_id = "PeerConnection(%s)" % uuid.uuid4()
-    pcs.add(pc)
-
-    def log_info(msg, *args):
-        logger.info(pc_id + " " + msg, *args)
-
-    log_info("Created for %s", request.remote)
-
-    # prepare local media
-
-    if args.record_to:
-        recorder = MediaRecorder(args.record_to)
-    else:
-        recorder = MediaBlackhole()
+    #Function that retrieves the newest occupancy map and makes some pre-processing if needed
+    async def get_map(self, frame_queue): 
 
 
+        while True:
 
-    @pc.on("connectionstatechange")
-    async def on_connectionstatechange():
-        log_info("Connection state is %s", pc.connectionState)
-        if pc.connectionState == "failed":
-            await pc.close()
-            pcs.discard(pc)
-
-   
-
-    @pc.on("track")
-    async def on_track(track):
-        global tracks_received,frame_queue
-
-        log_info("Track %s received", track.kind)
-
-
-        if track.kind == "video":
-
-
-            if args.record_to:
-                print("added record")
-                recorder.addTrack(relay.subscribe(track))
-
-            if not tracks_received:
-                #processing_thread = threading.Thread(target=main_thread, args = (track, ))
-                #processing_thread.daemon = True
-                #processing_thread.start()
-                frame_queue = asyncio.Queue()
-                #print("waiting queue")
-                #track = await tracks_received.get()
-                print("waiting gather")
-                tracks_received += 1
-                await asyncio.gather(get_frame(track,frame_queue),actuate(frame_queue))
-            #tracks_received.append(relay.subscribe(track))
+            if self.map_ready: #Maps has all the occupancy maps and metadata
+                self.map_ready = False
+                await self.frame_queue.put(self.maps)
+            else:
+                await asyncio.sleep(0.01)
             
-            #print(tracks_received.qsize())
+                
+    #Function that retrieves the newest video frame and makes some pre-processing if needed
+    async def get_frame(self, track,frame_queue):
+
+        while True:
+            frame = await track.recv()
+            print("Processing frame")
+            #frame.to_image() (av.VideoFrame)
+            await self.frame_queue.put(frame)
+
+    #Controller states
+    class State(Enum):
+        take_action = 1
+        waiting_ongoing = 2
+        grasping_object = 3
+        reseting_arm = 4
+        reverse_after_dropping = 5
+        wait_objects = 6
+        action_end = 7
+        
+    class Action(Enum):
+        move_up = 0
+        move_down = 1
+        move_left = 2
+        move_right = 3
+        move_up_right = 4
+        move_up_left = 5
+        move_down_right = 6
+        move_down_left = 7
+        grab_object = 8
+        drop_object = 9
+        danger_sensing = 10
+
+
+    def take_action(self, action):
+    
+        state = self.State.take_action
+        data = {}
+        terminated = False
+        objects_obs = []
+        neighbors_obs = []
         
             
+        while not self.map_ready:
+            pass
+
+        while not terminated:
+            #frame = await self.frame_queue.get()
+            if self.map_ready:
+                frame = self.maps
+                self.map_ready = False
+            #print("Frame actuated")
             
+            action_message,state,data,terminated = self.controller(action, frame, state, data)
 
-        @track.on("ended")
-        async def on_ended():
-            log_info("Track %s ended", track.kind)
-            await recorder.stop()
-
-    # handle offer
-    await pc.setRemoteDescription(offer)
-    await recorder.start()
-
-    # send answer
-    answer = await pc.createAnswer()
-    await pc.setLocalDescription(answer)
-    print("offer",json.dumps({"sdp": pc.localDescription.sdp, "type": pc.localDescription.type}))
+            if action_message: #Action message is an action to take by the robot that will be communicated to the simulator
+                print("action", action_message)
+                self.sio.emit("ai_action", (action_message, str(self.robot_id)))
+                
+        if self.new_objects:
+            objects_obs = self.objects
+        if self.new_neighbors:
+            neighbors_obs = self.neighbors
+        
+        self.new_objects = False
+        self.new_neighbors = False
+            
+        return frame, objects_obs, neighbors_obs
     
-    return web.Response(
-        content_type="application/json",
-        text=json.dumps(
-            {"sdp": pc.localDescription.sdp, "type": pc.localDescription.type}
-        ),
-    )
+    
+    #Function that waits for input and then makes the robot actuate 
+    async def actuate(self, frame_queue):
+
+
+        state = self.State.waiting
+        data = {}
+
+        #Robot controller: messages are received async from other robots and data is whatever needs to be saved for future calls to the controller
+        def simple_controller(frame, state, messages, data):
+            action_message = []
+
+            #Wait until specific message is received from a human controlled robot
+            if state == self.State.waiting:
+                if messages:
+                    
+                    message = messages.pop(0)
+                    if "I need help with " in message[1]:
+                        if "sensing" in message[1]:
+                            pass
+                        elif "lifting" in message[1]:
+                            data = int(message[1][25:])
+                            if self.sio:
+                                self.sio.emit("message", ("I will help " + message[0], self.neighbors,str(self.robot_id)))
+                            state = self.State.moving_to_objective
+                            
+            #Move close to object specified by human controlled robot
+            elif state == self.State.moving_to_objective:
+                #pdb.set_trace()
+                if self.action_status == ActionStatus.tipping:
+                    action_message.append(reset_position())
+                elif self.action_status != ActionStatus.ongoing:
+                    print("moving to objective")
+                    action_message.append(move_to(target=data, arrived_offset=0.5))
+                    state = self.State.moving_to_objective_waiting
+
+            #Wait until the robot starts actuating
+            elif state == self.State.moving_to_objective_waiting:
+
+                if self.action_status == ActionStatus.ongoing or self.action_status == ActionStatus.success:
+                    print("waited for moving to objective")
+                    state = self.State.moving_to_objective
+
+
+            return action_message,state,data
+            
+        
+            
+        while not self.map_ready:
+            pass
+
+        while True:
+            #frame = await self.frame_queue.get()
+            if self.map_ready:
+                frame = self.maps
+                self.map_ready = False
+            #print("Frame actuated")
+            
+            action_message,state,data = self.controller(frame, state, data)
+
+            if action_message: #Action message is an action to take by the robot that will be communicated to the simulator
+                print("action", action_message)
+                self.sio.emit("ai_action", (action_message, str(self.robot_id)))
+
+
+    #Only works for occupancy maps not centered in magnebot
+    def controller(self, action, frame, state, data):
+
+        
+        action_message = []
+        movement_commands = 8
+        
+        occupancy_map = frame[0]
+        objects_metadata = frame[1]
+        terminated = False
+
+        if state == self.State.take_action:
+            if self.action_status != ActionStatus.ongoing:
+            
+                print(occupancy_map[10:20,15:30])
+            
+                self.action_status = -1
+                ego_location = np.where(occupancy_map == 5)
+                #pdb.set_trace()
+                ego_location = np.array([ego_location[0][0],ego_location[1][0]])
+
+
+                if action < movement_commands:
+                
+                    if action == self.Action.move_up:
+                        if ego_location[0] < occupancy_map.shape[0]-1:
+                            ego_location[0] += 1
+                    elif action == self.Action.move_right:
+                        if ego_location[1] > 0:
+                            ego_location[1] -= 1
+                    elif action == self.Action.move_down:
+                        if ego_location[0] > 0:
+                            ego_location[0] -= 1
+                    elif action == self.Action.move_left:
+                        if ego_location[1] < occupancy_map.shape[1]-1:
+                            ego_location[1] += 1
+                    elif action == self.Action.move_up_right:
+                        if ego_location[0] < occupancy_map.shape[0]-1 and ego_location[1] > 0:
+                            ego_location += [1,-1]
+                    elif action == self.Action.move_up_left:
+                        if ego_location[0] < occupancy_map.shape[0]-1 and ego_location[1] < occupancy_map.shape[1]-1:
+                            ego_location += [1,1]
+                    elif action == self.Action.move_down_right:
+                        if ego_location[0] > 0 and ego_location[1] > 0:
+                            ego_location += [-1,-1]
+                    elif action == self.Action.move_down_left:
+                        if ego_location[0] > 0 and ego_location[1] < occupancy_map.shape[1]-1:
+                            ego_location += [-1,1]
+
+                    #pdb.set_trace()
+                    target_coordinates = np.array(self.map_config['edge_coordinate']) + ego_location*self.map_config['cell_size']
+                    target = {"x": target_coordinates[0],"y": 0, "z": target_coordinates[1]}
+                    state = self.State.waiting_ongoing
+                    data["next_state"] = self.State.action_end
+                    action_message.append(self.move_to(target=target))
+                    
+                elif action == self.Action.grab_object:
+                    object_location = np.where(occupancy_map == 2)
+                    key = str(object_location[0][0]) + str(object_location[1][0])
+                    action_message.append(self.turn_to(objects_metadata[key][0]))
+                   
+                    state = self.State.waiting_ongoing
+                    data["next_state"] = self.State.grasping_object
+                    data["object"] = objects_metadata[key][0]
+                    
+                elif action == self.Action.drop_object:
+
+                    action_message.append(self.drop(data["object"], Arm.left))
+                   
+                    state = self.State.waiting_ongoing
+                    data["next_state"] = self.State.reverse_after_dropping
+                    
+                elif action == self.Action.danger_sensing:
+                    action_message.append(self.danger_sensor_reading(self.robot_id))
+                    state = self.State.wait_objects
+                    
+                else:
+                    print("Not implemented")
+                    terminated = True
+                
+                    
+                    
+                
+        elif state == self.State.waiting_ongoing:
+
+            if self.action_status == ActionStatus.ongoing or self.action_status == ActionStatus.success:
+                print("waiting")
+                state = data["next_state"]
+                    
+        elif state == self.State.grasping_object:
+             if self.action_status != ActionStatus.ongoing:
+                state = self.State.waiting_ongoing
+                print("waited to grasp objective")
+                action_message.append(self.grasp(data["object"], Arm.left))
+                data["next_state"] = self.State.reseting_arm
+            
+        elif state == self.State.reseting_arm:
+
+            if self.action_status != ActionStatus.ongoing:
+                print("waited to reset arm")
+                action_message.append(self.reset_arm(Arm.left))
+                state = self.State.waiting_ongoing
+                data["next_state"] = self.State.action_end
+                
+        elif state == self.State.reverse_after_dropping:
+            if self.action_status != ActionStatus.ongoing:
+                print("waited to reverse after dropping")
+                action_message.append(self.move_by(-0.5))
+                state = self.State.waiting_ongoing
+                data["next_state"] = self.State.action_end
+                
+        elif state == self.State.wait_objects:
+            if self.new_objects:
+                terminated = True
+                
+        elif state == self.State.action_end:
+            if self.action_status != ActionStatus.ongoing:  
+                terminated = True
+            
+            
+        return action_message,state,data,terminated
+
+    #These two next functions are used to initiate the control for the robot when using only occupancy maps
+    def main_thread(self):
+        asyncio.run(self.main_ai())
+
+    async def main_ai(self):
+
+
+        
+        #tracks_received = asyncio.Queue()
+        
+        self.frame_queue = asyncio.Queue()
+        #print("waiting queue")
+        #track = await tracks_received.get()
+        print("waiting gather")
+        #await asyncio.gather(get_frame(track,frame_queue),actuate(frame_queue))
+        #await asyncio.gather(get_map(frame_queue),actuate(frame_queue))
+        await asyncio.gather(self.actuate(self.frame_queue))
+
+
+
+    #### WEBRTC SETUP #####################################################################################
+
+    #This function is used as part of the setup of WebRTC
+    async def offer(self, request):
+
+
+        print("offer here")
+        #async def offer_async(server_id, params):
+        params = await request.json()
+        print(params)
+
+        offer = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
+        self.robot_id = params["id"]
+        pc = RTCPeerConnection()
+        pc_id = "PeerConnection(%s)" % uuid.uuid4()
+        self.pcs.add(pc)
+
+        def log_info(msg, *args):
+            logger.info(pc_id + " " + msg, *args)
+
+        log_info("Created for %s", request.remote)
+
+        # prepare local media
+
+        if args.record_to:
+            recorder = MediaRecorder(args.record_to)
+        else:
+            recorder = MediaBlackhole()
+
+
+
+        @pc.on("connectionstatechange")
+        async def on_connectionstatechange():
+            log_info("Connection state is %s", pc.connectionState)
+            if pc.connectionState == "failed":
+                await pc.close()
+                self.pcs.discard(pc)
+
+       
+
+        @pc.on("track")
+        async def on_track(track):
+
+            log_info("Track %s received", track.kind)
+
+
+            if track.kind == "video":
+
+
+                if args.record_to:
+                    print("added record")
+                    recorder.addTrack(self.relay.subscribe(track))
+
+                if not self.tracks_received:
+                    #processing_thread = threading.Thread(target=main_thread, args = (track, ))
+                    #processing_thread.daemon = True
+                    #processing_thread.start()
+                    self.frame_queue = asyncio.Queue()
+                    #print("waiting queue")
+                    #track = await tracks_received.get()
+                    print("waiting gather")
+                    self.tracks_received += 1
+                    await asyncio.gather(self.get_frame(track,self.frame_queue),self.actuate(self.frame_queue))
+                #tracks_received.append(relay.subscribe(track))
+                
+                #print(tracks_received.qsize())
+            
+                
+                
+
+            @track.on("ended")
+            async def on_ended():
+                log_info("Track %s ended", track.kind)
+                await recorder.stop()
+
+        # handle offer
+        await pc.setRemoteDescription(offer)
+        await recorder.start()
+
+        # send answer
+        answer = await pc.createAnswer()
+        await pc.setLocalDescription(answer)
+        print("offer",json.dumps({"sdp": pc.localDescription.sdp, "type": pc.localDescription.type}))
+        
+        return web.Response(
+            content_type="application/json",
+            text=json.dumps(
+                {"sdp": pc.localDescription.sdp, "type": pc.localDescription.type}
+            ),
+        )
 
 
 
 
 
-#### MAIN & SETUP OF HTTP SERVER ##############################################################################
 
-async def on_shutdown(app):
-    # close peer connections
-    coros = [pc.close() for pc in pcs]
-    await asyncio.gather(*coros)
-    pcs.clear()
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -393,50 +676,13 @@ if __name__ == "__main__":
     parser.add_argument("--view-radius", default=0, help="When using occupancy maps, the view radius")
 
     args = parser.parse_args()
+    
+    logger = logging.getLogger("pc")
 
     if args.verbose:
         logging.basicConfig(level=logging.DEBUG)
     else:
         logging.basicConfig(level=logging.INFO)
 
-    use_occupancy = args.use_occupancy 
-    view_radius = args.view_radius
-
-    address = args.address
-    client_number = int(args.robot_number)
-
-    if use_occupancy:
-        sio.connect(address)
-        main_thread()
-    else:
-        if args.cert_file:
-            #ssl_context = ssl.SSLContext()
-            ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-            ssl_context.load_cert_chain(args.cert_file, args.key_file)
-        else:
-            ssl_context = None
-
-        app = web.Application()
-        
-
-        app.on_shutdown.append(on_shutdown)
-        #app.router.add_get("/", index)
-        #app.router.add_get("/client.js", javascript)
-        app.router.add_post("/offer", offer)
-
-        cors = aiohttp_cors.setup(app, defaults={
-          "*": aiohttp_cors.ResourceOptions(
-            allow_credentials=True,
-            expose_headers="*",
-            allow_headers="*"
-          )
-        })
-
-        for route in list(app.router.routes()):
-            cors.add(route)
-
-        sio.connect(address)
-        web.run_app(
-            app, access_log=None, host=args.host, port=args.port, ssl_context=ssl_context
-        )
-
+    aicollab = AICollabEnv(args.use_occupancy,args.view_radius, int(args.robot_number), args.host, args.port)
+    aicollab.run(args.address,args.cert_file, args.key_file)

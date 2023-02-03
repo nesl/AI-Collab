@@ -63,6 +63,7 @@ class Enhanced_Magnebot(Magnebot):
         self.grasping = False
         self.past_status = ActionStatus.ongoing
         self.view_radius = 0
+        self.centered_view = 0
 
     
 
@@ -181,7 +182,7 @@ class Simulation(Controller):
             
         #Initializing user interface objects
         for um_idx,um in enumerate(self.user_magnebots):
-            um.collision_detection.objects = False
+            um.collision_detection.objects = True
             um.collision_detection.walls = False
             ui = UI(canvas_id=um_idx)
             ui.attach_canvas_to_avatar(avatar_id=str(um.robot_id))
@@ -293,11 +294,12 @@ class Simulation(Controller):
         
         #Create a rug
         self.rug: int = self.get_unique_id()
+        """
         commands.extend(self.get_add_physics_object(model_name="carpet_rug",
                                          object_id=self.rug,
                                          position={"x": 0, "y": 0, "z": 0},
                                          rotation={"x": 0, "y": 0, "z": 0}))
-        
+        """
         #Creating third person camera
         commands.extend(TDWUtils.create_avatar(position={"x": -3.15, "y": 10, "z": 0.22},#{"x": 0, "y": 10, "z": -1},
                                                            look_at={"x": 0, "y": 0, "z": 0},
@@ -333,6 +335,7 @@ class Simulation(Controller):
         self.user_magnebots_ids = [str(um.robot_id) for um in self.user_magnebots]
         self.ai_magnebots_ids = [str(um.robot_id) for um in self.ai_magnebots]
 
+        
 
         self.sio = None
 
@@ -343,8 +346,15 @@ class Simulation(Controller):
             @self.sio.event
             def connect():
                 print("I'm connected!")
-
-                self.sio.emit("simulator", (self.user_magnebots_ids,self.ai_magnebots_ids, self.options.video_index))#[*self.user_magnebots_ids, *self.ai_magnebots_ids])
+                
+                #Occupancy map info
+                occupancy_map_config = {}
+        
+                occupancy_map_config['edge_coordinate'] = self.static_occupancy_map.get_occupancy_position(0,0)
+                occupancy_map_config['cell_size'] = self.cfg['cell_size']
+                occupancy_map_config['num_cells'] = self.static_occupancy_map.occupancy_map.shape
+                
+                self.sio.emit("simulator", (self.user_magnebots_ids,self.ai_magnebots_ids, self.options.video_index, occupancy_map_config))#[*self.user_magnebots_ids, *self.ai_magnebots_ids])
 
             @self.sio.event
             def connect_error(data):
@@ -370,11 +380,22 @@ class Simulation(Controller):
             #Receive action for ai controlled robot
             @self.sio.event
             def ai_action(action_message, agent_id):
+                print('New command:', action_message, agent_id)
                 ai_agent_idx = self.ai_magnebots_ids.index(agent_id)
                 ai_agent = self.ai_magnebots[ai_agent_idx]
+                
 
+                
+                
                 for actions in action_message:
-                    eval_string = "ai_agent." + actions[0]+"("
+                
+                    if 'danger_sensor_reading' in actions[0]:
+                        eval_string = "self."
+                    else:
+                        eval_string = "ai_agent."
+                    
+                    
+                    eval_string += actions[0]+"("
 
                     for a_idx, argument in enumerate(actions[1:]):
                         if a_idx:
@@ -385,10 +406,11 @@ class Simulation(Controller):
 
             #Indicate use of occupancy maps
             @self.sio.event
-            def watcher_ai(agent_id, view_radius):
+            def watcher_ai(agent_id, view_radius, centered):
                 ai_agent_idx = self.ai_magnebots_ids.index(agent_id)
 
                 self.ai_magnebots[ai_agent_idx].view_radius = int(view_radius)
+                self.ai_magnebots[ai_agent_idx].centered_view = int(centered)
                 
                 
             self.sio.connect(address)
@@ -461,6 +483,8 @@ class Simulation(Controller):
                     self.user_magnebots[u_idx].item_info[o_id] = {}
                     
                 self.user_magnebots[u_idx].item_info[o_id]['weight'] = int(self.required_strength[o_id])
+                self.user_magnebots[u_idx].item_info[o_id]['time'] = self.timer
+                self.user_magnebots[u_idx].item_info[o_id]['location'] = self.object_manager.transforms[o_id].position.tolist()
 
                 if not self.local:
                     self.sio.emit('objects_update', (u_idx,self.user_magnebots[u_idx].item_info))
@@ -604,57 +628,7 @@ class Simulation(Controller):
             elif keys.get_pressed(j) in self.keys_set[8]: #Estimate danger level
                 idx = self.keys_set[8].index(keys.get_pressed(j))
 
-                near_items_pos = []
-                near_items_idx = []
-                danger_estimates = {}
-                possible_danger_levels = [1,2]
-                
-                if self.user_magnebots[idx].refresh_sensor >= global_refresh_sensor: #Check if our sensor is refreshed
-                    self.user_magnebots[idx].refresh_sensor = 0
-                    
-                    for o_idx,o in enumerate(self.graspable_objects): #Sensor only actuates over objects that are in a certain radius
-                        if np.linalg.norm(self.object_manager.transforms[o].position -
-                                self.user_magnebots[idx].dynamic.transform.position) < 2:
-                            near_items_idx.append(len(all_ids)+o_idx)
-                            near_items_pos.append(TDWUtils.array_to_vector3(self.object_manager.transforms[o].position))
-                            actual_danger_level = self.danger_level[o]
-                            
-                            
-                            if o not in self.user_magnebots[idx].item_info:
-                                self.user_magnebots[idx].item_info[o] = {}
-                                
-                            self.user_magnebots[idx].item_info[o]['weight'] = int(self.required_strength[o])
-                            
-                            if 'sensor' not in self.user_magnebots[idx].item_info[o]:
-                                self.user_magnebots[idx].item_info[o]['sensor'] = {}
-                            
-                            #Get danger estimation, value and confidence level
-                            if self.user_magnebots[idx].robot_id not in self.user_magnebots[idx].item_info[o]['sensor']:
-                                possible_danger_levels_tmp = possible_danger_levels.copy()
-                                possible_danger_levels_tmp.remove(actual_danger_level)
-                            
-                                danger_estimate = np.random.choice([actual_danger_level,*possible_danger_levels_tmp],1,p=[self.user_magnebots[idx].estimate_confidence,1-self.user_magnebots[idx].estimate_confidence])
-                                danger_estimates[o] = danger_estimate[0]
-                                
-                                self.user_magnebots[idx].item_info[o]['sensor'][self.user_magnebots[idx].robot_id] = {}
-                                self.user_magnebots[idx].item_info[o]['sensor'][self.user_magnebots[idx].robot_id]['value'] = int(danger_estimate[0])
-                                self.user_magnebots[idx].item_info[o]['sensor'][self.user_magnebots[idx].robot_id]['confidence'] = self.user_magnebots[idx].estimate_confidence
-                                
-                            else: #If we already have a danger estimation reuse that one
-                                danger_estimates[o] = self.user_magnebots[idx].item_info[o]['sensor'][self.user_magnebots[idx].robot_id]['value']
-                                
-                    if near_items_pos:
-                        
-                        
-                        self.user_magnebots[idx].screen_positions["position_ids"].extend(near_items_idx)
-                        self.user_magnebots[idx].screen_positions["positions"].extend(near_items_pos)
-                        self.user_magnebots[idx].screen_positions["duration"].extend([100]*len(near_items_idx)) 
-                        
-                        self.user_magnebots[idx].danger_estimates = danger_estimates
-                        
-                        if not self.local:
-                            #print("objects_update", (idx,self.user_magnebots[idx].item_info))
-                            self.sio.emit('objects_update', (idx,self.user_magnebots[idx].item_info))
+                self.danger_sensor_reading(self.user_magnebots[idx].robot_id)
                        
                 
             
@@ -745,6 +719,71 @@ class Simulation(Controller):
                     self.user_magnebots[um_idx].stop()
 
 
+
+    def danger_sensor_reading(self, robot_id):
+    
+        all_ids = [*self.user_magnebots_ids,*self.ai_magnebots_ids]
+        all_magnebots = [*self.user_magnebots,*self.ai_magnebots]
+        idx = all_ids.index(str(robot_id))
+        ego_magnebot = all_magnebots[idx]
+    
+        near_items_pos = []
+        near_items_idx = []
+        danger_estimates = {}
+        possible_danger_levels = [1,2]
+        
+        if ego_magnebot.refresh_sensor >= global_refresh_sensor: #Check if our sensor is refreshed
+            ego_magnebot.refresh_sensor = 0
+            
+            for o_idx,o in enumerate(self.graspable_objects): #Sensor only actuates over objects that are in a certain radius
+                if np.linalg.norm(self.object_manager.transforms[o].position -
+                        ego_magnebot.dynamic.transform.position) < 2:
+                    near_items_idx.append(len(all_ids)+o_idx)
+                    near_items_pos.append(TDWUtils.array_to_vector3(self.object_manager.transforms[o].position))
+                    actual_danger_level = self.danger_level[o]
+                    
+                    
+                    if o not in ego_magnebot.item_info:
+                        ego_magnebot.item_info[o] = {}
+                        
+                    ego_magnebot.item_info[o]['weight'] = int(self.required_strength[o])
+                    
+                    if 'sensor' not in ego_magnebot.item_info[o]:
+                        ego_magnebot.item_info[o]['sensor'] = {}
+                    
+                    #Get danger estimation, value and confidence level
+                    if ego_magnebot.robot_id not in ego_magnebot.item_info[o]['sensor']:
+                        possible_danger_levels_tmp = possible_danger_levels.copy()
+                        possible_danger_levels_tmp.remove(actual_danger_level)
+                    
+                        danger_estimate = np.random.choice([actual_danger_level,*possible_danger_levels_tmp],1,p=[ego_magnebot.estimate_confidence,1-ego_magnebot.estimate_confidence])
+                        danger_estimates[o] = danger_estimate[0]
+                        
+                        ego_magnebot.item_info[o]['sensor'][ego_magnebot.robot_id] = {}
+                        ego_magnebot.item_info[o]['sensor'][ego_magnebot.robot_id]['value'] = int(danger_estimate[0])
+                        ego_magnebot.item_info[o]['sensor'][ego_magnebot.robot_id]['confidence'] = ego_magnebot.estimate_confidence
+
+                        
+                    else: #If we already have a danger estimation reuse that one
+                        danger_estimates[o] = ego_magnebot.item_info[o]['sensor'][ego_magnebot.robot_id]['value']
+                        
+                        
+                    ego_magnebot.item_info[o]['time'] = self.timer
+                    ego_magnebot.item_info[o]['location'] = self.object_manager.transforms[o].position.tolist()
+                        
+            #If objects were detected
+            if near_items_pos:
+                
+                #To have the information displayed in the screen
+                ego_magnebot.screen_positions["position_ids"].extend(near_items_idx)
+                ego_magnebot.screen_positions["positions"].extend(near_items_pos)
+                ego_magnebot.screen_positions["duration"].extend([100]*len(near_items_idx)) 
+                
+                ego_magnebot.danger_estimates = danger_estimates
+                
+                if not self.local:
+                    #print("objects_update", (idx,ego_magnebot.item_info))
+                    self.sio.emit('objects_update', (idx,ego_magnebot.item_info))
         
     #### Main Loop
     def run(self):
@@ -754,6 +793,8 @@ class Simulation(Controller):
         messages = []
         extra_commands = []
         duration = []
+        
+        
         
         keys_time_unheld = [0]*len(self.user_magnebots_ids)
         all_ids = [*self.user_magnebots_ids,*self.ai_magnebots_ids]
@@ -784,6 +825,7 @@ class Simulation(Controller):
             #Prepare occupancy maps and associated metadata
             #object_attributes_id stores the ids of the objects and magnebots
             #object_type_coords_map creates a second occupancy map with objects and magnebots
+
             object_type_coords_map = np.copy(self.static_occupancy_map.occupancy_map)
             min_pos = self.static_occupancy_map.get_occupancy_position(0,0)[0]
             multiple = self.cfg['cell_size']
@@ -882,7 +924,12 @@ class Simulation(Controller):
                                             all_magnebots[idx].item_info[it_element]['sensor'].update(all_magnebots[idx2].item_info[it_element]['sensor'])
                                         else:
                                             all_magnebots[idx].item_info[it_element]['sensor'] = all_magnebots[idx2].item_info[it_element]['sensor']
-                            
+                                            
+                                #Newest information based on time
+                                if all_magnebots[idx].item_info[it_element]['time'] > all_magnebots[idx2].item_info[it_element]['time']:
+                                    all_magnebots[idx].item_info[it_element]['time'] = all_magnebots[idx2].item_info[it_element]['time']
+                                    all_magnebots[idx].item_info[it_element]['location'] = all_magnebots[idx2].item_info[it_element]['location']
+                                
                             all_magnebots[idx2].item_info = all_magnebots[idx].item_info 
                             object_info_update.extend([idx,idx2])
                             
@@ -1069,10 +1116,11 @@ class Simulation(Controller):
             #Game ends when all dangerous objects are left in the rug
             goal_counter = 0
             
+            """"
             for sd in self.dangerous_objects:
                 if np.linalg.norm(self.object_manager.transforms[sd].position-self.object_manager.transforms[self.rug].position) < 1:
                     goal_counter += 1
-            
+            """
             if goal_counter == len(self.dangerous_objects):
                 for idx,um in enumerate(self.user_magnebots):
                     txt = um.ui.add_text(text="Success!",
@@ -1100,6 +1148,7 @@ class Simulation(Controller):
                 for m_idx, magnebot_id in enumerate(self.ai_magnebots_ids):
                     cams[idx+1].send(magnebot_images[magnebot_id])
 
+                    #Occupancy maps
 
                     #self.ai_magnebots[m_idx].view_radius = 5 #DEBUG
 
@@ -1119,17 +1168,33 @@ class Simulation(Controller):
                         y_max = min(object_type_coords_map.shape[1]-1,y+view_radius)
                         #limited_map = np.zeros_like(self.static_occupancy_map.occupancy_map)
                         
-                        limited_map = np.zeros((view_radius*2+1,view_radius*2+1)) #+1 as we separately count the row/column where the magnebot is currently in
-                        #limited_map[:,:] = self.static_occupancy_map.occupancy_map[x_min:x_max+1,y_min:y_max+1]
-                        limited_map[:,:] = object_type_coords_map[x_min:x_max+1,y_min:y_max+1]
-                        objects_locations = np.where(limited_map > 1)
-                        reduced_metadata = {}
-                        limited_map[x-x_min,y-y_min] = 5
+                        #Magnebot is at the center of the occupancy  map always or not
+                        if self.ai_magnebots[m_idx].centered_view:
+                            limited_map = np.zeros((view_radius*2+1,view_radius*2+1)) #+1 as we separately count the row/column where the magnebot is currently in
+                            #limited_map[:,:] = self.static_occupancy_map.occupancy_map[x_min:x_max+1,y_min:y_max+1]
+                            limited_map[:,:] = object_type_coords_map[x_min:x_max+1,y_min:y_max+1]
+                            objects_locations = np.where(limited_map > 1)
+                            reduced_metadata = {}
+                            limited_map[x-x_min,y-y_min] = 5
 
-                        for ol in range(len(objects_locations[0])):
-                            rkey = str(objects_locations[0][ol]+x_min)+str(objects_locations[1][ol]+y_min)
-                            rkey2 = str(objects_locations[0][ol])+str(objects_locations[1][ol])
-                            reduced_metadata[rkey2] = object_attributes_id[rkey]
+                            for ol in range(len(objects_locations[0])):
+                                rkey = str(objects_locations[0][ol]+x_min)+str(objects_locations[1][ol]+y_min)
+                                rkey2 = str(objects_locations[0][ol])+str(objects_locations[1][ol])
+                                reduced_metadata[rkey2] = object_attributes_id[rkey]
+                        else:
+                            limited_map = np.zeros_like(object_type_coords_map)
+                            limited_map[[0,limited_map.shape[0]-1],:] = -1
+                            limited_map[:,[0,limited_map.shape[1]-1]] = -1
+                            limited_map[x_min:x_max+1,y_min:y_max+1] = object_type_coords_map[x_min:x_max+1,y_min:y_max+1]
+                            objects_locations = np.where(limited_map > 1)
+                            reduced_metadata = {}
+                            limited_map[x,y] = 5
+                            
+                            for ol in range(len(objects_locations[0])):
+                                rkey = str(objects_locations[0][ol])+str(objects_locations[1][ol])
+                                reduced_metadata[rkey] = object_attributes_id[rkey]
+                            
+                            
                         """
                         for ol in range(len(objects_locations[0])):
                             rkey = str(objects_locations[0][ol]+x_min)+str(objects_locations[1][ol]+y_min)
