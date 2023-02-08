@@ -42,6 +42,10 @@ The implementation of the WebRTC server was based on [https://github.com/TannerG
 
 For control of the robots by a user, **xdotool** is needed, please install it.
 
+### AI Controller
+
+Change to the **ai_controller** directory and install the gym environment by using the next command `pip install -e gym_collab`
+
 ## Operation
 
 1. Run the server using `node server --address "address" --port "port"`. The simulator assumes the virtual devices to be used are the ones starting at /dev/video0, but if you already have some real webcams, you need to specify the parameter `--video-index <number>` and include the index number of your first simulated webcam corresponding to the ones created for the simulator.
@@ -65,7 +69,7 @@ To make the HTTPS self-signed certificate work:
 
 ## AI Controller
 
-The **ai_controller.py** program uses an HTTPS server to negotiate the WebRTC parameters. Socket.IO is used for normal commmunication with the simulator server. The controller uses the same API functions defined in the [Magnebot repository](https://github.com/alters-mit/magnebot/blob/main/doc/manual/magnebot/actions.md). To receive occupancy maps of a certain view radius instead of camera images, you can run the **ai_controller.py** program as `python ai_controller.py --use-occupancy --view-radius <number>`, this way you don't need to make use of the HTTPS server. A sample controller is coded in the **controller** function.
+The **ai_controller.py** program uses an HTTPS server to negotiate the WebRTC parameters. Socket.IO is used for normal commmunication with the simulator server. The controller uses the same API functions defined in the [Magnebot repository](https://github.com/alters-mit/magnebot/blob/main/doc/manual/magnebot/actions.md). To receive occupancy maps of a certain view radius instead of camera images, you can run the **ai_controller.py** program as `python ai_controller.py --use-occupancy --view-radius <number>`, this way you don't need to make use of the HTTPS server.
 
 ### Occupancy Maps
 

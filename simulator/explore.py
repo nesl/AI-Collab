@@ -1,27 +1,11 @@
-from enum import Enum
 import numpy as np
 from tdw.controller import Controller
 from tdw.tdw_utils import TDWUtils
-from tdw.add_ons.robot import Robot
-from tdw.add_ons.object_manager import ObjectManager
-from tdw.add_ons.third_person_camera import ThirdPersonCamera
-from tdw.add_ons.image_capture import ImageCapture
-from tdw.backend.paths import EXAMPLE_CONTROLLER_OUTPUT_PATH
-from magnebot import Magnebot, Arm, ActionStatus, ImageFrequency
+from magnebot import Magnebot, ImageFrequency
 from magnebot.util import get_default_post_processing_commands
 from tdw.add_ons.first_person_avatar import FirstPersonAvatar
-import matplotlib.pyplot as plt
 import pdb
-from tdw.output_data import OutputData, Images, ScreenPosition, Transforms
-import cv2
-from tdw.add_ons.keyboard import Keyboard
-from tdw.add_ons.embodied_avatar import EmbodiedAvatar
-from tdw.add_ons.avatar_body import AvatarBody
-from tdw.output_data import Keyboard as KBoard
-import pyvirtualcam
-from magnebot import ArmJoint
-import time
-import cupy as cp
+#import cupy as cp
 from tdw.quaternion_utils import QuaternionUtils
 
 width = 256
@@ -62,6 +46,8 @@ class ChaseBall(Controller):
                     {"$type": "create_interior_walls", "walls": [{"x": 14, "y": 19}, {"x": 14, "y": 18},{"x": 14, "y": 17},{"x": 14, "y": 16},{"x": 14, "y": 15},{"x": 19, "y": 14},{"x": 18, "y": 14},{"x": 17, "y": 14},{"x": 16, "y": 14},{"x": 15, "y": 14}]}
                     ]
 
+
+        '''
         max_coord = 8
         object_models = ['iron_box','4ft_shelf_metal','trunck','lg_table_marble_green','b04_backpack','36_in_wall_cabinet_wood_beach_honey']
         coords = {}
@@ -99,7 +85,7 @@ class ChaseBall(Controller):
 
 
 
-        
+        '''
 
         #self.communicate(self.get_add_scene(scene_name="tdw_room"))
         #commands = []
@@ -118,6 +104,8 @@ class ChaseBall(Controller):
 
         commands = []
       
+        timer = 100
+        print(self.magnebot.robot_id)
         
         while True:
 
@@ -125,8 +113,17 @@ class ChaseBall(Controller):
             resp = self.communicate(commands)
             commands.clear()
             #pdb.set_trace()
-            print(self.av.transform.position,QuaternionUtils.quaternion_to_euler_angles(self.av.transform.rotation))
+            #print(self.av.transform.position,QuaternionUtils.quaternion_to_euler_angles(self.av.transform.rotation))
             all_images = []
+            
+            if not timer:
+                print("Destroying robot")
+                commands.append({"$type": "destroy_robot", "id": self.magnebot.robot_id})
+                timer -= 1
+            elif timer > 0:
+                timer -= 1
+
+
 
 
         self.communicate({"$type": "terminate"})
