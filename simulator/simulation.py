@@ -34,7 +34,7 @@ num_users = 2
 num_ais = 1
 
 cams = []
-global_refresh_sensor = 100
+global_refresh_sensor = 0
 
 address = ''
 
@@ -74,14 +74,15 @@ class Simulation(Controller):
     def __init__(self, args, cfg, port: int = 1071, check_version: bool = True, launch_build: bool = True):
         super().__init__(port=port, check_version=check_version, launch_build=launch_build)
 
-        
+         
         
         self.keys_set = []
         self.local = args.local
         self.options = args
         self.cfg = cfg
         
-
+        self.timer = float(self.cfg['timer'])
+        
         
 
         #Functionality of keys according to order of appearance: [Advance, Back, Right, Left, Grab with left arm, Grab with right arm, Camera down, Camera up, Activate sensor, Focus on object]
@@ -108,21 +109,7 @@ class Simulation(Controller):
 
         # Create the scene.
 
-        commands = [#{'$type': 'add_scene','name': 'building_site','url': 'https://tdw-public.s3.amazonaws.com/scenes/linux/2019.1/building_site'}, 
-                    TDWUtils.create_empty_room(20, 20),
-                    self.get_add_material("parquet_long_horizontal_clean",
-                                          library="materials_high.json"),
-                    {"$type": "set_screen_size",
-                     "width": width, #640,
-                     "height": height}, #480},
-                    {"$type": "rotate_directional_light_by",
-                     "angle": 30,
-                     "axis": "pitch"},
-                    {"$type": "create_interior_walls", "walls": [{"x": 6, "y": 1}, {"x": 6, "y": 2},{"x": 6, "y": 3},{"x": 6, "y": 4},{"x": 6, "y": 5},{"x": 1, "y": 6},{"x": 2, "y": 6},{"x": 3, "y": 6},{"x": 4, "y": 6},{"x": 5, "y": 6}]},
-                    {"$type": "create_interior_walls", "walls": [{"x": 14, "y": 1}, {"x": 14, "y": 2},{"x": 14, "y": 3},{"x": 14, "y": 4},{"x": 14, "y": 5},{"x": 19, "y": 6},{"x": 18, "y": 6},{"x": 17, "y": 6},{"x": 16, "y": 6},{"x": 15, "y": 6}]},   
-                    {"$type": "create_interior_walls", "walls": [{"x": 6, "y": 19}, {"x": 6, "y": 18},{"x": 6, "y": 17},{"x": 6, "y": 16},{"x": 6, "y": 15},{"x": 1, "y": 14},{"x": 2, "y": 14},{"x": 3, "y": 14},{"x": 4, "y": 14},{"x": 5, "y": 14}]},
-                    {"$type": "create_interior_walls", "walls": [{"x": 14, "y": 19}, {"x": 14, "y": 18},{"x": 14, "y": 17},{"x": 14, "y": 16},{"x": 14, "y": 15},{"x": 19, "y": 14},{"x": 18, "y": 14},{"x": 17, "y": 14},{"x": 16, "y": 14},{"x": 15, "y": 14}]}]
-        
+        commands = self.create_scene()
         
 
         
@@ -136,144 +123,19 @@ class Simulation(Controller):
         #print(self.static_occupancy_map.occupancy_map[:20,:20])
         #pdb.set_trace()
 
-        
-
-        
-        commands = self.populate_world()
-        
-        #Creating third person camera
-        commands.extend(TDWUtils.create_avatar(position={"x": -3.15, "y": 10, "z": 0.22},#{"x": 0, "y": 10, "z": -1},
-                                                           look_at={"x": 0, "y": 0, "z": 0},
-                                                           avatar_id="a"))
-        commands.extend([{"$type": "set_pass_masks","pass_masks": ["_img"],"avatar_id": "a"},
-                  {"$type": "send_images","frequency": "always","ids": ["a"]},
-                  {"$type": "set_img_pass_encoding", "value": False},
-                  {"$type": "set_render_order", "render_order": 1, "sensor_name": "SensorContainer", "avatar_id": "a"},
-                  {"$type": "send_keyboard", "frequency": "always"}])
-
-        self.communicate(commands)
-
-
-
-
-
-        
-
-        #pdb.set_trace()
-
-        
-        #print(self.static_occupancy_map.occupancy_map)
-
-
-        #Initializing communication with server
-        
-        
-
-        self.sio = None
-
-        #Socket io event functions
-        if not self.local:
-            self.sio = socketio.Client(ssl_verify=False)
-            
-            @self.sio.event
-            def connect():
-                print("I'm connected!")
-                
-                #Occupancy map info
-                occupancy_map_config = {}
-        
-                occupancy_map_config['edge_coordinate'] = self.static_occupancy_map.get_occupancy_position(0,0)
-                occupancy_map_config['cell_size'] = self.cfg['cell_size']
-                occupancy_map_config['num_cells'] = self.static_occupancy_map.occupancy_map.shape
-                
-                self.sio.emit("simulator", (self.user_magnebots_ids,self.ai_magnebots_ids, self.options.video_index, occupancy_map_config))#[*self.user_magnebots_ids, *self.ai_magnebots_ids])
-
-            @self.sio.event
-            def connect_error(data):
-                print("The connection failed!")
-
-            @self.sio.event
-            def disconnect():
-                print("I'm disconnected!")
-                
-            @self.sio.event
-            def set_goal(agent_id,obj_id):
-                print("Received new goal")
-                self.target[agent_id] = obj_id
-                
-            """
-            @self.sio.event
-            def ai_message(message, source_agent_id, agent_id):
-                ai_magnebot = self.ai_magnebots[self.ai_magnebots_ids.index(agent_id)]
-                ai_magnebot.messages.append((source_agent_id,message))
-                print("message", message, source_agent_id, agent_id)
-            """
-
-            #Receive action for ai controlled robot
-            @self.sio.event
-            def ai_action(action_message, agent_id):
-                print('New command:', action_message, agent_id)
-                ai_agent_idx = self.ai_magnebots_ids.index(agent_id)
-                ai_agent = self.ai_magnebots[ai_agent_idx]
-                
-
-                
-                
-                for actions in action_message:
-                
-                    if 'danger_sensor_reading' in actions[0]:
-                        eval_string = "self."
-                    else:
-                        eval_string = "ai_agent."
-                    
-                    
-                    eval_string += actions[0]+"("
-
-                    for a_idx, argument in enumerate(actions[1:]):
-                        if a_idx:
-                            eval_string += ','
-                        eval_string += argument
-
-                    eval(eval_string + ")")
-
-            #Indicate use of occupancy maps
-            @self.sio.event
-            def watcher_ai(agent_id, view_radius, centered):
-                ai_agent_idx = self.ai_magnebots_ids.index(agent_id)
-
-                self.ai_magnebots[ai_agent_idx].view_radius = int(view_radius)
-                self.ai_magnebots[ai_agent_idx].centered_view = int(centered)
-                
-                
-            self.sio.connect(address)
-
-
-    #Used to create all objects
-    def populate_world(self):
-    
         self.user_magnebots = []
         self.ai_magnebots = []
-        self.graspable_objects = []
+        self.ai_spawn_positions = [{"x": -1.4, "y": 0, "z": -1.1},{"x": 0, "y": 0, "z": -1.1}, {"x": 0, "y": 0, "z": -2.1}]
+        self.user_spawn_positions = [{"x": 0, "y": 0, "z": 1.1},{"x": 0, "y": 0, "z": 2.1}, {"x": 4, "y": 0, "z": 1.6}]
         self.uis = []
-        self.ai_actions = []
-        self.reset = False
-        self.timer = float(self.cfg['timer'])
-        self.terminate = False
-    
-        ai_spawn_positions = [{"x": -1.4, "y": 0, "z": -1.1},{"x": 0, "y": 0, "z": -1.1}, {"x": 0, "y": 0, "z": -2.1}]
-        user_spawn_positions = [{"x": 0, "y": 0, "z": 1.1},{"x": 0, "y": 0, "z": 2.1}, {"x": 4, "y": 0, "z": 1.6}]
-
-        self.required_strength = {}
-        self.danger_level = {} 
-        self.dangerous_objects = []
 
         #Create ai magnebots
         for ai_idx in range(num_ais):                                   
-            self.ai_magnebots.append(Enhanced_Magnebot(robot_id=self.get_unique_id(), position=ai_spawn_positions[ai_idx],image_frequency=ImageFrequency.always, controlled_by='ai'))
+            self.ai_magnebots.append(Enhanced_Magnebot(robot_id=self.get_unique_id(), position=self.ai_spawn_positions[ai_idx],image_frequency=ImageFrequency.always, controlled_by='ai'))
         
         #Create user magnebots
         for us_idx in range(num_users):
-            self.user_magnebots.append(Enhanced_Magnebot(robot_id=self.get_unique_id(), position=user_spawn_positions[us_idx], image_frequency=ImageFrequency.always, pass_masks=['_img'],key_set=self.proposed_key_sets[us_idx], controlled_by='human'))
+            self.user_magnebots.append(Enhanced_Magnebot(robot_id=self.get_unique_id(), position=self.user_spawn_positions[us_idx], image_frequency=ImageFrequency.always, pass_masks=['_img'],key_set=self.proposed_key_sets[us_idx], controlled_by='human'))
 
 
 
@@ -369,22 +231,187 @@ class Simulation(Controller):
 
         self.add_ons.extend([*self.ai_magnebots,  *self.user_magnebots, self.object_manager, *self.uis])
 
+        self.user_magnebots_ids = [str(um.robot_id) for um in self.user_magnebots]
+        self.ai_magnebots_ids = [str(um.robot_id) for um in self.ai_magnebots]
+        
+
+        
+        commands = self.populate_world()
+        
+        
+
+        self.communicate(commands)
+
+
+
+
+
+        
+
+        #pdb.set_trace()
+
+        
+        #print(self.static_occupancy_map.occupancy_map)
+
+
+        #Initializing communication with server
+        
+        
+
+        self.sio = None
+
+        #Socket io event functions
+        if not self.local:
+            self.sio = socketio.Client(ssl_verify=False)
+            
+            @self.sio.event
+            def connect():
+                print("I'm connected!")
+                
+                #Occupancy map info
+                occupancy_map_config = {}
+        
+                extra_config['edge_coordinate'] = self.static_occupancy_map.get_occupancy_position(0,0)
+                extra_config['cell_size'] = self.cfg['cell_size']
+                extra_config['num_cells'] = self.static_occupancy_map.occupancy_map.shape
+                extra_config['num_objects'] = len(self.graspable_objects)
+                
+                
+                self.sio.emit("simulator", (self.user_magnebots_ids,self.ai_magnebots_ids, self.options.video_index, extra_config))#[*self.user_magnebots_ids, *self.ai_magnebots_ids])
+
+            @self.sio.event
+            def connect_error(data):
+                print("The connection failed!")
+
+            @self.sio.event
+            def disconnect():
+                print("I'm disconnected!")
+                
+            @self.sio.event
+            def set_goal(agent_id,obj_id):
+                print("Received new goal")
+                self.target[agent_id] = obj_id
+                
+            """
+            @self.sio.event
+            def ai_message(message, source_agent_id, agent_id):
+                ai_magnebot = self.ai_magnebots[self.ai_magnebots_ids.index(agent_id)]
+                ai_magnebot.messages.append((source_agent_id,message))
+                print("message", message, source_agent_id, agent_id)
+            """
+
+            #Receive action for ai controlled robot
+            @self.sio.event
+            def ai_action(action_message, agent_id):
+                print('New command:', action_message, agent_id)
+                ai_agent_idx = self.ai_magnebots_ids.index(agent_id)
+                ai_agent = self.ai_magnebots[ai_agent_idx]
+                
+
+                
+                
+                for actions in action_message:
+                
+                    if 'danger_sensor_reading' in actions[0]:
+                        eval_string = "self."
+                    else:
+                        eval_string = "ai_agent."
+                    
+                    
+                    eval_string += actions[0]+"("
+
+                    for a_idx, argument in enumerate(actions[1:]):
+                        if a_idx:
+                            eval_string += ','
+                        eval_string += argument
+
+                    eval(eval_string + ")")
+
+            #Indicate use of occupancy maps
+            @self.sio.event
+            def watcher_ai(agent_id, view_radius, centered):
+                ai_agent_idx = self.ai_magnebots_ids.index(agent_id)
+
+                self.ai_magnebots[ai_agent_idx].view_radius = int(view_radius)
+                self.ai_magnebots[ai_agent_idx].centered_view = int(centered)
+               
+            #Reset environment
+            @self.sio.event 
+            def reset(agent_id):
+                self.reset = True
+                
+                
+                
+            self.sio.connect(address)
+
+
+    #Create the scene environment
+    def create_scene(self):
+    
+        commands = [#{'$type': 'add_scene','name': 'building_site','url': 'https://tdw-public.s3.amazonaws.com/scenes/linux/2019.1/building_site'}, 
+                    {"$type": "load_scene", "scene_name": "ProcGenScene"},
+                    TDWUtils.create_empty_room(10, 10),
+                    self.get_add_material("parquet_long_horizontal_clean",
+                                          library="materials_high.json"),
+                    {"$type": "set_screen_size",
+                     "width": width, #640,
+                     "height": height}, #480},
+                    {"$type": "rotate_directional_light_by",
+                     "angle": 30,
+                     "axis": "pitch"}]
+        '''
+        commands = [#{'$type': 'add_scene','name': 'building_site','url': 'https://tdw-public.s3.amazonaws.com/scenes/linux/2019.1/building_site'}, 
+                    {"$type": "load_scene", "scene_name": "ProcGenScene"},
+                    TDWUtils.create_empty_room(20, 20),
+                    self.get_add_material("parquet_long_horizontal_clean",
+                                          library="materials_high.json"),
+                    {"$type": "set_screen_size",
+                     "width": width, #640,
+                     "height": height}, #480},
+                    {"$type": "rotate_directional_light_by",
+                     "angle": 30,
+                     "axis": "pitch"},
+                    {"$type": "create_interior_walls", "walls": [{"x": 6, "y": 1}, {"x": 6, "y": 2},{"x": 6, "y": 3},{"x": 6, "y": 4},{"x": 6, "y": 5},{"x": 1, "y": 6},{"x": 2, "y": 6},{"x": 3, "y": 6},{"x": 4, "y": 6},{"x": 5, "y": 6}]},
+                    {"$type": "create_interior_walls", "walls": [{"x": 14, "y": 1}, {"x": 14, "y": 2},{"x": 14, "y": 3},{"x": 14, "y": 4},{"x": 14, "y": 5},{"x": 19, "y": 6},{"x": 18, "y": 6},{"x": 17, "y": 6},{"x": 16, "y": 6},{"x": 15, "y": 6}]},   
+                    {"$type": "create_interior_walls", "walls": [{"x": 6, "y": 19}, {"x": 6, "y": 18},{"x": 6, "y": 17},{"x": 6, "y": 16},{"x": 6, "y": 15},{"x": 1, "y": 14},{"x": 2, "y": 14},{"x": 3, "y": 14},{"x": 4, "y": 14},{"x": 5, "y": 14}]},
+                    {"$type": "create_interior_walls", "walls": [{"x": 14, "y": 19}, {"x": 14, "y": 18},{"x": 14, "y": 17},{"x": 14, "y": 16},{"x": 14, "y": 15},{"x": 19, "y": 14},{"x": 18, "y": 14},{"x": 17, "y": 14},{"x": 16, "y": 14},{"x": 15, "y": 14}]}]
+        '''
+        return commands
+
+    #Used to create all objects
+    def populate_world(self):
+    
+        
+        self.graspable_objects = []
+        
+        self.reset = False
+        self.timer = float(self.cfg['timer'])
+        self.terminate = False
+    
+        
+
+        self.required_strength = {}
+        self.danger_level = {} 
+        self.dangerous_objects = []
+
+        
         #self.communicate([])
 
         commands = []
 
         #Instantiate and locate objects
-        max_coord = 8
-        object_models = ['iron_box','4ft_shelf_metal','trunck','lg_table_marble_green','b04_backpack','36_in_wall_cabinet_wood_beach_honey']
+        max_coord = 3#8
+        object_models = ['iron_box'] #['iron_box','4ft_shelf_metal','trunck','lg_table_marble_green','b04_backpack','36_in_wall_cabinet_wood_beach_honey']
         coords = {}
         
-        coords[object_models[0]] = [[max_coord,max_coord],[max_coord-1,max_coord-0.1],[max_coord-0.5,max_coord-0.2],[max_coord-0.4,max_coord],[max_coord,max_coord-0.5]]
-        coords[object_models[1]] = [[max_coord-3,max_coord]]
+        #coords[object_models[0]] = [[max_coord,max_coord],[max_coord-1,max_coord-0.1],[max_coord-0.5,max_coord-0.2],[max_coord-0.4,max_coord],[max_coord,max_coord-0.5]]
+        coords[object_models[0]] = [[max_coord,max_coord]]
+        #coords[object_models[1]] = [[max_coord-3,max_coord]]
 
-        coords[object_models[2]] = [[max_coord,max_coord-3]]
-        coords[object_models[3]] = [[max_coord-2,max_coord-2]]
-        coords[object_models[4]] = [[max_coord-1,max_coord-2]]
-        coords[object_models[5]] = [[max_coord-3,max_coord-3]]
+        #coords[object_models[2]] = [[max_coord,max_coord-3]]
+        #coords[object_models[3]] = [[max_coord-2,max_coord-2]]
+        #coords[object_models[4]] = [[max_coord-1,max_coord-2]]
+        #coords[object_models[5]] = [[max_coord-3,max_coord-3]]
 
         modifications = [[1.0,1.0],[-1.0,1.0],[1.0,-1.0],[-1.0,-1.0]]
 
@@ -403,10 +430,12 @@ class Simulation(Controller):
 
                 weight = int(np.random.choice([1,2,3],1)[0])
                 danger_level = np.random.choice([1,2],1,p=[0.9,0.1])[0]
-                commands.extend(self.instantiate_object(fc,{"x": c[0], "y": 0, "z": c[1]},{"x": 0, "y": 0, "z": 0},10,danger_level,weight))
+                #commands.extend(self.instantiate_object(fc,{"x": c[0], "y": 0, "z": c[1]},{"x": 0, "y": 0, "z": 0},10,danger_level,weight))
+                commands.extend(self.instantiate_object(fc,{"x": c[0], "y": 0, "z": c[1]},{"x": 0, "y": 0, "z": 0},10,2,1)) #Danger level 2 and weight 1
+                #print("Position:", {"x": c[0], "y": 0, "z": c[1]})
 
 
-        commands.extend(self.instantiate_object('iron_box',{"x": 0, "y": 0, "z": 0},{"x": 0, "y": 0, "z": 0},10,1,1))
+        #commands.extend(self.instantiate_object('iron_box',{"x": 0, "y": 0, "z": 0},{"x": 0, "y": 0, "z": 0},10,1,1)) #Single box
 
 
 
@@ -423,12 +452,24 @@ class Simulation(Controller):
                                          rotation={"x": 0, "y": 0, "z": 0}))
         """
         
-                  
+        
                   
         self.target = {}
         
-        self.user_magnebots_ids = [str(um.robot_id) for um in self.user_magnebots]
-        self.ai_magnebots_ids = [str(um.robot_id) for um in self.ai_magnebots]
+        #Creating third person camera
+        #commands.extend(TDWUtils.create_avatar(position={"x": 0, "y": 10, "z": 0},#{"x": 0, "y": 10, "z": -1},
+        #                                                   look_at={"x": 0, "y": 0, "z": 0},
+        #                                                   avatar_id="a"))
+                                                           
+        commands.extend([{"$type": "create_avatar", "type": "A_Img_Caps_Kinematic", "id": "a"}, 
+        {"$type": "teleport_avatar_to", "avatar_id": "a", "position": {"x": 0, "y": 10, "z": 0}},
+        {"$type": "look_at_position", "avatar_id": "a", "position": {"x": 0, "y": 0, "z": 0}},
+        {"$type": "rotate_avatar_by", "angle": 90, "axis": "yaw", "is_world": True, "avatar_id": "a"}])
+        commands.extend([{"$type": "set_pass_masks","pass_masks": ["_img"],"avatar_id": "a"},
+                  {"$type": "send_images","frequency": "always","ids": ["a"]},
+                  {"$type": "set_img_pass_encoding", "value": False},
+                  {"$type": "set_render_order", "render_order": 1, "sensor_name": "SensorContainer", "avatar_id": "a"},
+                  {"$type": "send_keyboard", "frequency": "always"}])
         
         return commands
 
@@ -604,6 +645,16 @@ class Simulation(Controller):
                 if self.user_magnebots[idx].dynamic.held[arm].size > 0: #Press once to pick up, twice to drop
                     self.user_magnebots[idx].drop(target=self.user_magnebots[idx].dynamic.held[arm][0], arm=arm)
                     self.user_magnebots[idx].grasping = False
+                    
+                    '''
+                    extra_commands.append({"$type":"send_raycast",
+                   "origin": TDWUtils.array_to_vector3(source),
+                   "destination": TDWUtils.array_to_vector3(destination),
+                   "id": str(self.user_magnebots[idx].robot_id)}) 
+                
+                    duration.append(1)
+                    self.user_magnebots[idx].dynamic.held[arm][0]
+                    '''
                 else: #Pick up object you have focused in
                     
                     #Object can be too heavy to carry alone, or you may have picked the wrong object (dangerous)
@@ -621,6 +672,8 @@ class Simulation(Controller):
                             self.user_magnebots[idx].grasp(target=grasp_object, arm=arm)
                             self.user_magnebots[idx].grasping = True
                             self.user_magnebots[idx].in_danger = True
+                            #If dangerous object carried without being accompanied by an ai if human or by a human if an ai, ends the simulation
+                            '''
                             if grasp_object in self.dangerous_objects and 'ai' not in self.user_magnebots[idx].company.values():
                                 for um in self.user_magnebots:
                                     txt = um.ui.add_text(text="Dangerous object picked without help!",
@@ -630,6 +683,7 @@ class Simulation(Controller):
                                      )
                                     messages.append([idx,txt,0])
                                 self.terminate = True
+                            '''
                             
 
                     
@@ -674,8 +728,8 @@ class Simulation(Controller):
                 
                 duration.append(1)
                 
-            elif keys.get_pressed(j) == 'P':
-                self.reset = True
+            #elif keys.get_pressed(j) == 'P':
+            #    self.reset = True
 
         # Listen for keys currently held down. This is mainly for movement keys
 
@@ -801,6 +855,11 @@ class Simulation(Controller):
                 if not self.local:
                     #print("objects_update", (idx,ego_magnebot.item_info))
                     self.sio.emit('objects_update', (idx,ego_magnebot.item_info))
+            else:
+                if not self.local:
+                    self.sio.emit('objects_update', (idx,ego_magnebot.item_info))
+        else:
+            self.sio.emit('objects_update', (idx,ego_magnebot.item_info))
         
     #### Main Loop
     def run(self):
@@ -1001,6 +1060,7 @@ class Simulation(Controller):
                             all_magnebots[idx].drop(target=all_magnebots[idx].dynamic.held[arm][0], arm=arm)
                             all_magnebots[idx].grasping = False
                         #Terminate game if dangerous object held alone
+                        '''
                         if all_magnebots[idx].dynamic.held[arm][0] in self.dangerous_objects:
                             
                             if (all_magnebots[idx].controlled_by == 'ai' and 'human' not in all_magnebots[idx].company.values()) or (all_magnebots[idx].controlled_by == 'human' and 'ai' not in all_magnebots[idx].company.values()):
@@ -1012,6 +1072,7 @@ class Simulation(Controller):
                                      )
                                     messages.append([idx,txt,0])
                                 self.terminate = True
+                        '''
 
                 #Transmit ai controlled robots status
                 if not self.local and all_magnebots[idx] in self.ai_magnebots:
@@ -1277,11 +1338,9 @@ class Simulation(Controller):
                 
                 #resp = self.communicate({"$type": "destroy_all_objects"})
                 self.reset_world()
+                #pdb.set_trace()
                 print("Reset complete")
-                #while True:
-                #    self.communicate([])
                 
-                return 1
    
             
         self.communicate({"$type": "terminate"})
@@ -1296,10 +1355,18 @@ class Simulation(Controller):
         for go in self.graspable_objects:
             commands.append({"$type": "destroy_object", "id": go})
             
-                                  
+        commands.append({"$type": "destroy_avatar", "avatar_id": 'a'})   
         self.communicate(commands)
         
         commands = []
+        
+        for u_idx in range(len(self.user_magnebots)):
+            self.user_magnebots[u_idx].reset(position=self.user_spawn_positions[u_idx])
+            #self.user_magnebots[u_idx].ui.initialized = False
+            
+        for u_idx in range(len(self.ai_magnebots)):
+            self.ai_magnebots[u_idx].reset(position=self.ai_spawn_positions[u_idx])
+        
         
         '''
         #Reset user magnebots
@@ -1322,18 +1389,20 @@ class Simulation(Controller):
             
         #self.user_magnebots[1].ui.destroy_all(destroy_canvas=True)
         #self.communicate([])
-        pdb.set_trace()
-        self.communicate({"$type": "destroy_avatar", "id": str(self.ai_magnebots[0].robot_id)})
-        self.communicate({"$type": "destroy_avatar", "id": str(self.user_magnebots[1].robot_id)})
-        self.communicate({"$type": "destroy_avatar", "id": str(self.user_magnebots[0].robot_id)})
-    
-    def restart(self):
-    
-        commands = self.populate_world()
+
+        self.object_manager.initialized = False
+        commands = []
+        commands.extend(self.create_scene())
+            
+        commands.extend(self.populate_world())
         self.communicate(commands)
-        result = self.run()
+
+        #Reattach canvas
+        for um in self.user_magnebots:
+            um.ui.attach_canvas_to_avatar(avatar_id=str(um.robot_id))
+        self.communicate([])
         
-        return result
+    
 
 if __name__ == "__main__":
 
@@ -1352,6 +1421,8 @@ if __name__ == "__main__":
     
     width = cfg['width']
     height = cfg['height']
+    
+    global_refresh_sensor = cfg['sensor_waiting_time']
 
     #The web interface expects to get frames from camera devices. We simulate this by using v4l2loopback to create some virtual webcams to which we forward the frames generated in here
     if not args.no_virtual_cameras:
@@ -1366,6 +1437,5 @@ if __name__ == "__main__":
 
     result = c.run()
     print("Simulation ended with result: ", result)
-    while result:
-        result = c.restart()
+
     

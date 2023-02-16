@@ -209,32 +209,72 @@ class AICollabEnv(gym.Env):
     def gym_setup(self):
     
         map_size = self.map_config['num_cells'][0]
-        self.action_space = spaces.Discrete(18)
+        self.action_space = spaces.Discrete(len(self.Action))
         
         #self.observation_space = spaces.Box(0, map_size - 1, shape=(2,), dtype=int)
         
         self.observation_space = spaces.Dict(
             {
-                "frame" : spaces.Box(0, map_size - 1, shape=(2,), dtype=int),
+                "frame" : spaces.Box(low=0, high=5, shape=(map_size, map_size), dtype=int),
                 "objects_held" : spaces.Discrete(2)
+                #"objects_danger_level" : spaces.Box(low=1,high=2,shape=(self.map_config['num_objects'],), dtype=int)
             }
         )
+        
+        self.objects_held = [0,0]
+        self.goal_count = 0
         
     
     def step(self, action):
         
-        world_state, objects_info, neighbors_info, objects_held = self.take_action(action)
+        previous_objects_held = self.objects_held
+        
+        world_state, objects_info, neighbors_info, action_truncated = self.take_action(action)
         #observed_state = {"frame": world_state, "message": self.messages}
-        observation = {"frame": world_state[0], "objects_held": int(any(objects_held))} #Occupancy map
+        observation = {"frame": world_state[0], "objects_held": int(any(oh != 0 for oh in self.objects_held))} #Occupancy map
         info = {}
         info['objects'] = objects_info
         info['neighbors'] = neighbors_info
         info['messages'] = self.messages
         info['map_metadata'] = world_state[1]
-        info['objects_held'] = objects_held
+        info['objects_held'] = self.objects_held
         
         reward = 0
-        terminated = False
+        
+        #Rewards
+        
+        if previous_objects_held[0] and not self.objects_held[0]: #Reward given when object is left in the middle of the room
+        
+            goal_radius = 5
+            max_x = np.round(world_state[0].shape[0]/2) + goal_radius
+            min_x = np.round(world_state[0].shape[0]/2) - goal_radius
+            max_y = np.round(world_state[0].shape[1]/2) + goal_radius
+            min_y = np.round(world_state[0].shape[1]/2) - goal_radius
+            ego_location = np.where(world_state[0] == 5)
+            
+            #max_x = min(ego_location[0][0] + self.view_radius, world_state[0].shape[0])
+            #max_y = min(ego_location[1][0] + self.view_radius, world_state[0].shape[1])
+            #min_x = max(ego_location[0][0] - self.view_radius, 0)
+            #min_y = max(ego_location[1][0] - self.view_radius, 0)
+            
+            w_idxs = np.where(world_state[0][min_x:max_x+1,min_y:max_y+1] > 1)
+            object_ids = {}
+            for w_ix in range(len(w_idxs)):
+                new_idx = (w_idxs[0][w_ix],w_idxs[1][w_ix])
+                if previous_objects_held[0] in world_state[1][str(new_idx[0]+min_x) + str(new_idx[1]+min_y)]:
+                    reward = 1
+                    self.goal_count += 1
+                    
+        if self.objects_held[0] and not previous_objects_held[0]: #Reward given when grabbing objects
+            reward = 0.5
+                
+        #if action_truncated: #Penalty given when not being able to grab an object or drop an object
+        #    reward = -0.5
+        
+        if self.goal_count == 4: #When four objects are put in the middle the episode should terminate
+            terminated = True
+        else:
+            terminated = False
         
 
 
@@ -243,8 +283,16 @@ class AICollabEnv(gym.Env):
     def reset(self, seed=None, options=None):
     
         super().reset(seed=seed)
-        observation = {"frame": [], "objects_held": 0}
+        map_size = self.map_config['num_cells'][0]
+        observation = {"frame": np.zeros((map_size,map_size),dtype=np.int64), "objects_held": 0}
         info = {}
+        
+        
+        self.sio.emit("reset")
+        
+        self.objects_held = [0,0]
+        self.messages = []
+        self.goal_count = 0
         
         return observation, info
         
@@ -351,6 +399,7 @@ class AICollabEnv(gym.Env):
         state = self.State.take_action
         data = {}
         terminated = False
+        truncated = False
         objects_obs = []
         neighbors_obs = []
         
@@ -360,14 +409,14 @@ class AICollabEnv(gym.Env):
         while not self.map_ready:
             pass
 
-        while not terminated:
+        while not terminated and not truncated:
             #frame = await self.frame_queue.get()
             if self.map_ready:
                 frame = self.maps
                 self.map_ready = False
             #print("Frame actuated")
             
-            action_message,state,data,terminated = self.controller(action, frame, state, data)
+            action_message,state,data,terminated,truncated = self.controller(action, frame, state, data)
 
             if action_message: #Action message is an action to take by the robot that will be communicated to the simulator
                 print("action", action_message)
@@ -381,7 +430,7 @@ class AICollabEnv(gym.Env):
         self.new_objects = False
         self.new_neighbors = False
             
-        return frame, objects_obs, neighbors_obs, self.objects_held
+        return frame, objects_obs, neighbors_obs, truncated
     
     
     #Function that waits for input and then makes the robot actuate 
@@ -459,6 +508,7 @@ class AICollabEnv(gym.Env):
         occupancy_map = frame[0]
         objects_metadata = frame[1]
         terminated = False
+        truncated = False
         
 
         if state == self.State.take_action:
@@ -489,7 +539,7 @@ class AICollabEnv(gym.Env):
                         action_message.append(self.move_to(target=target))
                     else:
                         print("Movement not possible")
-                        terminated = True
+                        truncated = True
                     
                 elif action.value < grab_commands:    
                 
@@ -511,19 +561,19 @@ class AICollabEnv(gym.Env):
                         data["object"] = objects_metadata[key][0]
                     else:
                         print("No object to grab")
-                        terminated = True
+                        truncated = True
                     
                 elif action == self.Action.drop_object:
 
-                    if "object" in data:
-                        action_message.append(self.drop(data["object"], Arm.left))
+                    if self.objects_held[0]:
+                        action_message.append(self.drop(self.objects_held[0], Arm.left))
                        
                         state = self.State.waiting_ongoing
                         data["next_state"] = self.State.reverse_after_dropping
-                        del data["object"]
+
                     else:
                         print("No object to drop")
-                        terminated = True
+                        truncated = True
                     
                 elif action == self.Action.danger_sensing:
                     action_message.append(self.danger_sensor_reading(self.robot_id))
@@ -531,7 +581,7 @@ class AICollabEnv(gym.Env):
                     
                 else:
                     print("Not implemented", action)
-                    terminated = True
+                    truncated = True
                 
                     
                     
@@ -547,6 +597,7 @@ class AICollabEnv(gym.Env):
                 state = self.State.waiting_ongoing
                 print("waited to grasp objective")
                 action_message.append(self.grasp(data["object"], Arm.left))
+                del data["object"]
                 data["next_state"] = self.State.reseting_arm
             
         elif state == self.State.reseting_arm:
@@ -573,7 +624,7 @@ class AICollabEnv(gym.Env):
                 terminated = True
             
             
-        return action_message,state,data,terminated
+        return action_message,state,data,terminated, truncated
 
 
     def check_bounds(self, action_index, location, occupancy_map):

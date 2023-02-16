@@ -51,6 +51,10 @@ var init_xdotool = false;
 var video_idx_broadcaster = 0;
 
 
+function socket_to_simulator_id(socket_id){
+  return all_ids_list[all_ids.indexOf(socket_id)];
+}
+
 io.sockets.on("error", e => console.log(e));
 io.sockets.on("connection", socket => { //When a client connects
   socket.on("broadcaster_load", () => {
@@ -128,6 +132,10 @@ io.sockets.on("connection", socket => { //When a client connects
     map_config = config;
 
   });
+  
+  socket.on("reset", () => {
+    socket.to(simulator).emit("reset", socket_to_simulator_id(socket.id));
+  })
 
   //WEBRTC connection setup
   socket.on("offer", (id, message) => {
