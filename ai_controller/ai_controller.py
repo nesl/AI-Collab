@@ -128,11 +128,27 @@ grab_down_right = 14
 grab_down_left = 15
 drop_object = 16
 danger_sensing = 17
+get_occupancy_map = 18
+get_objects_held = 19
+check_item = 20
+check_robot = 21
+get_message = 22
+message_help_accept = 23
+message_help_request_sensing = 24
+message_help_request_lifting = 25
+message_reject_request = 26
+message_cancel_request = 27
 
 OBSERVATIONS
 
 Occupancy map
 Objects held
+message
+item info
+other robot info
+strength
+num messages
+num objects
 '''
 
     
@@ -158,17 +174,29 @@ processed_observation = (tuple(map(tuple, observation['frame'])), observation['o
 
 print_map(observation["frame"])
 
+next_observation = []
+
 while not done:
 
-    #action = env.action_space.sample()
+    action = env.action_space.sample()
+    
 
-    action = agent.get_action(processed_observation)
+    #action = agent.get_action(processed_observation)
+    
+    if next_observation and next_observation['action_status']:
+        print_map(next_observation["frame"])
+        print(next_observation['item_output'], next_observation['objects_held'], next_observation['neighbors_output'], next_observation['strength'], next_observation['message'])
+ 
+        #print(env.Action(action))
+
+        
+    
     next_observation, reward, terminated, truncated, info = env.step(action)
     if reward != 0:
         print('Reward', reward)
-    processed_next_observation = (tuple(map(tuple, next_observation['frame'])), next_observation['objects_held'])
-    print_map(next_observation["frame"])
-    agent.update(processed_observation, action, reward, terminated, processed_next_observation)
+    processed_next_observation = (tuple(map(tuple, next_observation['frame'])), next_observation['objects_held'], next_observation['action_status'])
+    
+    #agent.update(processed_observation, action, reward, terminated, processed_next_observation)
 
     processed_observation = processed_next_observation
 

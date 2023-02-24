@@ -48,7 +48,7 @@ class AICollabEnv(gym.Env):
         self.host = host
         self.port = port
         self.setup_ready = False
-        self.objects_held = []
+
 
         
         
@@ -144,6 +144,13 @@ class AICollabEnv(gym.Env):
 
             self.messages.append((source_agent_id,message))
             print("message", message, source_agent_id)
+           
+        self.new_output = () 
+        @self.sio.event
+        def ai_output(object_type_coords_map, object_attributes_id, objects_held, sensing_results, ai_status, extra_status, strength):
+            
+            self.map = json_numpy.loads(object_type_coords_map)
+            self.new_output = (self.map, object_attributes_id, objects_held, sensing_results, ActionStatus(ai_status), extra_status, strength)
 
         #Receive status updates of our agent
         self.action_status = -1
@@ -209,40 +216,65 @@ class AICollabEnv(gym.Env):
     def gym_setup(self):
     
         map_size = self.map_config['num_cells'][0]
-        self.action_space = spaces.Discrete(len(self.Action))
+        self.action_space = spaces.Dict(
+            {
+                "action" : spaces.Discrete(len(self.Action)),
+                "item" : spaces.Discrete(self.map_config['num_objects']),
+                "robot" : spaces.Discrete(len(self.map_config['all_robots']))
+            }
+        )
         
         #self.observation_space = spaces.Box(0, map_size - 1, shape=(2,), dtype=int)
         
         self.observation_space = spaces.Dict(
             {
                 "frame" : spaces.Box(low=0, high=5, shape=(map_size, map_size), dtype=int),
-                "objects_held" : spaces.Discrete(2)
+                "objects_held" : spaces.Discrete(2),
+                "action_status" : spaces.Discrete(8),
+                "item_output" : spaces.Dict(
+                    {
+                        "item_weight" : spaces.Discrete(10),
+                        "item_danger_level" : spaces.Discrete(3),
+                        "item_location" : spaces.MultiDiscrete([map_size, map_size])
+                    }
+                ),
+                "num_items" : spaces.Discrete(self.map_config['num_objects']),
+                "neighbors_output" : spaces.Dict(
+                    {
+                        "neighbor_type" : spaces.Discrete(2),
+                        "neighbor_location" : spaces.MultiDiscrete([map_size, map_size])
+                    }
+                
+                ),
+                "strength" : spaces.Discrete(len(self.map_config['all_robots'])),
+                "message" : spaces.Text(min_length=0,max_length=100),
+                "num_messages" : spaces.Discrete(100)
+                
                 #"objects_danger_level" : spaces.Box(low=1,high=2,shape=(self.map_config['num_objects'],), dtype=int)
             }
         )
         
-        self.objects_held = [0,0]
+
         self.goal_count = 0
         
     
     def step(self, action):
         
-        previous_objects_held = self.objects_held
+        #previous_objects_held = self.objects_held
         
-        world_state, objects_info, neighbors_info, action_truncated = self.take_action(action)
+        world_state, sensing_output, action_terminated, action_truncated = self.take_action(action)
         #observed_state = {"frame": world_state, "message": self.messages}
-        observation = {"frame": world_state[0], "objects_held": int(any(oh != 0 for oh in self.objects_held))} #Occupancy map
+        observation = {"frame": sensing_output["occupancy_map"], "objects_held": sensing_output["objects_held"], "action_status": int(action_terminated[0]) + int(action_truncated[0])*2 + int(action_terminated[1])*3 + int(action_truncated[1])*4, "num_items": len(self.object_info), "item_output": sensing_output["item_output"], "neighbors_output": sensing_output["neighbors_output"], "message": sensing_output["message"], "num_messages": len(self.messages), "strength": sensing_output["strength"] } #Occupancy map
+        
         info = {}
-        info['objects'] = objects_info
-        info['neighbors'] = neighbors_info
-        info['messages'] = self.messages
         info['map_metadata'] = world_state[1]
-        info['objects_held'] = self.objects_held
+
         
         reward = 0
         
         #Rewards
         
+        '''
         if previous_objects_held[0] and not self.objects_held[0]: #Reward given when object is left in the middle of the room
         
             goal_radius = 5
@@ -270,6 +302,8 @@ class AICollabEnv(gym.Env):
                 
         #if action_truncated: #Penalty given when not being able to grab an object or drop an object
         #    reward = -0.5
+        '''
+        
         
         if self.goal_count == 4: #When four objects are put in the middle the episode should terminate
             terminated = True
@@ -284,13 +318,31 @@ class AICollabEnv(gym.Env):
     
         super().reset(seed=seed)
         map_size = self.map_config['num_cells'][0]
-        observation = {"frame": np.zeros((map_size,map_size),dtype=np.int64), "objects_held": 0}
+
+        observation = {"frame": np.zeros((map_size,map_size),dtype=np.int64), "objects_held": 0, "action_status": 0, "num_messages": 0, "message": "", "strength": 1, "num_items": 0, "item_output": {"item_weight": 0, "item_danger_level": 0, "item_location": np.zeros((map_size,map_size), dtype=np.int64)}, "neighbors_output": {"neighbor_type": 0, "neighbor_location": np.zeros((map_size,map_size), dtype=np.int64)}}
+        
         info = {}
         
         
+        self.internal_state = [self.State.take_action, self.State.take_sensing_action]
+        self.internal_data = {}
+        self.object_info = []
+        self.neighbors_info = [[um[0], 0 if um[1] == 'human' else 1,0,0] for um in self.map_config['all_robots']]
+        
         self.sio.emit("reset")
         
-        self.objects_held = [0,0]
+        self.map = np.array([])
+        time.sleep(2) #Sleep for reset
+        
+        print("Waiting for location")
+        while self.map.size == 0:
+            continue
+
+        self.old_output = self.new_output
+        print("Got location")
+        
+        observation["frame"] = self.map
+        
         self.messages = []
         self.goal_count = 0
         
@@ -328,8 +380,12 @@ class AICollabEnv(gym.Env):
         return ["reset_camera"]
     def slide_torso(self, height):
         return ["slide_torso", str(height)]
-    def danger_sensor_reading(self, robot_id):
-        return ["danger_sensor_reading", str(robot_id)]
+    def danger_sensor_reading(self):
+        return ["send_danger_sensor_reading"]
+    def get_occupancy_map(self):
+        return ["send_occupancy_map"]
+    def get_objects_held_status(self):
+        return ["send_objects_held_status"]
 
 
     
@@ -368,8 +424,10 @@ class AICollabEnv(gym.Env):
         grasping_object = 3
         reseting_arm = 4
         reverse_after_dropping = 5
-        wait_objects = 6
-        action_end = 7
+        take_sensing_action = 6
+        wait_sensing = 7
+        action_end = 8
+        
         
     class Action(Enum):
         move_up = 0
@@ -390,135 +448,94 @@ class AICollabEnv(gym.Env):
         grab_down_left = 15
         drop_object = 16
         danger_sensing = 17
+        get_occupancy_map = 18
+        get_objects_held = 19
+        check_item = 20
+        check_robot = 21
+        get_message = 22
+        message_help_accept = 23
+        message_help_request_sensing = 24
+        message_help_request_lifting = 25
+        message_reject_request = 26
+        message_cancel_request = 27
+        #check item slot 1 observation = [(item_id1, danger_level1,weight1),(item_id2, danger_level2,weight2),(item_id3, danger_level2,weight2)], number of items so far
+        #get message observation text + number of messages
+        #send message
 
 
 
 
     def take_action(self, action):
     
-        state = self.State.take_action
-        data = {}
+        
         terminated = False
         truncated = False
         objects_obs = []
         neighbors_obs = []
         
-        action = self.Action(action)
-        print(action)
+        
+        #print(action)
             
-        while not self.map_ready:
-            pass
+        
 
-        while not terminated and not truncated:
-            #frame = await self.frame_queue.get()
-            if self.map_ready:
-                frame = self.maps
-                self.map_ready = False
-            #print("Frame actuated")
-            
-            action_message,state,data,terminated,truncated = self.controller(action, frame, state, data)
 
-            if action_message: #Action message is an action to take by the robot that will be communicated to the simulator
-                print("action", action_message)
-                self.sio.emit("ai_action", (action_message, str(self.robot_id)))
+        
+        action_message,self.internal_state,self.internal_data,sensing_output,terminated,truncated = self.controller(action, self.old_output, self.internal_state, self.internal_data)
+
+        if action_message: #Action message is an action to take by the robot that will be communicated to the simulator
+            print("action", action_message)
+            self.sio.emit("ai_action", (action_message))
                 
-        if self.new_objects:
-            objects_obs = self.objects
-        if self.new_neighbors:
-            neighbors_obs = self.neighbors
-        
-        self.new_objects = False
-        self.new_neighbors = False
-            
-        return frame, objects_obs, neighbors_obs, truncated
-    
-    
-    #Function that waits for input and then makes the robot actuate 
-    async def actuate(self, frame_queue):
-
-
-        state = self.State.take_action
-        data = {}
-
-        #Robot controller: messages are received async from other robots and data is whatever needs to be saved for future calls to the controller
-        def simple_controller(frame, state, messages, data):
-            action_message = []
-
-            #Wait until specific message is received from a human controlled robot
-            if state == self.State.waiting:
-                if messages:
-                    
-                    message = messages.pop(0)
-                    if "I need help with " in message[1]:
-                        if "sensing" in message[1]:
-                            pass
-                        elif "lifting" in message[1]:
-                            data = int(message[1][25:])
-                            if self.sio:
-                                self.sio.emit("message", ("I will help " + message[0], self.neighbors,str(self.robot_id)))
-                            state = self.State.moving_to_objective
-                            
-            #Move close to object specified by human controlled robot
-            elif state == self.State.moving_to_objective:
-                #pdb.set_trace()
-                if self.action_status == ActionStatus.tipping:
-                    action_message.append(reset_position())
-                elif self.action_status != ActionStatus.ongoing:
-                    print("moving to objective")
-                    action_message.append(move_to(target=data, arrived_offset=0.5))
-                    state = self.State.moving_to_objective_waiting
-
-            #Wait until the robot starts actuating
-            elif state == self.State.moving_to_objective_waiting:
-
-                if self.action_status == ActionStatus.ongoing or self.action_status == ActionStatus.success:
-                    print("waited for moving to objective")
-                    state = self.State.moving_to_objective
-
-
-            return action_message,state,data
-            
-        
-            
-        while not self.map_ready:
+                
+        while not self.new_output: #Sync with simulator
             pass
 
-        while True:
-            #frame = await self.frame_queue.get()
-            if self.map_ready:
-                frame = self.maps
-                self.map_ready = False
-            #print("Frame actuated")
-            
-            action_message,state,data,terminated = self.controller(frame, state, data)
+        if action_message and any(self.new_output[5]):
+            print(self.new_output[5])
 
-            if action_message: #Action message is an action to take by the robot that will be communicated to the simulator
-                print("action", action_message)
-                self.sio.emit("ai_action", (action_message, str(self.robot_id)))
+        if self.new_output:
+            self.old_output = self.new_output
+            self.new_output = ()
+        
+            
+        return self.old_output, sensing_output, terminated, truncated
+    
+    
+    
 
 
     #Only works for occupancy maps not centered in magnebot
-    def controller(self, action, frame, state, data):
+    def controller(self, complete_action, observations, internal_state, data):
 
         
         action_message = []
         movement_commands = 8
         grab_commands = 16
         
-        occupancy_map = frame[0]
-        objects_metadata = frame[1]
-        terminated = False
-        truncated = False
+        occupancy_map = observations[0]
+        objects_metadata = observations[1]
+        objects_held = observations[2]
+        danger_sensing_data = observations[3]
+        action_status = observations[4]
+        extra_status = observations[5]
+        strength = observations[6]
+        terminated = [False, False]
+        truncated = [False, False]
+        state = internal_state[0]
+        sensing_state = internal_state[1]
+        action = self.Action(complete_action["action"])
         
+        sensing_output = {"occupancy_map": occupancy_map, "item_output":{"item_weight": 0, "item_danger_level": 0, "item_location": [0,0]}, "message": "", "neighbors_output":{"neighbor_type": 0, "neighbor_location": [0,0]}, "objects_held" : 0, "strength": strength}
+
+        print(state, sensing_state)
 
         if state == self.State.take_action:
-            if self.action_status != ActionStatus.ongoing:
+            if action_status != ActionStatus.ongoing:
+                print("Original ", action)
+                #print(occupancy_map)
             
-                #print(occupancy_map[10:20,15:30])
-            
-                self.action_status = -1
+                #self.action_status = -1
                 ego_location = np.where(occupancy_map == 5)
-                #pdb.set_trace()
                 ego_location = np.array([ego_location[0][0],ego_location[1][0]])
 
 
@@ -539,7 +556,7 @@ class AICollabEnv(gym.Env):
                         action_message.append(self.move_to(target=target))
                     else:
                         print("Movement not possible")
-                        truncated = True
+                        truncated[0] = True
                     
                 elif action.value < grab_commands:    
                 
@@ -553,7 +570,7 @@ class AICollabEnv(gym.Env):
                     if (not np.array_equal(object_location,ego_location)) and occupancy_map[object_location[0],object_location[1]] == 2:
                         #object_location = np.where(occupancy_map == 2)
                         #key = str(object_location[0][0]) + str(object_location[1][0])
-                        key = str(object_location[0]) + str(object_location[1])
+                        key = str(object_location[0]) + '_' + str(object_location[1])
                         action_message.append(self.turn_to(objects_metadata[key][0]))
                        
                         state = self.State.waiting_ongoing
@@ -561,39 +578,38 @@ class AICollabEnv(gym.Env):
                         data["object"] = objects_metadata[key][0]
                     else:
                         print("No object to grab")
-                        truncated = True
+                        truncated[0] = True
                     
                 elif action == self.Action.drop_object:
 
-                    if self.objects_held[0]:
-                        action_message.append(self.drop(self.objects_held[0], Arm.left))
+                    if objects_held[0]:
+                        action_message.append(self.drop(objects_held[0], Arm.left))
                        
                         state = self.State.waiting_ongoing
                         data["next_state"] = self.State.reverse_after_dropping
 
                     else:
                         print("No object to drop")
-                        truncated = True
+                        truncated[0] = True
                     
-                elif action == self.Action.danger_sensing:
-                    action_message.append(self.danger_sensor_reading(self.robot_id))
-                    state = self.State.wait_objects
+                
                     
                 else:
-                    print("Not implemented", action)
-                    truncated = True
+                    #print("Not implemented", action)
+                    pass
+
                 
                     
                     
                 
         elif state == self.State.waiting_ongoing:
 
-            if self.action_status == ActionStatus.ongoing or self.action_status == ActionStatus.success:
-                print("waiting")
+            if action_status == ActionStatus.ongoing or action_status == ActionStatus.success:
+                print("waiting", action_status)
                 state = data["next_state"]
                     
         elif state == self.State.grasping_object:
-             if self.action_status != ActionStatus.ongoing:
+             if action_status != ActionStatus.ongoing:
                 state = self.State.waiting_ongoing
                 print("waited to grasp objective")
                 action_message.append(self.grasp(data["object"], Arm.left))
@@ -602,31 +618,177 @@ class AICollabEnv(gym.Env):
             
         elif state == self.State.reseting_arm:
 
-            if self.action_status != ActionStatus.ongoing:
+            if action_status != ActionStatus.ongoing:
                 print("waited to reset arm")
                 action_message.append(self.reset_arm(Arm.left))
                 state = self.State.waiting_ongoing
                 data["next_state"] = self.State.action_end
                 
         elif state == self.State.reverse_after_dropping:
-            if self.action_status != ActionStatus.ongoing:
+            if action_status != ActionStatus.ongoing:
                 print("waited to reverse after dropping")
                 action_message.append(self.move_by(-0.5))
                 state = self.State.waiting_ongoing
                 data["next_state"] = self.State.action_end
                 
-        elif state == self.State.wait_objects:
-            if self.new_objects:
-                terminated = True
+        
                 
         elif state == self.State.action_end:
-            if self.action_status != ActionStatus.ongoing:  
-                terminated = True
+            if action_status != ActionStatus.ongoing:  
+                print("action end", action_status)
+                terminated[0] = True
             
             
-        return action_message,state,data,terminated, truncated
+        if terminated[0] or truncated[0]:
+            state = self.State.take_action
+            
+            
+        if sensing_state == self.State.take_sensing_action:
+            if action == self.Action.danger_sensing:
+                action_message.append(self.danger_sensor_reading())
+                sensing_state = self.State.wait_sensing
+                
+            elif action == self.Action.get_occupancy_map:
+                action_message.append(self.get_occupancy_map())
+                sensing_state = self.State.wait_sensing
+            
+            elif action == self.Action.get_objects_held:
+                action_message.append(self.get_objects_held_status())
+                sensing_state = self.State.wait_sensing
+                
+            elif action == self.Action.check_item:
+                if complete_action["item"] >= len(self.object_info):
+                    truncated[1] = True
+                else:
+                    sensing_output["item_output"]["item_weight"] = self.object_info[complete_action["item"]][1]
+                    sensing_output["item_output"]["item_danger_level"] = self.object_info[complete_action["item"]][2]
+                    sensing_output["item_output"]["item_location"] = self.object_info[complete_action["item"]][3:5]
+                    terminated[1] = True
+                    
+            elif action == self.Action.check_robot:
+            
+                if complete_action["robot"] > 0:
+                    robot_idx = complete_action["robot"] - 1
+                    sensing_output["neighbors_output"]["neighbor_type"] =  self.neighbors_info[robot_idx][1]
+                    sensing_output["neighbors_output"]["neighbor_location"] = self.neighbors_info[robot_idx][2:4]
+                    terminated[1] = True
+                else:
+                    truncated[1] = True
+                
+            elif action == self.Action.get_message:
+                if self.messages:
+                    sensing_output["message"] = self.messages.pop(0)
+                    terminated[1] = True
+                else:
+                    truncated[1] = True
+                    
+            elif action.value >= self.Action.message_help_accept.value and action.value <= self.Action.message_cancel_request.value:
+            
+            
+                if complete_action["robot"] > 0:
+            
+                    robot_data = self.neighbors_info[complete_action["robot"]-1]
+                    neighbors_dict = {robot_data[0]: "human" if not robot_data[1] else "ai"}
+                else:
+                    neighbors_dict = {robot_data[0]: "human" if not robot_data[1] else "ai" for robot_data in self.neighbors_info}
+            
+                if action == self.Action.message_help_accept:
+                    message = "I will help "
+                elif action == self.Action.message_help_request_sensing:
+                    if complete_action["item"] < len(self.object_info):
+                        message = "I need help with sensing " + str(self.object_info[complete_action["item"]][0])
+                    else:
+                        truncated[1] = True
+                elif action == self.Action.message_help_request_lifting:
+                    if complete_action["item"] < len(self.object_info):
+                        message = "I need help with lifting " + str(self.object_info[complete_action["item"]][0])
+                    else:
+                        truncated[1] = True
+                elif action == self.Action.message_reject_request:
+                    if complete_action["robot"] > 0:
+                        message = "I cannot help you right now " + str(robot_data[0])
+                    else:
+                        truncated[1] = True
+                elif action == self.Action.message_cancel_request:
+                    message = "No more need for help"
+                
+                
+                if not truncated[1]:
+                    self.sio.emit("message", (message,neighbors_dict))
+                    terminated[1] = True
+        
+            else:
+                #print("Not implemented sensing action", action)
+                pass
+
+                
+        elif sensing_state == self.State.wait_sensing:
+            
+            if any(extra_status):
+                terminated[1] = True
+
+                if extra_status[0]: #Occupancy map received
+                
+                    #Update objects locations
+                    object_locations = np.where(occupancy_map == 2)
+                    #object_locations = np.array([object_locations[0][:],object_locations[1][:]])
+                    for ol_idx in range(len(object_locations[0])):
+                        key = str(object_locations[0][ol_idx]) + '_' + str(object_locations[1][ol_idx])
+                        known_object = False
+                        for ob_idx,ob in enumerate(self.object_info):
+                            if ob[0] == objects_metadata[key][0][0]:
+                                self.object_info[ob_idx][3] = object_locations[0][ol_idx]
+                                self.object_info[ob_idx][4] = object_locations[1][ol_idx]
+                                known_object = True
+                                break
+                        if not known_object:
+                            self.object_info.append([objects_metadata[key][0][0],objects_metadata[key][0][1],0,object_locations[0][ol_idx],object_locations[1][ol_idx]])
+                    
+                    #Update robots locations
+                    robots_locations = np.where(occupancy_map == 3)
+                    for ol_idx in range(len(robots_locations[0])):
+                        key = str(robots_locations[0][ol_idx]) + '_' + str(robots_locations[1][ol_idx])
+                        for ob_idx,ob in enumerate(self.neighbors_info):
+                            
+                            if ob[0] == str(objects_metadata[key][0]):
+                                self.neighbors_info[ob_idx][2] = robots_locations[0][ol_idx]
+                                self.neighbors_info[ob_idx][3] = robots_locations[1][ol_idx]
+                                break
+                        
+                        
+                if extra_status[1]: #Danger estimate received
+                    for object_key in danger_sensing_data.keys():
+                        known_object = False
+                        min_pos = self.map_config['edge_coordinate']
+                        multiple = self.map_config['cell_size']
+                        pos_new = [round((danger_sensing_data[object_key]['location'][0]+abs(min_pos))/multiple), round((danger_sensing_data[object_key]['location'][2]+abs(min_pos))/multiple)]
+                        for ob_idx, ob in enumerate(self.object_info):
+                            if ob[0] == object_key:
+                                self.object_info[ob_idx][2] = self.combine_danger_info(danger_sensing_data[object_key]['sensor'])
+                                self.object_info[ob_idx][3] = pos_new[0]
+                                self.object_info[ob_idx][4] = pos_new[1]
+                                known_object = True
+                                break
+                        if not known_object:
+                            self.object_info.append([object_key,danger_sensing_data[object_key]['weight'],self.combine_danger_info(danger_sensing_data[object_key]['sensor']),pos_new[0],pos_new[1]])
+               
+                if extra_status[2]: #Objects held
+                    sensing_output["objects_held"] = int(any(oh != 0 for oh in objects_held))
+                   
+                    
+            
+        if terminated[1] or truncated[1]:
+            sensing_state = self.State.take_sensing_action    
+            
+            
+            
+        return action_message, [state,sensing_state], data, sensing_output, terminated, truncated
 
 
+    def combine_danger_info(self, estimates):
+        key = list(estimates.keys())[0]
+        return estimates[key]['value']
+        
     def check_bounds(self, action_index, location, occupancy_map):
     
         if action_index == 0: #Up

@@ -25,7 +25,6 @@ from PIL import Image
 
 
 
-
 #Dimension of our camera view
 width = 640 
 height = 480 
@@ -64,6 +63,7 @@ class Enhanced_Magnebot(Magnebot):
         self.past_status = ActionStatus.ongoing
         self.view_radius = 0
         self.centered_view = 0
+        
 
     
 
@@ -80,9 +80,18 @@ class Simulation(Controller):
         self.local = args.local
         self.options = args
         self.cfg = cfg
+        self.no_debug_camera = args.no_debug_camera
+        
+        self.reset = False
         
         self.timer = float(self.cfg['timer'])
+        self.ai_skip_frames = int(self.cfg['ai_skip_frames'])
         
+        self.occupancy_map_request = []
+        self.objects_held_status_request = []
+        self.danger_sensor_request = []
+        self.ai_status_request = []
+        self.queue_perception_action = []
         
 
         #Functionality of keys according to order of appearance: [Advance, Back, Right, Left, Grab with left arm, Grab with right arm, Camera down, Camera up, Activate sensor, Focus on object]
@@ -125,8 +134,8 @@ class Simulation(Controller):
 
         self.user_magnebots = []
         self.ai_magnebots = []
-        self.ai_spawn_positions = [{"x": -1.4, "y": 0, "z": -1.1},{"x": 0, "y": 0, "z": -1.1}, {"x": 0, "y": 0, "z": -2.1}]
-        self.user_spawn_positions = [{"x": 0, "y": 0, "z": 1.1},{"x": 0, "y": 0, "z": 2.1}, {"x": 4, "y": 0, "z": 1.6}]
+        self.ai_spawn_positions = [{"x": -2, "y": 0, "z": 1.1},{"x": -2, "y": 0, "z": 2.1}, {"x": -2, "y": 0, "z": 3.1}, {"x": -3, "y": 0, "z": 0.1}, {"x": -2, "y": 0, "z": 0.1},{"x": -2, "y": 0, "z": -1.1}, {"x": -2, "y": 0, "z": -2.1},{"x": -2, "y": 0, "z": -3.1},{"x": -3, "y": 0, "z": -1.1},{"x": -3, "y": 0, "z": -2.1}, {"x": -3, "y": 0, "z": 1.1}, {"x": -3, "y": 0, "z": 2.1}, {"x": -3.5, "y": 0, "z": 0.5}, {"x": -3.5, "y": 0, "z": 1.5}, {"x": -3.5, "y": 0, "z": 2.5}, {"x": -3.5, "y": 0, "z": 3.5}, {"x": -3.5, "y": 0, "z": -2.5}, {"x": -3.5, "y": 0, "z": -3.5}]
+        self.user_spawn_positions = [{"x": 0, "y": 0, "z": 1.1},{"x": 0, "y": 0, "z": 2.1}, {"x": 0, "y": 0, "z": 3.1}, {"x": 1, "y": 0, "z": 0.1}, {"x": 0, "y": 0, "z": 0.1},{"x": 0, "y": 0, "z": -1.1}, {"x": 0, "y": 0, "z": -2.1},{"x": 0, "y": 0, "z": -3.1},{"x": 1, "y": 0, "z": -3.1},{"x": 1, "y": 0, "z": -2.1}]
         self.uis = []
 
         #Create ai magnebots
@@ -269,12 +278,13 @@ class Simulation(Controller):
                 print("I'm connected!")
                 
                 #Occupancy map info
-                occupancy_map_config = {}
+                extra_config = {}
         
                 extra_config['edge_coordinate'] = self.static_occupancy_map.get_occupancy_position(0,0)
                 extra_config['cell_size'] = self.cfg['cell_size']
                 extra_config['num_cells'] = self.static_occupancy_map.occupancy_map.shape
                 extra_config['num_objects'] = len(self.graspable_objects)
+                extra_config['all_robots'] = [(str(um.robot_id),um.controlled_by) for um in [*self.user_magnebots,*self.ai_magnebots]]
                 
                 
                 self.sio.emit("simulator", (self.user_magnebots_ids,self.ai_magnebots_ids, self.options.video_index, extra_config))#[*self.user_magnebots_ids, *self.ai_magnebots_ids])
@@ -312,7 +322,7 @@ class Simulation(Controller):
                 
                 for actions in action_message:
                 
-                    if 'danger_sensor_reading' in actions[0]:
+                    if 'send_' in actions[0]: # or 'send_occupancy_map' in actions[0] or 'send_objects_held_status' in actions[0]:
                         eval_string = "self."
                     else:
                         eval_string = "ai_agent."
@@ -325,7 +335,16 @@ class Simulation(Controller):
                             eval_string += ','
                         eval_string += argument
 
-                    eval(eval_string + ")")
+                    if 'send_' in actions[0]:
+                        if len(actions) > 1:
+                            eval_string += ','
+                        eval_string +=  '"' + agent_id + '")'
+                        self.queue_perception_action.append([eval_string,self.ai_skip_frames])
+                    else:
+                        #print("Eval string", eval_string)
+
+                        eval(eval_string + ")")
+
 
             #Indicate use of occupancy maps
             @self.sio.event
@@ -359,6 +378,10 @@ class Simulation(Controller):
                     {"$type": "rotate_directional_light_by",
                      "angle": 30,
                      "axis": "pitch"}]
+                     
+        fps = int(self.cfg['fps'])     
+        if fps:    
+            commands.append({"$type": "set_target_framerate", "framerate": fps})
         '''
         commands = [#{'$type': 'add_scene','name': 'building_site','url': 'https://tdw-public.s3.amazonaws.com/scenes/linux/2019.1/building_site'}, 
                     {"$type": "load_scene", "scene_name": "ProcGenScene"},
@@ -384,7 +407,7 @@ class Simulation(Controller):
         
         self.graspable_objects = []
         
-        self.reset = False
+        
         self.timer = float(self.cfg['timer'])
         self.terminate = False
     
@@ -460,16 +483,22 @@ class Simulation(Controller):
         #commands.extend(TDWUtils.create_avatar(position={"x": 0, "y": 10, "z": 0},#{"x": 0, "y": 10, "z": -1},
         #                                                   look_at={"x": 0, "y": 0, "z": 0},
         #                                                   avatar_id="a"))
-                                                           
-        commands.extend([{"$type": "create_avatar", "type": "A_Img_Caps_Kinematic", "id": "a"}, 
-        {"$type": "teleport_avatar_to", "avatar_id": "a", "position": {"x": 0, "y": 10, "z": 0}},
-        {"$type": "look_at_position", "avatar_id": "a", "position": {"x": 0, "y": 0, "z": 0}},
-        {"$type": "rotate_avatar_by", "angle": 90, "axis": "yaw", "is_world": True, "avatar_id": "a"}])
-        commands.extend([{"$type": "set_pass_masks","pass_masks": ["_img"],"avatar_id": "a"},
-                  {"$type": "send_images","frequency": "always","ids": ["a"]},
-                  {"$type": "set_img_pass_encoding", "value": False},
-                  {"$type": "set_render_order", "render_order": 1, "sensor_name": "SensorContainer", "avatar_id": "a"},
-                  {"$type": "send_keyboard", "frequency": "always"}])
+                                
+        if not self.no_debug_camera:       
+                        
+            commands.extend([{"$type": "create_avatar", "type": "A_Img_Caps_Kinematic", "id": "a"}, 
+            {"$type": "teleport_avatar_to", "avatar_id": "a", "position": {"x": 0, "y": 10, "z": 0}},
+            {"$type": "look_at_position", "avatar_id": "a", "position": {"x": 0, "y": 0, "z": 0}},
+            {"$type": "rotate_avatar_by", "angle": 90, "axis": "yaw", "is_world": True, "avatar_id": "a"}])
+            commands.extend([{"$type": "set_pass_masks","pass_masks": ["_img"],"avatar_id": "a"},
+                      {"$type": "send_images","frequency": "always","ids": ["a"]},
+                      {"$type": "set_img_pass_encoding", "value": False},
+                      {"$type": "set_render_order", "render_order": 1, "sensor_name": "SensorContainer", "avatar_id": "a"}])
+                  
+        commands.append({"$type": "send_keyboard", "frequency": "always"})
+        
+        
+        
         
         return commands
 
@@ -698,7 +727,9 @@ class Simulation(Controller):
             elif keys.get_pressed(j) in self.keys_set[8]: #Estimate danger level
                 idx = self.keys_set[8].index(keys.get_pressed(j))
 
-                self.danger_sensor_reading(self.user_magnebots[idx].robot_id)
+                idx,item_info = self.danger_sensor_reading(self.user_magnebots[idx].robot_id)
+                if not self.local:
+                    self.sio.emit('objects_update', (idx,item_info))
                        
                 
             
@@ -790,6 +821,7 @@ class Simulation(Controller):
                     self.user_magnebots[um_idx].stop()
 
 
+    
 
     def danger_sensor_reading(self, robot_id):
     
@@ -851,7 +883,7 @@ class Simulation(Controller):
                 ego_magnebot.screen_positions["duration"].extend([100]*len(near_items_idx)) 
                 
                 ego_magnebot.danger_estimates = danger_estimates
-                
+        '''         
                 if not self.local:
                     #print("objects_update", (idx,ego_magnebot.item_info))
                     self.sio.emit('objects_update', (idx,ego_magnebot.item_info))
@@ -860,7 +892,135 @@ class Simulation(Controller):
                     self.sio.emit('objects_update', (idx,ego_magnebot.item_info))
         else:
             self.sio.emit('objects_update', (idx,ego_magnebot.item_info))
+        '''
         
+        return idx, ego_magnebot.item_info
+            
+    def send_occupancy_map(self, magnebot_id):
+    
+        self.occupancy_map_request.append(magnebot_id)
+        
+        
+    def send_objects_held_status(self,magnebot_id):
+    
+        self.objects_held_status_request.append(magnebot_id)
+        
+    def send_danger_sensor_reading(self, magnebot_id):
+    
+        self.danger_sensor_request.append(magnebot_id)
+            
+    def get_occupancy_map(self, magnebot_id):
+                    
+        
+        m_idx = self.ai_magnebots_ids.index(magnebot_id)
+        locations_magnebot_map = {}
+        
+        magnebots_locations = np.where(self.object_type_coords_map == 3)
+        locations_magnebot_map = {str(j):[magnebots_locations[0][i],magnebots_locations[1][i]] for i in range(len(magnebots_locations[0])) for j in self.object_attributes_id[str(magnebots_locations[0][i])+'_'+str(magnebots_locations[1][i])]}
+
+        x = locations_magnebot_map[magnebot_id][0]
+        y = locations_magnebot_map[magnebot_id][1]
+        
+        
+        if magnebot_id in self.occupancy_map_request and self.ai_magnebots[m_idx].view_radius:
+            
+            self.occupancy_map_request.remove(magnebot_id)
+        
+
+            view_radius = self.ai_magnebots[m_idx].view_radius
+            
+            
+
+            x_min = max(0,x-view_radius)
+            y_min = max(0,y-view_radius)
+            x_max = min(self.object_type_coords_map.shape[0]-1,x+view_radius)
+            y_max = min(self.object_type_coords_map.shape[1]-1,y+view_radius)
+            #limited_map = np.zeros_like(self.static_occupancy_map.occupancy_map)
+            
+            #Magnebot is at the center of the occupancy  map always or not
+            if self.ai_magnebots[m_idx].centered_view:
+                limited_map = np.zeros((view_radius*2+1,view_radius*2+1)) #+1 as we separately count the row/column where the magnebot is currently in
+                #limited_map[:,:] = self.static_occupancy_map.occupancy_map[x_min:x_max+1,y_min:y_max+1]
+                limited_map[:,:] = self.object_type_coords_map[x_min:x_max+1,y_min:y_max+1]
+                objects_locations = np.where(limited_map > 1)
+                reduced_metadata = {}
+                limited_map[x-x_min,y-y_min] = 5
+
+                for ol in range(len(objects_locations[0])):
+                    rkey = str(objects_locations[0][ol]+x_min)+'_'+str(objects_locations[1][ol]+y_min)
+                    rkey2 = str(objects_locations[0][ol])+'_'+str(objects_locations[1][ol])
+                    reduced_metadata[rkey2] = self.object_attributes_id[rkey]
+            else:
+                limited_map = np.zeros_like(self.object_type_coords_map)
+                limited_map[[0,limited_map.shape[0]-1],:] = -1
+                limited_map[:,[0,limited_map.shape[1]-1]] = -1
+                limited_map[x_min:x_max+1,y_min:y_max+1] = self.object_type_coords_map[x_min:x_max+1,y_min:y_max+1]
+                objects_locations = np.where(limited_map > 1)
+                reduced_metadata = {}
+                limited_map[x,y] = 5
+                
+                for ol in range(len(objects_locations[0])):
+                    rkey = str(objects_locations[0][ol])+'_'+str(objects_locations[1][ol])
+                    reduced_metadata[rkey] = self.object_attributes_id[rkey]
+                
+                
+            """
+            for ol in range(len(objects_locations[0])):
+                rkey = str(objects_locations[0][ol]+x_min)+str(objects_locations[1][ol]+y_min)
+                pdb.set_trace()
+                if magnebot_id in object_attributes_id[rkey]:
+                    limited_map[x,y] = 5
+                else:
+                    limited_map[objects_locations[0][ol],objects_locations[1][ol]] = reduced_object_type_coords_map[objects_locations[0][ol],objects_locations[1][ol]]
+                    rkey2 = str(objects_locations[0][ol])+str(objects_locations[1][ol])
+                    
+                    reduced_metadata[rkey2] = object_attributes_id[rkey]
+            
+            
+            for om in range(len(magnebots_locations[0])):
+                if magnebots_locations[0][om] >= x_min and magnebots_locations[0][om] <= x_max and magnebots_locations[1][om] >= y_min and magnebots_locations[1][om] <= y_max:
+                    rkey = str(magnebots_locations[0][om])+str(magnebots_locations[1][om])
+                    if not magnebot_id in object_attributes_id[rkey]:
+                        limited_map[magnebots_locations[0][om]-x_min,magnebots_locations[1][om]-y_min] = 3
+                        rkey2 = str(magnebots_locations[0][om]-x_min)+str(magnebots_locations[1][om]-y_min)
+                        reduced_metadata[rkey2] = object_attributes_id[rkey]
+                
+            """
+            #print(limited_map)
+
+            #pdb.set_trace()
+            #limited_map[x_min:x_max+1,y_min:y_max+1] = self.static_occupancy_map.occupancy_map[x_min:x_max+1,y_min:y_max+1]
+            
+            
+       
+            
+            #self.sio.emit('occupancy_map', (all_idx, json_numpy.dumps(limited_map), reduced_metadata, objects_held))
+            
+        else:
+            limited_map = np.zeros_like(self.object_type_coords_map)
+            limited_map[x,y] = 5
+            reduced_metadata = {}
+
+            
+        return limited_map, reduced_metadata
+        
+    def get_objects_held_state(self, magnebot_id):
+    
+        #Check the objects held in each arm
+        objects_held = [0,0]
+        m_idx = self.ai_magnebots_ids.index(magnebot_id)
+        
+        if magnebot_id in self.objects_held_status_request:
+        
+            self.objects_held_status_request.remove(magnebot_id)
+            for arm_idx, arm in enumerate([Arm.right,Arm.left]):
+                
+                if self.ai_magnebots[m_idx].dynamic.held[arm].size > 0:
+                    objects_held[arm_idx] = int(self.ai_magnebots[m_idx].dynamic.held[arm][0])
+                
+        return objects_held
+    
+    
     #### Main Loop
     def run(self):
         done = False
@@ -869,6 +1029,8 @@ class Simulation(Controller):
         messages = []
         extra_commands = []
         duration = []
+        estimated_fps = 0
+        past_time = time.time()
         
         
         
@@ -902,28 +1064,28 @@ class Simulation(Controller):
             #object_attributes_id stores the ids of the objects and magnebots
             #object_type_coords_map creates a second occupancy map with objects and magnebots
 
-            object_type_coords_map = np.copy(self.static_occupancy_map.occupancy_map)
+            self.object_type_coords_map = np.copy(self.static_occupancy_map.occupancy_map)
             min_pos = self.static_occupancy_map.get_occupancy_position(0,0)[0]
             multiple = self.cfg['cell_size']
-            object_attributes_id = {}
+            self.object_attributes_id = {}
             
             for o in self.graspable_objects:
                 pos = self.object_manager.transforms[o].position
                 pos_new = [round((pos[0]+abs(min_pos))/multiple), round((pos[2]+abs(min_pos))/multiple)]
                 #2 is for objects
-                object_type_coords_map[pos_new[0],pos_new[1]] = 2
-                if str(pos_new[0])+str(pos_new[1]) not in object_attributes_id:
-                    object_attributes_id[str(pos_new[0])+str(pos_new[1])] = []
-                object_attributes_id[str(pos_new[0])+str(pos_new[1])].append(o)
+                self.object_type_coords_map[pos_new[0],pos_new[1]] = 2
+                if str(pos_new[0])+'_'+str(pos_new[1]) not in self.object_attributes_id:
+                    self.object_attributes_id[str(pos_new[0])+'_'+str(pos_new[1])] = []
+                self.object_attributes_id[str(pos_new[0])+'_'+str(pos_new[1])].append((o,self.required_strength[o]))
             #pdb.set_trace()
             for o in [*self.user_magnebots,*self.ai_magnebots]:
                 pos = o.dynamic.transform.position
                 pos_new = [round((pos[0]+abs(min_pos))/multiple), round((pos[2]+abs(min_pos))/multiple)]
                 #3 is for other magnebots
-                object_type_coords_map[pos_new[0],pos_new[1]] = 3
-                if str(pos_new[0])+str(pos_new[1]) not in object_attributes_id:
-                    object_attributes_id[str(pos_new[0])+str(pos_new[1])] = []
-                object_attributes_id[str(pos_new[0])+str(pos_new[1])].append(o.robot_id)
+                self.object_type_coords_map[pos_new[0],pos_new[1]] = 3
+                if str(pos_new[0])+'_'+str(pos_new[1]) not in self.object_attributes_id:
+                    self.object_attributes_id[str(pos_new[0])+'_'+str(pos_new[1])] = []
+                self.object_attributes_id[str(pos_new[0])+'_'+str(pos_new[1])].append((str(o.robot_id)))
 
             #pdb.set_trace()
             
@@ -1078,7 +1240,8 @@ class Simulation(Controller):
                 if not self.local and all_magnebots[idx] in self.ai_magnebots:
                     if all_magnebots[idx].action.status != all_magnebots[idx].past_status:
                         all_magnebots[idx].past_status = all_magnebots[idx].action.status
-                        self.sio.emit("ai_status", (idx,all_magnebots[idx].action.status.value))
+                        #self.sio.emit("ai_status", (idx,all_magnebots[idx].action.status.value))
+
                             
             #Share object info
             object_info_update = list(set(object_info_update))
@@ -1094,8 +1257,13 @@ class Simulation(Controller):
             
             commands.append({"$type": "send_screen_positions", "position_ids": screen_positions["position_ids"], "positions":screen_positions["positions"], "ids": [*self.user_magnebots_ids], "frequency": "once"})
 
-            resp = self.communicate(commands)
             
+            
+            resp = self.communicate(commands)
+            duration_fps = time.time()-past_time
+            estimated_fps = (estimated_fps + 1/duration_fps)/2
+            #print(estimated_fps)
+            past_time = time.time()
 
 
             commands.clear()
@@ -1215,7 +1383,22 @@ class Simulation(Controller):
                 cv2.imshow('frame',magnebot_images[str(self.user_magnebots[0].robot_id)])
                 cv2.waitKey(1)
             
-            #Send frames to virtual cameras in system and occupancy maps if required
+            
+            to_remove = []
+            #Execute delayed actions
+            for qa_idx in range(len(self.queue_perception_action)):
+                if not self.queue_perception_action[qa_idx][1]:
+                    self.queue_perception_action[qa_idx][1] -= 1
+                else:
+                    eval(self.queue_perception_action[qa_idx][0])
+                    to_remove.append(qa_idx)
+                    
+            for tr in to_remove:
+                del self.queue_perception_action[tr]
+            
+            
+            
+            #Send frames to virtual cameras in system and occupancy maps if required, and all outputs needed
             if cams:
                 idx = 0
 
@@ -1224,95 +1407,46 @@ class Simulation(Controller):
                         cams[idx+1].send(magnebot_images[magnebot_id])
                     idx += 1
 
-                locations_magnebot_map = {}
+                
                 for m_idx, magnebot_id in enumerate(self.ai_magnebots_ids):
                     if magnebot_id in magnebot_images:
                         cams[idx+1].send(magnebot_images[magnebot_id])
 
                     #Occupancy maps
 
-                    #self.ai_magnebots[m_idx].view_radius = 5 #DEBUG
-
-                    if self.ai_magnebots[m_idx].view_radius:
-                        all_idx = all_ids.index(magnebot_id)
-                        view_radius = self.ai_magnebots[m_idx].view_radius
-                        if not locations_magnebot_map:
-                            magnebots_locations = np.where(object_type_coords_map == 3)
-                            locations_magnebot_map = {str(j):[magnebots_locations[0][i],magnebots_locations[1][i]] for i in range(len(magnebots_locations[0])) for j in object_attributes_id[str(magnebots_locations[0][i])+str(magnebots_locations[1][i])]}
-
-                        x = locations_magnebot_map[magnebot_id][0]
-                        y = locations_magnebot_map[magnebot_id][1]
-
-                        x_min = max(0,x-view_radius)
-                        y_min = max(0,y-view_radius)
-                        x_max = min(object_type_coords_map.shape[0]-1,x+view_radius)
-                        y_max = min(object_type_coords_map.shape[1]-1,y+view_radius)
-                        #limited_map = np.zeros_like(self.static_occupancy_map.occupancy_map)
-                        
-                        #Magnebot is at the center of the occupancy  map always or not
-                        if self.ai_magnebots[m_idx].centered_view:
-                            limited_map = np.zeros((view_radius*2+1,view_radius*2+1)) #+1 as we separately count the row/column where the magnebot is currently in
-                            #limited_map[:,:] = self.static_occupancy_map.occupancy_map[x_min:x_max+1,y_min:y_max+1]
-                            limited_map[:,:] = object_type_coords_map[x_min:x_max+1,y_min:y_max+1]
-                            objects_locations = np.where(limited_map > 1)
-                            reduced_metadata = {}
-                            limited_map[x-x_min,y-y_min] = 5
-
-                            for ol in range(len(objects_locations[0])):
-                                rkey = str(objects_locations[0][ol]+x_min)+str(objects_locations[1][ol]+y_min)
-                                rkey2 = str(objects_locations[0][ol])+str(objects_locations[1][ol])
-                                reduced_metadata[rkey2] = object_attributes_id[rkey]
-                        else:
-                            limited_map = np.zeros_like(object_type_coords_map)
-                            limited_map[[0,limited_map.shape[0]-1],:] = -1
-                            limited_map[:,[0,limited_map.shape[1]-1]] = -1
-                            limited_map[x_min:x_max+1,y_min:y_max+1] = object_type_coords_map[x_min:x_max+1,y_min:y_max+1]
-                            objects_locations = np.where(limited_map > 1)
-                            reduced_metadata = {}
-                            limited_map[x,y] = 5
-                            
-                            for ol in range(len(objects_locations[0])):
-                                rkey = str(objects_locations[0][ol])+str(objects_locations[1][ol])
-                                reduced_metadata[rkey] = object_attributes_id[rkey]
-                            
-                            
-                        """
-                        for ol in range(len(objects_locations[0])):
-                            rkey = str(objects_locations[0][ol]+x_min)+str(objects_locations[1][ol]+y_min)
-                            pdb.set_trace()
-                            if magnebot_id in object_attributes_id[rkey]:
-                                limited_map[x,y] = 5
-                            else:
-                                limited_map[objects_locations[0][ol],objects_locations[1][ol]] = reduced_object_type_coords_map[objects_locations[0][ol],objects_locations[1][ol]]
-                                rkey2 = str(objects_locations[0][ol])+str(objects_locations[1][ol])
-                                
-                                reduced_metadata[rkey2] = object_attributes_id[rkey]
-                        
-                        
-                        for om in range(len(magnebots_locations[0])):
-                            if magnebots_locations[0][om] >= x_min and magnebots_locations[0][om] <= x_max and magnebots_locations[1][om] >= y_min and magnebots_locations[1][om] <= y_max:
-                                rkey = str(magnebots_locations[0][om])+str(magnebots_locations[1][om])
-                                if not magnebot_id in object_attributes_id[rkey]:
-                                    limited_map[magnebots_locations[0][om]-x_min,magnebots_locations[1][om]-y_min] = 3
-                                    rkey2 = str(magnebots_locations[0][om]-x_min)+str(magnebots_locations[1][om]-y_min)
-                                    reduced_metadata[rkey2] = object_attributes_id[rkey]
-                            
-                        """
-                        #print(limited_map)
-
-                        #pdb.set_trace()
-                        #limited_map[x_min:x_max+1,y_min:y_max+1] = self.static_occupancy_map.occupancy_map[x_min:x_max+1,y_min:y_max+1]
-                        
-                        #Check the objects held in each arm
-                        objects_held = [0,0]
-                        
-                        for arm_idx, arm in enumerate([Arm.right,Arm.left]):
-                            
-                            if self.ai_magnebots[m_idx].dynamic.held[arm].size > 0:
-                                objects_held[arm_idx] = int(self.ai_magnebots[m_idx].dynamic.held[arm][0])
+                    extra_status = [0]*3
+                    
+                    if magnebot_id in self.occupancy_map_request:
+                         extra_status[0] = 1
                    
+                    limited_map, reduced_metadata = self.get_occupancy_map(magnebot_id)
+                    
+                    
+                    if magnebot_id in self.objects_held_status_request:
+                        extra_status[1] = 1
+                    
+                    objects_held = self.get_objects_held_state(magnebot_id)
+                    
+                    
+                    
+                    if magnebot_id in self.danger_sensor_request:
+                        _,item_info = self.danger_sensor_reading(magnebot_id)
+                        self.danger_sensor_request.remove(magnebot_id)
+                        extra_status[2] = 1
+                    else:
+                        item_info = {}
                         
-                        self.sio.emit('occupancy_map', (all_idx, json_numpy.dumps(limited_map), reduced_metadata, objects_held))
+                        
+                    
+                        
+                    all_idx = all_ids.index(str(magnebot_id))
+                    
+                    
+                    #if all_idx in self.ai_status_request:
+                    ai_status = all_magnebots[all_idx].past_status.value
+                        
+                    if not self.local:
+                        self.sio.emit('ai_output', (all_idx, json_numpy.dumps(limited_map), reduced_metadata, objects_held, item_info, ai_status, extra_status, all_magnebots[all_idx].strength) )
 
                     idx += 1
                 
@@ -1338,6 +1472,7 @@ class Simulation(Controller):
                 
                 #resp = self.communicate({"$type": "destroy_all_objects"})
                 self.reset_world()
+                self.reset = False
                 #pdb.set_trace()
                 print("Reset complete")
                 
@@ -1411,6 +1546,7 @@ if __name__ == "__main__":
     parser.add_argument('--no_virtual_cameras', action='store_true', help='do not stream frames to virtual cameras')
     parser.add_argument('--address', type=str, default='https://172.17.15.69:4000' ,help='adress to connect to')
     parser.add_argument('--video-index', type=int, default=0 ,help='index of the first /dev/video device to start streaming to')
+    parser.add_argument('--no-debug-camera', action='store_true', help='do not instantiate debug top down camera')
     args = parser.parse_args()
 
     with open('config.yaml', 'r') as file:

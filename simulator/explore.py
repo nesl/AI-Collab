@@ -23,13 +23,13 @@ class ChaseBall(Controller):
         # Add the robot, the Magnebot, and an object manager.
 
         
-        self.av = FirstPersonAvatar()
+        self.av = FirstPersonAvatar(position={"x": -1.4, "y": 0, "z": -3.1})
 
         self.magnebot: Magnebot = Magnebot(robot_id=self.get_unique_id(),   position={"x": -1.4, "y": 0, "z": -1.1},
                                            image_frequency=ImageFrequency.never)
 
-      
-        self.add_ons.extend([self.av, self.magnebot])
+        self.add_ons.extend([self.magnebot])
+        #self.add_ons.extend([self.av, self.magnebot])
         #self.add_ons.extend([self.object_manager, self.camera, image_capture])
 
         # Create the scene.
@@ -118,7 +118,11 @@ class ChaseBall(Controller):
             
             if not timer:
                 print("Destroying robot")
-                commands.append({"$type": "destroy_robot", "id": self.magnebot.robot_id})
+                #commands.append({"$type": "destroy_robot", "id": self.magnebot.robot_id})
+                self.magnebot.reset()
+
+                self.communicate([TDWUtils.create_empty_room(20, 20)])
+                print("finish")
                 timer -= 1
             elif timer > 0:
                 timer -= 1

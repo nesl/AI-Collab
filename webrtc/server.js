@@ -156,13 +156,19 @@ io.sockets.on("connection", socket => { //When a client connects
   });
 
   
-  socket.on("ai_action", (action_message, source_id) => {//AI action forwarding
-    socket.to(simulator).emit("ai_action",action_message,source_id);
+  socket.on("ai_action", (action_message) => {//AI action forwarding
+    socket.to(simulator).emit("ai_action",action_message,socket_to_simulator_id(socket.id));
   });
   socket.on("ai_status", (idx, status) => {//AI status forwarding
     socket.to(all_ids[idx]).emit("ai_status",status);
   });
-  socket.on("message", (message,neighbors_list, source_id) => { //Forwarding messages between robots
+  
+  socket.on("ai_output", (idx, object_type_coords_map, object_attributes_id, objects_held, sensing_results, ai_status, extra_status, strength) => {//AI output forwarding
+    socket.to(all_ids[idx]).emit("ai_output", object_type_coords_map, object_attributes_id, objects_held, sensing_results, ai_status, extra_status, strength);
+  });
+  
+  
+  socket.on("message", (message,neighbors_list) => { //Forwarding messages between robots
 
     /*
     var neighbor_keys = Object.keys(neighbors_list);
@@ -174,6 +180,7 @@ io.sockets.on("connection", socket => { //When a client connects
     }
     */
     //const origin_id = user_ids_list[clients_ids.indexOf(socket.id)]
+    let source_id = socket_to_simulator_id(socket.id)
     console.log(source_id)
     console.log(neighbors_list)
     for (const [key, value] of Object.entries(neighbors_list)) {
