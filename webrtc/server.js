@@ -81,8 +81,10 @@ io.sockets.on("connection", socket => { //When a client connects
 
     socket.to(broadcaster).emit("watcher", socket.id, client_number);
 
-    clients_ids[client_number-1] = socket.id;
-    all_ids[client_number-1] = socket.id;
+    if(client_number != 0){
+        clients_ids[client_number-1] = socket.id;
+        all_ids[client_number-1] = socket.id;
+    }
         
     
     /*
@@ -94,30 +96,35 @@ io.sockets.on("connection", socket => { //When a client connects
   });
   socket.on("watcher_ai", (client_number, use_occupancy, server_address, view_radius, centered) => { //When an ai client connects
     console.log("watcher_ai")
-    if(! use_occupancy){
-        client_number_adapted = client_number + user_ids_list.length;
-        socket.to(broadcaster).emit("watcher_ai", socket.id, client_number_adapted, server_address, ai_ids_list[client_number-1]);
-    } else {
-        socket.to(simulator).emit("watcher_ai", ai_ids_list[client_number-1], view_radius, centered)
-    }
-    ai_ids[client_number-1] = socket.id;
-    all_ids[client_number-1+user_ids_list.length] = socket.id;
+    
+    if(client_number != 0){
+    
+        if(! use_occupancy){
+            client_number_adapted = client_number + user_ids_list.length;
+            socket.to(broadcaster).emit("watcher_ai", socket.id, client_number_adapted, server_address, ai_ids_list[client_number-1]);
+        } else {
+            socket.to(simulator).emit("watcher_ai", ai_ids_list[client_number-1], view_radius, centered)
+        }
+        ai_ids[client_number-1] = socket.id;
+        all_ids[client_number-1+user_ids_list.length] = socket.id;
 
-    socket.emit("watcher_ai", ai_ids_list[client_number-1], map_config);
-    /*
-    if (ai_ids.includes(socket.id) == false){
-        ai_ids.push(socket.id);
-        all_ids.push(socket.id);
+        socket.emit("watcher_ai", ai_ids_list[client_number-1], map_config);
+        /*
+        if (ai_ids.includes(socket.id) == false){
+            ai_ids.push(socket.id);
+            all_ids.push(socket.id);
+        }
+        */
     }
-    */
-
 
   });
 
 
   socket.on("occupancy_map", (client_number, object_type_coords_map, object_attributes_id, objects_held) => { //Occupancy maps forwarding
     //console.log(`Sending to ${client_number}`);
-    socket.to(all_ids[client_number]).emit("occupancy_map", object_type_coords_map, object_attributes_id, objects_held)
+    if(client_number != 0){
+        socket.to(all_ids[client_number]).emit("occupancy_map", object_type_coords_map, object_attributes_id, objects_held)
+    }
   });
 
   socket.on("simulator", (user_ids, ai_agents_ids, video_idx, config) => { //When simulator connects
@@ -180,19 +187,22 @@ io.sockets.on("connection", socket => { //When a client connects
     }
     */
     //const origin_id = user_ids_list[clients_ids.indexOf(socket.id)]
-    let source_id = socket_to_simulator_id(socket.id)
-    console.log(source_id)
-    console.log(neighbors_list)
-    for (const [key, value] of Object.entries(neighbors_list)) {
-        console.log(key)
-        console.log(value)
-        if(value === 'human'){
-            let c = clients_ids[user_ids_list.indexOf(key)]; 
-            console.log(c)
-            socket.to(c).emit("message", message, source_id);
-        } else if(value === 'ai'){
-            let c = ai_ids[ai_ids_list.indexOf(key)];
-            socket.to(c).emit('message', message, source_id);
+    
+    if(all_ids.indexOf(socket.id) >= 0){
+        let source_id = socket_to_simulator_id(socket.id)
+        console.log(source_id)
+        console.log(neighbors_list)
+        for (const [key, value] of Object.entries(neighbors_list)) {
+            console.log(key)
+            console.log(value)
+            if(value === 'human'){
+                let c = clients_ids[user_ids_list.indexOf(key)]; 
+                console.log(c)
+                socket.to(c).emit("message", message, source_id);
+            } else if(value === 'ai'){
+                let c = ai_ids[ai_ids_list.indexOf(key)];
+                socket.to(c).emit('message', message, source_id);
+            }
         }
     }
 
@@ -200,9 +210,12 @@ io.sockets.on("connection", socket => { //When a client connects
   //Every time a key is pressed by someone in their browser, emulate that keypress using xdotool
   socket.on("key", key => {
     //socket.to(broadcaster).emit("key", socket.id, key);
-    if (window_name){
+    let idx = clients_ids.indexOf(socket.id);
+    
+    
+    if (window_name && idx >= 0){
         key = key.replace('Arrow', '');
-        let idx = clients_ids.indexOf(socket.id);
+        
         //key = char_replacement[idx][key];
         exec('xdotool key --window ' + window_name + ' ' + key, (error, stdout, stderr) => {
             if (stdout)

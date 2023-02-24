@@ -1377,7 +1377,7 @@ class Simulation(Controller):
                     messages.append([idx,txt,0])
                 self.terminate = True
                     
-
+            
             #Show view of magnebot
             if str(self.user_magnebots[0].robot_id) in magnebot_images:
                 cv2.imshow('frame',magnebot_images[str(self.user_magnebots[0].robot_id)])

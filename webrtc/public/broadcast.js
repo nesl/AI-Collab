@@ -34,14 +34,15 @@ socket.on("watcher", (id, client_number) => { //When human controlled robot conn
   console.log(id)
   connectedPeers.push(id);
 
+  
   //For each connected client, we send both the third person view and a first person view of one of the user agents
   let stream = videoElements[client_number].srcObject;
   current_idx += 1;
   stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
 
-  let stream2 = videoElements[0].srcObject;
+  //let stream2 = videoElements[0].srcObject;
 
-  stream2.getTracks().forEach(track => peerConnection.addTrack(track, stream2));
+  //stream2.getTracks().forEach(track => peerConnection.addTrack(track, stream2));
 
   peerConnection.onicecandidate = event => {
     if (event.candidate) {
@@ -77,9 +78,9 @@ socket.on("watcher_ai", (id, client_number, server_address, robot_id) => { //Whe
   current_idx += 1;
   stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
 
-  let stream2 = videoElements[0].srcObject;
+  //let stream2 = videoElements[0].srcObject;
 
-  stream2.getTracks().forEach(track => peerConnection.addTrack(track, stream2));
+  //stream2.getTracks().forEach(track => peerConnection.addTrack(track, stream2));
 
   peerConnection.onicecandidate = event => {
     if (event.candidate) {
@@ -205,8 +206,10 @@ async function gotDevices(deviceInfos) {
 
     for (let i = first_video_idx; i < deviceInfos.length; i++) {
 		let videoElement = document.createElement('video')
-		videoElement.playsinline = true;
-		videoElement.autoplay = true;
+		videoElement.setAttribute("playsinline",true);
+		videoElement.setAttribute("autoplay",true);
+		//videoElement.playsinline = true;
+		//videoElement.autoplay = true;
 		videoElement.muted = true;
 		videoElement.id = 'videoSource' + v;
 		
@@ -223,6 +226,7 @@ async function gotDevices(deviceInfos) {
 		.catch(handleError);
 		document.body.insertBefore(videoElement, currentDiv);
 		v += 1;
+
 	}
 /*
   window.deviceInfos = deviceInfos;
