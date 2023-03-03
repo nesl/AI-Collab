@@ -91,7 +91,9 @@ class Simulation(Controller):
         self.objects_held_status_request = []
         self.danger_sensor_request = []
         self.ai_status_request = []
+        self.raycast_request = []
         self.queue_perception_action = []
+        
         
 
         #Functionality of keys according to order of appearance: [Advance, Back, Right, Left, Grab with left arm, Grab with right arm, Camera down, Camera up, Activate sensor, Focus on object]
@@ -572,8 +574,12 @@ class Simulation(Controller):
                 self.user_magnebots[u_idx].item_info[o_id]['time'] = self.timer
                 self.user_magnebots[u_idx].item_info[o_id]['location'] = self.object_manager.transforms[o_id].position.tolist()
 
+
+                self.raycast_request.append(str(self.user_magnebots[u_idx].robot_id))
+                '''
                 if not self.local:
-                    self.sio.emit('objects_update', (u_idx,self.user_magnebots[u_idx].item_info))
+                    self.sio.emit('objects_update', (str(self.user_magnebots[u_idx].robot_id),self.user_magnebots[u_idx].item_info))
+                '''
 
     #Get screen coordinates of objects
     def screen_output(self, resp, screen_data, all_magnebots, all_ids):
@@ -633,6 +639,8 @@ class Simulation(Controller):
     def keyboard_output(self, resp, extra_commands, duration, keys_time_unheld, all_ids, messages):
 
         keys = KBoard(resp)
+        
+        #print(keys.get_num_pressed(), keys.get_num_held(), keys.get_num_released(), self.frame_num)
 
         # Listen for events where the key was first pressed on the previous frame.
         for j in range(keys.get_num_pressed()):
@@ -726,11 +734,13 @@ class Simulation(Controller):
 
             elif keys.get_pressed(j) in self.keys_set[8]: #Estimate danger level
                 idx = self.keys_set[8].index(keys.get_pressed(j))
+                self.danger_sensor_request.append(str(self.user_magnebots[idx].robot_id))
 
+                '''
                 idx,item_info = self.danger_sensor_reading(self.user_magnebots[idx].robot_id)
                 if not self.local:
-                    self.sio.emit('objects_update', (idx,item_info))
-                       
+                    self.sio.emit('objects_update', (str(self.user_magnebots[idx].robot_id),item_info))
+                '''
                 
             
             elif keys.get_pressed(j) in self.keys_set[9]: #Focus on object, use raycasting, needs adjustment
@@ -1031,7 +1041,7 @@ class Simulation(Controller):
         duration = []
         estimated_fps = 0
         past_time = time.time()
-        
+        self.frame_num = 0
         
         
         keys_time_unheld = [0]*len(self.user_magnebots_ids)
@@ -1045,7 +1055,7 @@ class Simulation(Controller):
             um.screen_positions["positions"].extend([-1]*len(all_ids))
             um.screen_positions["duration"].extend([-1]*len(all_ids))
             
-       
+        time_gone = time.time()
         
         print("User ids: ", self.user_magnebots_ids, "AI ids: ", self.ai_magnebots_ids)
         
@@ -1147,10 +1157,18 @@ class Simulation(Controller):
                 for idx2 in range(len(all_magnebots)):
                     if idx == idx2:
                         continue
-                    if np.linalg.norm(all_magnebots[idx].dynamic.transform.position - all_magnebots[idx2].dynamic.transform.position) < 2: #Check only two dimensions not three
+                    if np.linalg.norm(all_magnebots[idx].dynamic.transform.position - all_magnebots[idx2].dynamic.transform.position) < 2: #TODO Check only two dimensions not three
                         all_magnebots[idx].strength += 1 #Increase strength
-                        company[all_magnebots[idx2].robot_id] = all_magnebots[idx2].controlled_by #Add information about neighbors
                         
+                        
+                    if np.linalg.norm(all_magnebots[idx].dynamic.transform.position - all_magnebots[idx2].dynamic.transform.position) < 5: #TODO Check only two dimensions not three, view radius
+                    
+                        company[all_magnebots[idx2].robot_id] = (all_magnebots[idx2].controlled_by, all_magnebots[idx2].dynamic.transform.position.tolist()) #Add information about neighbors
+                        
+                all_magnebots[idx].company = company 
+                        
+                        
+                '''
                         #Update object info entries when nearby
                         if not all_magnebots[idx].item_info == all_magnebots[idx2].item_info:
                             for it_element in all_magnebots[idx2].item_info.keys():
@@ -1170,14 +1188,15 @@ class Simulation(Controller):
                                 
                             all_magnebots[idx2].item_info = all_magnebots[idx].item_info 
                             object_info_update.extend([idx,idx2])
-                            
-                            
+                '''
+                        
+                '''      
                 #Transmit neighbors info
                 if not all_magnebots[idx].company == company:
                     all_magnebots[idx].company = company          
                     if not self.local:      
                         self.sio.emit('neighbors_update', (idx,all_magnebots[idx].company)) 
-                      
+                '''
                 #Refresh danger level sensor             
                 if all_magnebots[idx].refresh_sensor < global_refresh_sensor:
                     all_magnebots[idx].refresh_sensor += 1              
@@ -1242,6 +1261,8 @@ class Simulation(Controller):
                         all_magnebots[idx].past_status = all_magnebots[idx].action.status
                         #self.sio.emit("ai_status", (idx,all_magnebots[idx].action.status.value))
 
+
+            '''
                             
             #Share object info
             object_info_update = list(set(object_info_update))
@@ -1249,7 +1270,7 @@ class Simulation(Controller):
             if not self.local:
                 for ob_idx in object_info_update:
                     self.sio.emit('objects_update', (ob_idx,all_magnebots[ob_idx].item_info)) 
-             
+            '''
              
             #Ask for the given screen positions of certain objects/magnebots     
             screen_positions["position_ids"].extend(list(range(0,len(all_ids))))
@@ -1403,8 +1424,25 @@ class Simulation(Controller):
                 idx = 0
 
                 for magnebot_id in self.user_magnebots_ids:
+                
                     if magnebot_id in magnebot_images:
                         cams[idx+1].send(magnebot_images[magnebot_id])
+                        
+                    item_info = {}
+                    all_idx = all_ids.index(str(magnebot_id))
+                    
+                    if magnebot_id in self.danger_sensor_request:
+                        _,item_info = self.danger_sensor_reading(magnebot_id)
+                        self.danger_sensor_request.remove(magnebot_id)
+                        
+                    if magnebot_id in self.raycast_request:
+                        item_info = all_magnebots[all_idx].item_info
+                        self.raycast_request.remove(magnebot_id)
+                    
+                    
+                    if not self.local:
+                        self.sio.emit('human_output', (all_idx, all_magnebots[idx].dynamic.transform.position.tolist(), item_info, all_magnebots[all_idx].company, self.timer))
+                        
                     idx += 1
 
                 
@@ -1446,7 +1484,7 @@ class Simulation(Controller):
                     ai_status = all_magnebots[all_idx].past_status.value
                         
                     if not self.local:
-                        self.sio.emit('ai_output', (all_idx, json_numpy.dumps(limited_map), reduced_metadata, objects_held, item_info, ai_status, extra_status, all_magnebots[all_idx].strength) )
+                        self.sio.emit('ai_output', (all_idx, json_numpy.dumps(limited_map), reduced_metadata, objects_held, item_info, ai_status, extra_status, all_magnebots[all_idx].strength, self.timer) )
 
                     idx += 1
                 
@@ -1463,7 +1501,8 @@ class Simulation(Controller):
                     messages.append([idx,txt,0])
                 self.terminate = True
             else:
-                self.timer -= 0.1
+                self.timer -= time.time() - time_gone
+                time_gone = time.time()
 
 
             #Reset world
@@ -1472,11 +1511,16 @@ class Simulation(Controller):
                 
                 #resp = self.communicate({"$type": "destroy_all_objects"})
                 self.reset_world()
+                
+                for am in all_magnebots:
+                    self.sio.emit("agent_reset", str(am.robot_id))
+                
                 self.reset = False
                 #pdb.set_trace()
                 print("Reset complete")
                 
    
+            self.frame_num +=1
             
         self.communicate({"$type": "terminate"})
         

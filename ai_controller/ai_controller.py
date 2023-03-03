@@ -132,23 +132,48 @@ get_occupancy_map = 18
 get_objects_held = 19
 check_item = 20
 check_robot = 21
-get_message = 22
-message_help_accept = 23
-message_help_request_sensing = 24
-message_help_request_lifting = 25
-message_reject_request = 26
-message_cancel_request = 27
+get_messages = 22
+send_message = 23
+request_item_info = 24
+request_agent_info = 25
 
-OBSERVATIONS
+Action space
+    {
+        "action" : spaces.Discrete(len(self.Action)),
+        "item" : spaces.Discrete(self.map_config['num_objects']),
+        "robot" : spaces.Discrete(len(self.map_config['all_robots'])+1), #Allow for 0
+        "message" : spaces.Text(min_length=0,max_length=100)
+    }
 
-Occupancy map
-Objects held
-message
-item info
-other robot info
-strength
-num messages
-num objects
+
+
+
+Observation space
+    {
+        "frame" : spaces.Box(low=0, high=5, shape=(map_size, map_size), dtype=int),
+        "objects_held" : spaces.Discrete(2),
+        "action_status" : spaces.Discrete(8),
+        "item_output" : spaces.Dict(
+            {
+                "item_weight" : spaces.Discrete(10),
+                "item_danger_level" : spaces.Discrete(3),
+                "item_location" : spaces.MultiDiscrete([map_size, map_size])
+            }
+        ),
+        "num_items" : spaces.Discrete(self.map_config['num_objects']),
+        "neighbors_output" : spaces.Dict(
+            {
+                "neighbor_type" : spaces.Discrete(2),
+                "neighbor_location" : spaces.MultiDiscrete([map_size, map_size])
+            }
+        
+        ),
+        "strength" : spaces.Discrete(len(self.map_config['all_robots'])+1), #Strength starts from zero
+        "num_messages" : spaces.Discrete(100)
+        
+        #"objects_danger_level" : spaces.Box(low=1,high=2,shape=(self.map_config['num_objects'],), dtype=int)
+    }
+
 '''
 
     
@@ -185,7 +210,8 @@ while not done:
     
     if next_observation and next_observation['action_status']:
         print_map(next_observation["frame"])
-        print(next_observation['item_output'], next_observation['objects_held'], next_observation['neighbors_output'], next_observation['strength'], next_observation['message'])
+        
+        print(next_observation['item_output'], next_observation['objects_held'], next_observation['neighbors_output'], next_observation['strength'], next_observation['num_messages'], next_observation['num_items'])
  
         #print(env.Action(action))
 

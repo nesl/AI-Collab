@@ -48,7 +48,12 @@ class AICollabEnv(gym.Env):
         self.host = host
         self.port = port
         self.setup_ready = False
+        self.confirm_time_threshold = 2 #Seconds to confirm
+        
+        self.ask_info_agents_str = "Ask for agent information to "
+        self.ask_info_objects_str = "Ask for object information to "
 
+        self.own_neighbors_info_entry = []
 
         
         
@@ -76,6 +81,14 @@ class AICollabEnv(gym.Env):
 
             if self.use_occupancy: #When using only occupancy maps, run the main processing function here
                 self.map_config = occupancy_map_config
+                
+                remove_self = -1
+                for robot_idx,robot in enumerate(self.map_config['all_robots']):
+                    if robot[0] == str(self.robot_id):
+                        remove_self = robot_idx
+                        break
+                del self.map_config['all_robots'][robot_idx] #Remove self
+                
                 #asyncio.run(self.main_ai())
                 self.gym_setup()
                 self.setup_ready = True
@@ -116,41 +129,47 @@ class AICollabEnv(gym.Env):
             #self.target[agent_id] = obj_id
 
         #Update neighbor list
-        self.neighbors = {}
-        self.new_neighbors = False
+        self.new_neighbors = []
         @self.sio.event
-        def neighbors_update(neighbors_dict):
+        def neighbors_update(neighbors_list, source_id):
 
-            print('neighbors update', neighbors_dict)
-            self.neighbors.update(neighbors_dict)
-            self.new_neighbors = True
+            print('neighbors update', neighbors_list)
+            self.new_neighbors = neighbors_list
 
         #Update object list
-        self.objects = {}
-        self.new_objects = False
+        self.new_objects = []
         @self.sio.event
-        def objects_update(object_dict):
+        def objects_update(objects_list, source_id):
 
             
-            self.objects.update(object_dict)
-            
-            print("objects_update", object_dict)
-            self.new_objects = True
+            print("objects_update", objects_list)
+            self.new_objects = objects_list
             
         #Receive messages from other agents
         self.messages = []
         @self.sio.event
-        def message(message, source_agent_id):
+        def message(message, timestamp, source_agent_id):
 
-            self.messages.append((source_agent_id,message))
+            #Special case for receiving data update
+            if self.ask_info_objects_str in message:
+                print("Objects UPDATE")
+                self.sio.emit("objects_update", (source_agent_id, self.object_info))
+            elif self.ask_info_agents_str in message:
+                
+                extended_neighbors_info = self.get_corrected_neighbors_info(source_agent_id) #Without target info and including own info
+                print("Neighbors UPDATE", extended_neighbors_info)
+                self.sio.emit("neighbors_update", (source_agent_id,extended_neighbors_info))
+            else:
+                self.messages.append((source_agent_id,message,timestamp))
+                
             print("message", message, source_agent_id)
            
         self.new_output = () 
         @self.sio.event
-        def ai_output(object_type_coords_map, object_attributes_id, objects_held, sensing_results, ai_status, extra_status, strength):
+        def ai_output(object_type_coords_map, object_attributes_id, objects_held, sensing_results, ai_status, extra_status, strength, timer):
             
             self.map = json_numpy.loads(object_type_coords_map)
-            self.new_output = (self.map, object_attributes_id, objects_held, sensing_results, ActionStatus(ai_status), extra_status, strength)
+            self.new_output = (self.map, object_attributes_id, objects_held, sensing_results, ActionStatus(ai_status), extra_status, strength, timer)
 
         #Receive status updates of our agent
         self.action_status = -1
@@ -159,6 +178,17 @@ class AICollabEnv(gym.Env):
 
             self.action_status = ActionStatus(status)
             print("status", ActionStatus(status))
+            
+        
+        self.agent_reset = False
+        @self.sio.event
+        def agent_reset():
+            self.agent_reset = True
+            print("Agent reset")
+        
+        
+        
+            
 
 
         self.run(address, cert_file, key_file)
@@ -166,6 +196,18 @@ class AICollabEnv(gym.Env):
         while not self.setup_ready:
             time.sleep(1)
 
+        
+    def get_corrected_neighbors_info(self,target_id):
+        corrected_neighbors_info = self.neighbors_info.copy()
+        
+        for ni_idx in range(len(corrected_neighbors_info)):
+            if corrected_neighbors_info[ni_idx][0] == target_id:
+                del corrected_neighbors_info[ni_idx]
+                break
+                
+        corrected_neighbors_info.append(self.own_neighbors_info_entry)
+        
+        return corrected_neighbors_info
         
     def run(self, address, cert_file, key_file):
     
@@ -220,7 +262,8 @@ class AICollabEnv(gym.Env):
             {
                 "action" : spaces.Discrete(len(self.Action)),
                 "item" : spaces.Discrete(self.map_config['num_objects']),
-                "robot" : spaces.Discrete(len(self.map_config['all_robots']))
+                "robot" : spaces.Discrete(len(self.map_config['all_robots'])+1), #Allow for 0
+                "message" : spaces.Text(min_length=0,max_length=100)
             }
         )
         
@@ -246,8 +289,7 @@ class AICollabEnv(gym.Env):
                     }
                 
                 ),
-                "strength" : spaces.Discrete(len(self.map_config['all_robots'])),
-                "message" : spaces.Text(min_length=0,max_length=100),
+                "strength" : spaces.Discrete(len(self.map_config['all_robots'])+1), #Strength starts from zero
                 "num_messages" : spaces.Discrete(100)
                 
                 #"objects_danger_level" : spaces.Box(low=1,high=2,shape=(self.map_config['num_objects'],), dtype=int)
@@ -264,10 +306,11 @@ class AICollabEnv(gym.Env):
         
         world_state, sensing_output, action_terminated, action_truncated = self.take_action(action)
         #observed_state = {"frame": world_state, "message": self.messages}
-        observation = {"frame": sensing_output["occupancy_map"], "objects_held": sensing_output["objects_held"], "action_status": int(action_terminated[0]) + int(action_truncated[0])*2 + int(action_terminated[1])*3 + int(action_truncated[1])*4, "num_items": len(self.object_info), "item_output": sensing_output["item_output"], "neighbors_output": sensing_output["neighbors_output"], "message": sensing_output["message"], "num_messages": len(self.messages), "strength": sensing_output["strength"] } #Occupancy map
+        observation = {"frame": sensing_output["occupancy_map"], "objects_held": sensing_output["objects_held"], "action_status": int(action_terminated[0]) + int(action_truncated[0])*2 + int(action_terminated[1])*3 + int(action_truncated[1])*4, "num_items": len(self.object_info), "item_output": sensing_output["item_output"], "neighbors_output": sensing_output["neighbors_output"], "num_messages": len(self.messages), "strength": sensing_output["strength"] } #Occupancy map
         
         info = {}
         info['map_metadata'] = world_state[1]
+        info['messages'] = sensing_output["messages"]
 
         
         reward = 0
@@ -319,7 +362,7 @@ class AICollabEnv(gym.Env):
         super().reset(seed=seed)
         map_size = self.map_config['num_cells'][0]
 
-        observation = {"frame": np.zeros((map_size,map_size),dtype=np.int64), "objects_held": 0, "action_status": 0, "num_messages": 0, "message": "", "strength": 1, "num_items": 0, "item_output": {"item_weight": 0, "item_danger_level": 0, "item_location": np.zeros((map_size,map_size), dtype=np.int64)}, "neighbors_output": {"neighbor_type": 0, "neighbor_location": np.zeros((map_size,map_size), dtype=np.int64)}}
+        observation = {"frame": np.zeros((map_size,map_size),dtype=np.int64), "objects_held": 0, "action_status": 0, "num_messages": 0, "strength": 1, "num_items": 0, "item_output": {"item_weight": 0, "item_danger_level": 0, "item_location": np.zeros((map_size,map_size), dtype=np.int64)}, "neighbors_output": {"neighbor_type": 0, "neighbor_location": np.zeros((map_size,map_size), dtype=np.int64)}}
         
         info = {}
         
@@ -327,12 +370,19 @@ class AICollabEnv(gym.Env):
         self.internal_state = [self.State.take_action, self.State.take_sensing_action]
         self.internal_data = {}
         self.object_info = []
-        self.neighbors_info = [[um[0], 0 if um[1] == 'human' else 1,0,0] for um in self.map_config['all_robots']]
+        self.neighbors_info = [[um[0], 0 if um[1] == 'human' else 1,0,0,-1] for um in self.map_config['all_robots']]
+        self.own_neighbors_info_entry = [self.robot_id, 1, 0, 0, -1]
         
         self.sio.emit("reset")
         
         self.map = np.array([])
-        time.sleep(2) #Sleep for reset
+        
+        print("Reseting agent")
+        while not self.agent_reset:
+            continue
+            
+        
+        self.agent_reset = False
         
         print("Waiting for location")
         while self.map.size == 0:
@@ -427,6 +477,8 @@ class AICollabEnv(gym.Env):
         take_sensing_action = 6
         wait_sensing = 7
         action_end = 8
+        wait_get_objects = 9
+        wait_get_agents = 10
         
         
     class Action(Enum):
@@ -452,12 +504,10 @@ class AICollabEnv(gym.Env):
         get_objects_held = 19
         check_item = 20
         check_robot = 21
-        get_message = 22
-        message_help_accept = 23
-        message_help_request_sensing = 24
-        message_help_request_lifting = 25
-        message_reject_request = 26
-        message_cancel_request = 27
+        get_messages = 22
+        send_message = 23
+        request_item_info = 24
+        request_agent_info = 25
         #check item slot 1 observation = [(item_id1, danger_level1,weight1),(item_id2, danger_level2,weight2),(item_id3, danger_level2,weight2)], number of items so far
         #get message observation text + number of messages
         #send message
@@ -519,15 +569,24 @@ class AICollabEnv(gym.Env):
         action_status = observations[4]
         extra_status = observations[5]
         strength = observations[6]
+        timer = observations[7]
         terminated = [False, False]
         truncated = [False, False]
         state = internal_state[0]
         sensing_state = internal_state[1]
         action = self.Action(complete_action["action"])
         
-        sensing_output = {"occupancy_map": occupancy_map, "item_output":{"item_weight": 0, "item_danger_level": 0, "item_location": [0,0]}, "message": "", "neighbors_output":{"neighbor_type": 0, "neighbor_location": [0,0]}, "objects_held" : 0, "strength": strength}
+        sensing_output = {"occupancy_map": occupancy_map, "item_output":{"item_weight": 0, "item_danger_level": 0, "item_location": [0,0]}, "messages": "", "neighbors_output":{"neighbor_type": 0, "neighbor_location": [0,0]}, "objects_held" : 0, "strength": strength}
 
-        print(state, sensing_state)
+        #print(state, sensing_state)
+
+
+        ego_location = np.where(occupancy_map == 5)
+        ego_location = np.array([ego_location[0][0],ego_location[1][0]])
+
+        self.own_neighbors_info_entry[2] = float(ego_location[0])
+        self.own_neighbors_info_entry[3] = float(ego_location[1])
+        self.own_neighbors_info_entry[4] = float(timer)
 
         if state == self.State.take_action:
             if action_status != ActionStatus.ongoing:
@@ -535,10 +594,9 @@ class AICollabEnv(gym.Env):
                 #print(occupancy_map)
             
                 #self.action_status = -1
-                ego_location = np.where(occupancy_map == 5)
-                ego_location = np.array([ego_location[0][0],ego_location[1][0]])
-
-
+                
+                
+                
                 if action.value < movement_commands:
                 
                     action_index = [self.Action.move_up,self.Action.move_right,self.Action.move_down,self.Action.move_left,self.Action.move_up_right,self.Action.move_up_left,self.Action.move_down_right,self.Action.move_down_left].index(action)
@@ -644,6 +702,8 @@ class AICollabEnv(gym.Env):
             
             
         if sensing_state == self.State.take_sensing_action:
+
+        
             if action == self.Action.danger_sensing:
                 action_message.append(self.danger_sensor_reading())
                 sensing_state = self.State.wait_sensing
@@ -661,13 +721,13 @@ class AICollabEnv(gym.Env):
                     truncated[1] = True
                 else:
                     sensing_output["item_output"]["item_weight"] = self.object_info[complete_action["item"]][1]
-                    sensing_output["item_output"]["item_danger_level"] = self.object_info[complete_action["item"]][2]
+                    sensing_output["item_output"]["item_danger_level"] = self.combine_danger_info(self.object_info[complete_action["item"]][2])
                     sensing_output["item_output"]["item_location"] = self.object_info[complete_action["item"]][3:5]
                     terminated[1] = True
                     
             elif action == self.Action.check_robot:
             
-                if complete_action["robot"] > 0:
+                if complete_action["robot"] > 0: #If 0, it means broadcast so we ignore it
                     robot_idx = complete_action["robot"] - 1
                     sensing_output["neighbors_output"]["neighbor_type"] =  self.neighbors_info[robot_idx][1]
                     sensing_output["neighbors_output"]["neighbor_location"] = self.neighbors_info[robot_idx][2:4]
@@ -675,13 +735,53 @@ class AICollabEnv(gym.Env):
                 else:
                     truncated[1] = True
                 
-            elif action == self.Action.get_message:
+            elif action == self.Action.get_messages:
                 if self.messages:
-                    sensing_output["message"] = self.messages.pop(0)
+                    sensing_output["message"] = self.messages.copy()
+                    self.messages = []
                     terminated[1] = True
                 else:
                     truncated[1] = True
                     
+
+            
+            elif action == self.Action.send_message:
+                if complete_action["robot"] > 0:
+            
+                    robot_data = self.neighbors_info[complete_action["robot"]-1]
+                    neighbors_dict = {robot_data[0]: "human" if not robot_data[1] else "ai"}
+                else:
+                    neighbors_dict = {robot_data[0]: "human" if not robot_data[1] else "ai" for robot_data in self.neighbors_info}
+                    
+                self.sio.emit("message", (complete_action["message"], timer, neighbors_dict))
+                    
+                terminated[1] = True
+            
+            elif action == self.Action.request_item_info or action == self.Action.request_agent_info:  
+                          
+                if complete_action["robot"] > 0:
+                    if action == self.Action.request_item_info:
+                        message_str = self.ask_info_objects_str
+                        sensing_state = self.State.wait_get_objects
+                        
+                    elif action == self.Action.request_agent_info:
+                        message_str = self.ask_info_agents_str
+                        sensing_state = self.State.wait_get_agents
+                        
+                    data['timer'] = time.time()
+                    
+                    robot_data = self.neighbors_info[complete_action["robot"]-1]
+                    neighbors_dict = {robot_data[0]: "human" if not robot_data[1] else "ai"}
+                    data['agent_type'] = neighbors_dict[robot_data[0]]
+                    self.sio.emit("message", (message_str + str(robot_data[0]),neighbors_dict))
+                else:
+                    truncated[1] == True
+                    
+            else:
+                #print("Not implemented sensing action", action)
+                pass
+                
+            '''
             elif action.value >= self.Action.message_help_accept.value and action.value <= self.Action.message_cancel_request.value:
             
             
@@ -711,15 +811,11 @@ class AICollabEnv(gym.Env):
                         truncated[1] = True
                 elif action == self.Action.message_cancel_request:
                     message = "No more need for help"
-                
-                
+                    
                 if not truncated[1]:
                     self.sio.emit("message", (message,neighbors_dict))
                     terminated[1] = True
-        
-            else:
-                #print("Not implemented sensing action", action)
-                pass
+            '''
 
                 
         elif sensing_state == self.State.wait_sensing:
@@ -734,49 +830,90 @@ class AICollabEnv(gym.Env):
                     #object_locations = np.array([object_locations[0][:],object_locations[1][:]])
                     for ol_idx in range(len(object_locations[0])):
                         key = str(object_locations[0][ol_idx]) + '_' + str(object_locations[1][ol_idx])
-                        known_object = False
+                        
+                        self.update_objects_info(objects_metadata[key][0][0], timer, {}, [object_locations[0][ol_idx],object_locations[1][ol_idx]], objects_metadata[key][0][1], False)
+                        '''
                         for ob_idx,ob in enumerate(self.object_info):
                             if ob[0] == objects_metadata[key][0][0]:
                                 self.object_info[ob_idx][3] = object_locations[0][ol_idx]
                                 self.object_info[ob_idx][4] = object_locations[1][ol_idx]
+                                self.object_info[ob_idx][5] = timer
                                 known_object = True
                                 break
                         if not known_object:
-                            self.object_info.append([objects_metadata[key][0][0],objects_metadata[key][0][1],0,object_locations[0][ol_idx],object_locations[1][ol_idx]])
+                            self.object_info.append([objects_metadata[key][0][0],objects_metadata[key][0][1],0,object_locations[0][ol_idx],object_locations[1][ol_idx],timer])
+                        '''
                     
                     #Update robots locations
                     robots_locations = np.where(occupancy_map == 3)
                     for ol_idx in range(len(robots_locations[0])):
                         key = str(robots_locations[0][ol_idx]) + '_' + str(robots_locations[1][ol_idx])
+                        self.update_neighbors_info(objects_metadata[key][0], timer, [robots_locations[0][ol_idx], robots_locations[1][ol_idx]], False)
+                        '''
                         for ob_idx,ob in enumerate(self.neighbors_info):
                             
                             if ob[0] == str(objects_metadata[key][0]):
                                 self.neighbors_info[ob_idx][2] = robots_locations[0][ol_idx]
                                 self.neighbors_info[ob_idx][3] = robots_locations[1][ol_idx]
+                                self.neighbors_info[ob_idx][4] = timer
                                 break
-                        
+                        '''
                         
                 if extra_status[1]: #Danger estimate received
                     for object_key in danger_sensing_data.keys():
-                        known_object = False
+                        '''
                         min_pos = self.map_config['edge_coordinate']
                         multiple = self.map_config['cell_size']
                         pos_new = [round((danger_sensing_data[object_key]['location'][0]+abs(min_pos))/multiple), round((danger_sensing_data[object_key]['location'][2]+abs(min_pos))/multiple)]
+                        '''
+                        
+                        self.update_objects_info(object_key, danger_sensing_data[object_key]['time'], danger_sensing_data[object_key]['sensor'], [danger_sensing_data[object_key]['location'][0],danger_sensing_data[object_key]['location'][2]], danger_sensing_data[object_key]['weight'], True)
+                        '''
                         for ob_idx, ob in enumerate(self.object_info):
                             if ob[0] == object_key:
                                 self.object_info[ob_idx][2] = self.combine_danger_info(danger_sensing_data[object_key]['sensor'])
                                 self.object_info[ob_idx][3] = pos_new[0]
                                 self.object_info[ob_idx][4] = pos_new[1]
+                                self.object_info[ob_idx][5] = timer
                                 known_object = True
                                 break
                         if not known_object:
-                            self.object_info.append([object_key,danger_sensing_data[object_key]['weight'],self.combine_danger_info(danger_sensing_data[object_key]['sensor']),pos_new[0],pos_new[1]])
+                            self.object_info.append([object_key,danger_sensing_data[object_key]['weight'],self.combine_danger_info(danger_sensing_data[object_key]['sensor']),pos_new[0],pos_new[1], timer])
+                        '''
                
                 if extra_status[2]: #Objects held
                     sensing_output["objects_held"] = int(any(oh != 0 for oh in objects_held))
                    
-                    
+                   
+        elif sensing_state == self.State.wait_get_objects or sensing_state == self.State.wait_get_agents:
+        
+            if self.new_objects or self.new_neighbors:
             
+                if data['agent_type'] == 'human':
+                    coords_conversion = True
+                else:
+                    coords_conversion = False
+            
+                if sensing_state == self.State.wait_get_objects:
+            
+                    for ob_idx in range(len(self.new_objects)):
+                        self.update_objects_info(self.new_objects[ob_idx][0], self.new_objects[ob_idx][5], self.new_objects[ob_idx][2], [self.new_objects[ob_idx][3],self.new_objects[ob_idx][4]], self.new_objects[ob_idx][1], coords_conversion)
+                    self.new_objects = []
+                    
+                elif sensing_state == self.State.wait_get_agents:
+                
+                    for ob_idx in range(len(self.new_neighbors)):
+                        self.update_neighbors_info(self.new_neighbors[ob_idx][0], self.new_neighbors[ob_idx][4], [self.new_neighbors[ob_idx][2],self.new_neighbors[ob_idx][3]], coords_conversion)
+                    self.new_agents = []
+                    
+                    
+                terminated[1] = True
+            elif time.time() - data['timer'] > self.confirm_time_threshold:
+                truncated[1] = True
+                
+        
+                
+                   
         if terminated[1] or truncated[1]:
             sensing_state = self.State.take_sensing_action    
             
@@ -786,9 +923,59 @@ class AICollabEnv(gym.Env):
 
 
     def combine_danger_info(self, estimates):
-        key = list(estimates.keys())[0]
-        return estimates[key]['value']
+        if estimates:
+            key = list(estimates.keys())[0]
+            return_value = estimates[key]['value']
+        else:
+            return_value = 0
+            
+        return return_value
         
+        
+    def update_objects_info(self, object_key, timer, danger_data, position, weight, convert_coordinates):
+    
+        if convert_coordinates:
+            position = self.convert_to_grid_coordinates(position)
+    
+        known_object = False
+        for ob_idx,ob in enumerate(self.object_info):
+            if ob[0] == object_key:
+
+                if danger_data:
+                    self.object_info[ob_idx][2].update(danger_data)
+                    
+                if ob[5] > timer: #If data is fresh
+                    self.object_info[ob_idx][3] = float(position[0])
+                    self.object_info[ob_idx][4] = float(position[1])
+                    self.object_info[ob_idx][5] = float(timer)
+                    known_object = True
+                break
+        if not known_object:
+            self.object_info.append([object_key,int(weight),danger_data,float(position[0]),float(position[1]),float(timer)])
+            
+    def update_neighbors_info(self, agent_key, timer, position, convert_coordinates):
+    
+        if convert_coordinates:
+            position = self.convert_to_grid_coordinates(position)
+            
+        for ob_idx,ob in enumerate(self.neighbors_info):
+                            
+            if ob[0] == str(agent_key) and (ob[4] == -1 or ob[4] > timer):
+                self.neighbors_info[ob_idx][2] = float(position[0])
+                self.neighbors_info[ob_idx][3] = float(position[1])
+                self.neighbors_info[ob_idx][4] = float(timer)
+                break
+            
+    
+    def convert_to_grid_coordinates(self, location):
+    
+        min_pos = self.map_config['edge_coordinate']
+        multiple = self.map_config['cell_size']
+        pos_new = [round((location[0]+abs(min_pos))/multiple), round((location[1]+abs(min_pos))/multiple)]
+        
+        return pos_new
+    
+    
     def check_bounds(self, action_index, location, occupancy_map):
     
         if action_index == 0: #Up

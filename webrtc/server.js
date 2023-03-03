@@ -55,6 +55,10 @@ function socket_to_simulator_id(socket_id){
   return all_ids_list[all_ids.indexOf(socket_id)];
 }
 
+function simulator_id_to_socket(simulator_id){
+  return all_ids[all_ids_list.indexOf(simulator_id)];
+}
+
 io.sockets.on("error", e => console.log(e));
 io.sockets.on("connection", socket => { //When a client connects
   socket.on("broadcaster_load", () => {
@@ -84,6 +88,9 @@ io.sockets.on("connection", socket => { //When a client connects
     if(client_number != 0){
         clients_ids[client_number-1] = socket.id;
         all_ids[client_number-1] = socket.id;
+        
+        
+        socket.emit("watcher", user_ids_list[client_number-1], map_config);
     }
         
     
@@ -170,12 +177,20 @@ io.sockets.on("connection", socket => { //When a client connects
     socket.to(all_ids[idx]).emit("ai_status",status);
   });
   
-  socket.on("ai_output", (idx, object_type_coords_map, object_attributes_id, objects_held, sensing_results, ai_status, extra_status, strength) => {//AI output forwarding
-    socket.to(all_ids[idx]).emit("ai_output", object_type_coords_map, object_attributes_id, objects_held, sensing_results, ai_status, extra_status, strength);
+  socket.on("ai_output", (idx, object_type_coords_map, object_attributes_id, objects_held, sensing_results, ai_status, extra_status, strength, timer) => {//AI output forwarding
+    socket.to(all_ids[idx]).emit("ai_output", object_type_coords_map, object_attributes_id, objects_held, sensing_results, ai_status, extra_status, strength, timer);
   });
   
   
-  socket.on("message", (message,neighbors_list) => { //Forwarding messages between robots
+  socket.on("human_output", (idx, location, item_info, neighbors_info, timer) => {
+    socket.to(all_ids[idx]).emit("human_output", location, item_info, neighbors_info, timer);
+  });
+  
+  socket.on("agent_reset", (magnebot_id) => {
+    socket.to(simulator_id_to_socket(magnebot_id)).emit("agent_reset");
+  });
+  
+  socket.on("message", (message, timestamp, neighbors_list) => { //Forwarding messages between robots
 
     /*
     var neighbor_keys = Object.keys(neighbors_list);
@@ -188,20 +203,21 @@ io.sockets.on("connection", socket => { //When a client connects
     */
     //const origin_id = user_ids_list[clients_ids.indexOf(socket.id)]
     
-    if(all_ids.indexOf(socket.id) >= 0){
+    if(all_ids.indexOf(socket.id) >= 0 && neighbors_list){
         let source_id = socket_to_simulator_id(socket.id)
         console.log(source_id)
         console.log(neighbors_list)
+        
         for (const [key, value] of Object.entries(neighbors_list)) {
             console.log(key)
             console.log(value)
             if(value === 'human'){
                 let c = clients_ids[user_ids_list.indexOf(key)]; 
                 console.log(c)
-                socket.to(c).emit("message", message, source_id);
+                socket.to(c).emit("message", message, timestamp, source_id);
             } else if(value === 'ai'){
                 let c = ai_ids[ai_ids_list.indexOf(key)];
-                socket.to(c).emit('message', message, source_id);
+                socket.to(c).emit('message', message, timestamp, source_id);
             }
         }
     }
@@ -228,13 +244,15 @@ io.sockets.on("connection", socket => { //When a client connects
         });
     }
   });
-  socket.on("objects_update", (idx, objects_list) => { //Every time someone discovers/shares an object
+  socket.on("objects_update", (target_id, objects_list) => { //Every time someone discovers/shares an object
     //console.log("stdout: " + socket.id + " " + broadcaster);
-    socket.to(all_ids[idx]).emit("objects_update", objects_list);
+    socket.to(simulator_id_to_socket(target_id)).emit("objects_update", objects_list, socket_to_simulator_id(socket.id));
   });
+  
 
-  socket.on("neighbors_update", (idx, neighbors_list) => { //Evertime someone gets close to other robots
-    socket.to(all_ids[idx]).emit("neighbors_update", neighbors_list);
+
+  socket.on("neighbors_update", (target_id, neighbors_list) => { //Evertime someone gets close to other robots
+    socket.to(simulator_id_to_socket(target_id)).emit("neighbors_update", neighbors_list, socket_to_simulator_id(socket.id));
   });
   socket.on("set_goal", (obj_id) => { //Set visual goal
     socket.to(simulator).emit("set_goal",clients_ids.indexOf(socket.id), obj_id);
