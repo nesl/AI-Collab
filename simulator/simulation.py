@@ -93,6 +93,7 @@ class Simulation(Controller):
         self.ai_status_request = []
         self.raycast_request = []
         self.queue_perception_action = []
+        self.extra_keys_pressed = []
         
         
 
@@ -361,6 +362,13 @@ class Simulation(Controller):
             def reset(agent_id):
                 self.reset = True
                 
+            #Key
+            @self.sio.event
+            def key(key, agent_id):
+                user_agent_idx = self.user_magnebots_ids.index(agent_id)
+                
+                if key in self.user_magnebots[user_agent_idx].key_set: #Check whether key is in magnebot key set
+                    self.extra_keys_pressed.append(key)
                 
                 
             self.sio.connect(address)
@@ -635,6 +643,7 @@ class Simulation(Controller):
                     screen_data[scre.get_avatar_id()]['color'].append(color)
 
 
+    '''
     #Process keyboard presses
     def keyboard_output(self, resp, extra_commands, duration, keys_time_unheld, all_ids, messages):
 
@@ -643,41 +652,50 @@ class Simulation(Controller):
         #print(keys.get_num_pressed(), keys.get_num_held(), keys.get_num_released(), self.frame_num)
 
         # Listen for events where the key was first pressed on the previous frame.
-        for j in range(keys.get_num_pressed()):
+    '''
+    
+    #Process keyboard presses
+    def keyboard_output(self, key_pressed, key_hold, extra_commands, duration, keys_time_unheld, all_ids, messages):
+    
+        #for j in range(keys.get_num_pressed()):
+        for j in range(len(key_pressed)):
             idx = -1
-            if keys.get_pressed(j) in self.keys_set[0]: #Advance
-                idx = self.keys_set[0].index(keys.get_pressed(j))
+            if key_pressed[j] in self.keys_set[0]: #Advance
+                idx = self.keys_set[0].index(key_pressed[j])
                 #if self.user_magnebots[0].action.status != ActionStatus.ongoing:
-                
-                self.user_magnebots[idx].move_by(distance=10)
+                if self.user_magnebots[idx].action.status != ActionStatus.ongoing:
+                    self.user_magnebots[idx].move_by(distance=10)
                     
 
-                keys_time_unheld[idx] = -20
+                #keys_time_unheld[idx] = -20
 
-            elif keys.get_pressed(j) in self.keys_set[1]: #Back
-                idx = self.keys_set[1].index(keys.get_pressed(j))
-                self.user_magnebots[idx].move_by(distance=-10)
-                keys_time_unheld[idx] = -20
+            elif key_pressed[j] in self.keys_set[1]: #Back
+                idx = self.keys_set[1].index(key_pressed[j])
+                if self.user_magnebots[idx].action.status != ActionStatus.ongoing:
+                    self.user_magnebots[idx].move_by(distance=-10)
+                #keys_time_unheld[idx] = -20
 
-            elif keys.get_pressed(j) in self.keys_set[2]: #Right
-                idx = self.keys_set[2].index(keys.get_pressed(j))
-                self.user_magnebots[idx].turn_by(179)
-                keys_time_unheld[idx] = -20
+            elif key_pressed[j] in self.keys_set[2]: #Right
+                idx = self.keys_set[2].index(key_pressed[j])
+                if self.user_magnebots[idx].action.status != ActionStatus.ongoing:
+                    self.user_magnebots[idx].turn_by(179)
+                #keys_time_unheld[idx] = -20
 
-            elif keys.get_pressed(j) in self.keys_set[3]: #Left
-                idx = self.keys_set[3].index(keys.get_pressed(j))
-                self.user_magnebots[idx].turn_by(-179)
-                keys_time_unheld[idx] = -20
+            elif key_pressed[j] in self.keys_set[3]: #Left
+                idx = self.keys_set[3].index(key_pressed[j])
+                if self.user_magnebots[idx].action.status != ActionStatus.ongoing:
+                    self.user_magnebots[idx].turn_by(-179)
+                #keys_time_unheld[idx] = -20
 
-            elif keys.get_pressed(j) in self.keys_set[4] or keys.get_pressed(j) in self.keys_set[5]: #Pick up/Drop with one of the arms
-                if keys.get_pressed(j) in self.keys_set[4]:
+            elif key_pressed[j] in self.keys_set[4] or key_pressed[j] in self.keys_set[5]: #Pick up/Drop with one of the arms
+                if key_pressed[j] in self.keys_set[4]:
                     arm = Arm.left
                     key_idx = 4
                 else:
                     arm = Arm.right
                     key_idx = 5
                     
-                idx = self.keys_set[key_idx].index(keys.get_pressed(j))
+                idx = self.keys_set[key_idx].index(key_pressed[j])
                 
                 if self.user_magnebots[idx].dynamic.held[arm].size > 0: #Press once to pick up, twice to drop
                     self.user_magnebots[idx].drop(target=self.user_magnebots[idx].dynamic.held[arm][0], arm=arm)
@@ -724,16 +742,16 @@ class Simulation(Controller):
                             
 
                     
-            elif keys.get_pressed(j) in self.keys_set[6]: #Move camera down
-                idx = self.keys_set[6].index(keys.get_pressed(j))
+            elif key_pressed[j] in self.keys_set[6]: #Move camera down
+                idx = self.keys_set[6].index(key_pressed[j])
                 self.user_magnebots[idx].rotate_camera(pitch=10)
 
-            elif keys.get_pressed(j) in self.keys_set[7]: #Move camera up
-                idx = self.keys_set[7].index(keys.get_pressed(j))
+            elif key_pressed[j] in self.keys_set[7]: #Move camera up
+                idx = self.keys_set[7].index(key_pressed[j])
                 self.user_magnebots[idx].rotate_camera(pitch=-10)
 
-            elif keys.get_pressed(j) in self.keys_set[8]: #Estimate danger level
-                idx = self.keys_set[8].index(keys.get_pressed(j))
+            elif key_pressed[j] in self.keys_set[8]: #Estimate danger level
+                idx = self.keys_set[8].index(key_pressed[j])
                 self.danger_sensor_request.append(str(self.user_magnebots[idx].robot_id))
 
                 '''
@@ -743,8 +761,8 @@ class Simulation(Controller):
                 '''
                 
             
-            elif keys.get_pressed(j) in self.keys_set[9]: #Focus on object, use raycasting, needs adjustment
-                idx = self.keys_set[9].index(keys.get_pressed(j))
+            elif key_pressed[j] in self.keys_set[9]: #Focus on object, use raycasting, needs adjustment
+                idx = self.keys_set[9].index(key_pressed[j])
                 
                 
                 #print(angle, x_new, y_new, z_new, real_camera_position)
@@ -769,33 +787,37 @@ class Simulation(Controller):
                 
                 duration.append(1)
                 
-            #elif keys.get_pressed(j) == 'P':
+            #elif key_pressed[j] == 'P':
             #    self.reset = True
+            
+            if idx >= 0:
+                keys_time_unheld[idx] = 0            
+
 
         # Listen for keys currently held down. This is mainly for movement keys
 
 
-        for j in range(keys.get_num_held()):
-            #print(keys.get_held(j))
+        for j in range(len(key_hold)):
+            #print(key_hold[j])
             idx = -1
             
-            if keys.get_held(j) in self.keys_set[0]: #Advance
-                idx = self.keys_set[0].index(keys.get_held(j))
+            if key_hold[j] in self.keys_set[0]: #Advance
+                idx = self.keys_set[0].index(key_hold[j])
                 #if self.user_magnebots[0].action.status != ActionStatus.ongoing:
                 #print(self.user_magnebots[idx].action.status)
                 if self.user_magnebots[idx].action.status != ActionStatus.ongoing:
                     self.user_magnebots[idx].move_by(distance=10)
                 
-            elif keys.get_held(j) in self.keys_set[1]: #Back
-                idx = self.keys_set[1].index(keys.get_held(j))
+            elif key_hold[j] in self.keys_set[1]: #Back
+                idx = self.keys_set[1].index(key_hold[j])
                 if self.user_magnebots[idx].action.status != ActionStatus.ongoing:
                     self.user_magnebots[idx].move_by(distance=-10)
-            elif keys.get_held(j) in self.keys_set[2]: #Right
-                idx = self.keys_set[2].index(keys.get_held(j))
+            elif key_hold[j] in self.keys_set[2]: #Right
+                idx = self.keys_set[2].index(key_hold[j])
                 if self.user_magnebots[idx].action.status != ActionStatus.ongoing:
                     self.user_magnebots[idx].turn_by(179)
-            elif keys.get_held(j) in self.keys_set[3]: #Left
-                idx = self.keys_set[3].index(keys.get_held(j))
+            elif key_hold[j] in self.keys_set[3]: #Left
+                idx = self.keys_set[3].index(key_hold[j])
                 if self.user_magnebots[idx].action.status != ActionStatus.ongoing:
                     self.user_magnebots[idx].turn_by(-179)
          
@@ -803,7 +825,7 @@ class Simulation(Controller):
             if idx >= 0:
                 keys_time_unheld[idx] = 0
             
-
+        '''
         # Listen for keys that were released. DOESN'T WORK
         for j in range(keys.get_num_released()):
             pdb.set_trace()
@@ -820,8 +842,9 @@ class Simulation(Controller):
             elif keys.get_released(j) == 'LeftArrow':
                 self.user_magnebots[0].stop()
 
-
-        if keys.get_num_held() == 0: #After some time unheld we stop the current action
+        '''
+        
+        if len(key_hold) == 0: #After some time unheld we stop the current action
 
             for um_idx in range(len(self.user_magnebots)):
                 keys_time_unheld[um_idx] += 1
@@ -1351,7 +1374,12 @@ class Simulation(Controller):
                     
                     
                 elif r_id == "keyb":#For each keyboard key pressed
-                    self.keyboard_output(resp[i], extra_commands, duration, keys_time_unheld, all_ids, messages)
+                    keys = KBoard(resp[i])
+                    key_pressed = [keys.get_pressed(j) for j in range(keys.get_num_pressed())]
+                    key_hold = [keys.get_held(j) for j in range(keys.get_num_held())]
+                    key_pressed.extend(self.extra_keys_pressed)
+                    self.extra_keys_pressed = []
+                    self.keyboard_output(key_pressed, key_hold, extra_commands, duration, keys_time_unheld, all_ids, messages)
                     
                                 
                                 

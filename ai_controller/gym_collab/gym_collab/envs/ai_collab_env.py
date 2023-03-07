@@ -773,7 +773,8 @@ class AICollabEnv(gym.Env):
                     robot_data = self.neighbors_info[complete_action["robot"]-1]
                     neighbors_dict = {robot_data[0]: "human" if not robot_data[1] else "ai"}
                     data['agent_type'] = neighbors_dict[robot_data[0]]
-                    self.sio.emit("message", (message_str + str(robot_data[0]),neighbors_dict))
+                    print(message_str + str(robot_data[0]), neighbors_dict)
+                    self.sio.emit("message", (message_str + str(robot_data[0]), timer, neighbors_dict))
                 else:
                     truncated[1] == True
                     
@@ -954,7 +955,7 @@ class AICollabEnv(gym.Env):
             self.object_info.append([object_key,int(weight),danger_data,float(position[0]),float(position[1]),float(timer)])
             
     def update_neighbors_info(self, agent_key, timer, position, convert_coordinates):
-    
+
         if convert_coordinates:
             position = self.convert_to_grid_coordinates(position)
             
@@ -965,13 +966,13 @@ class AICollabEnv(gym.Env):
                 self.neighbors_info[ob_idx][3] = float(position[1])
                 self.neighbors_info[ob_idx][4] = float(timer)
                 break
-            
+
     
     def convert_to_grid_coordinates(self, location):
     
         min_pos = self.map_config['edge_coordinate']
         multiple = self.map_config['cell_size']
-        pos_new = [round((location[0]+abs(min_pos))/multiple), round((location[1]+abs(min_pos))/multiple)]
+        pos_new = [round((location[0]+abs(min_pos[0]))/multiple), round((location[1]+abs(min_pos[1]))/multiple)]
         
         return pos_new
     

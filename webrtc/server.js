@@ -70,7 +70,7 @@ io.sockets.on("connection", socket => { //When a client connects
     broadcaster = socket.id;
     socket.broadcast.emit("broadcaster");
     
-    
+    /*  
     //Initiate key press forwarding to the simulator through xdotool by getting the simulators window name
     if(! init_xdotool){
         exec('xdotool search --name TDW', (error, stdout, stderr) => {
@@ -79,6 +79,7 @@ io.sockets.on("connection", socket => { //When a client connects
         });
         init_xdotool = true;
     }
+    */
   });
 
   socket.on("watcher", (client_number) => { //When a human client connects
@@ -225,7 +226,9 @@ io.sockets.on("connection", socket => { //When a client connects
   });
   //Every time a key is pressed by someone in their browser, emulate that keypress using xdotool
   socket.on("key", key => {
-    //socket.to(broadcaster).emit("key", socket.id, key);
+    socket.to(simulator).emit("key", key, socket_to_simulator_id(socket.id));
+    
+    /*
     let idx = clients_ids.indexOf(socket.id);
     
     
@@ -243,6 +246,7 @@ io.sockets.on("connection", socket => { //When a client connects
             }
         });
     }
+    */
   });
   socket.on("objects_update", (target_id, objects_list) => { //Every time someone discovers/shares an object
     //console.log("stdout: " + socket.id + " " + broadcaster);

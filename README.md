@@ -40,7 +40,6 @@ Be sure to change the address in **server.js** before running the server.
 
 The implementation of the WebRTC server was based on [https://github.com/TannerGabriel/WebRTC-Video-Broadcast](https://github.com/TannerGabriel/WebRTC-Video-Broadcast)
 
-For control of the robots by a user, **xdotool** is needed, please install it.
 
 ### AI Controller
 

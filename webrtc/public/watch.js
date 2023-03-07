@@ -97,6 +97,24 @@ function reset(){
     
     chat.innerHTML = '';
     
+    
+    var div_element = document.createElement("div");
+    div_element.setAttribute("class", "wrapper");
+    var input_element = document.createElement("input");
+    input_element.setAttribute("type", "radio");
+    input_element.setAttribute("id", "All");
+    input_element.setAttribute("name", "neighbors");
+    input_element.setAttribute("value", "All");
+    input_element.setAttribute("checked", true);
+    var label_element = document.createElement("label");
+    label_element.setAttribute("for", "All");
+    label_element.style.color = "black";
+    label_element.appendChild(document.createTextNode("All"));
+    
+    
+    div_element.appendChild(input_element);	
+    div_element.appendChild(label_element);
+    neighbor_info_div.appendChild(div_element);
 
     for(um_idx in map_config['all_robots']){
     
@@ -202,8 +220,25 @@ var play_area = document.getElementById("play_area");
 
 //Only in the play area do we catch keyboard events
 play_area.onkeydown = function(evt) {
-    console.log(evt.key);
-    socket.emit("key", evt.key);
+    
+    
+    var kkey;
+    
+    if(evt.key.includes("Left")){
+        kkey = "LeftArrow";
+    } else if(evt.key.includes("Right")){
+        kkey = "RightArrow";
+    } else if(evt.key.includes("Up")){
+        kkey = "UpArrow";
+    } else if(evt.key.includes("Down")){
+        kkey = "DownArrow";
+    } else if(/^\d$/.test(evt.key)){
+        kkey = "Alpha" + evt.key;
+    } else{
+        kkey = evt.key.toUpperCase();
+    }
+    console.log(evt.key, kkey);
+    socket.emit("key", kkey);
 };
 
 
@@ -509,7 +544,7 @@ function sendCommand() {
 	
 	neighbors_dict = {}
 	
-	if(command_string == null){
+	if(command_string === "All"){
 		for(nl_idx in neighbors_list_store){
 		    var human_or_robot = 0;
 		    if(! neighbors_list_store[nl_idx][1]){
