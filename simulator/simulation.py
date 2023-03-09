@@ -367,8 +367,10 @@ class Simulation(Controller):
             def key(key, agent_id):
                 user_agent_idx = self.user_magnebots_ids.index(agent_id)
                 
-                if key in self.user_magnebots[user_agent_idx].key_set: #Check whether key is in magnebot key set
-                    self.extra_keys_pressed.append(key)
+                if key in self.user_magnebots[0].key_set: #Check whether key is in magnebot key set
+                    k_idx = self.user_magnebots[0].key_set.index(key)
+                    self.extra_keys_pressed.append(self.user_magnebots[user_agent_idx].key_set[k_idx]) #Key is converted to required one
+                    #print(key, self.user_magnebots[user_agent_idx].key_set[k_idx])
                 
                 
             self.sio.connect(address)
@@ -764,7 +766,7 @@ class Simulation(Controller):
             elif key_pressed[j] in self.keys_set[9]: #Focus on object, use raycasting, needs adjustment
                 idx = self.keys_set[9].index(key_pressed[j])
                 
-                
+                '''
                 #print(angle, x_new, y_new, z_new, real_camera_position)
                 camera_position_relative = np.array([-0.1838, 0.053+0.737074, 0])
                 
@@ -780,11 +782,16 @@ class Simulation(Controller):
                 source = r3.inv().apply([0,0,0])*np.array([-1,-1,1])+self.user_magnebots[idx].dynamic.transform.position+new_camera_position_relative
                 destination = r3.inv().apply([0,0,1])*np.array([-1,-1,1])+self.user_magnebots[idx].dynamic.transform.position+new_camera_position_relative
                 
+                
                 extra_commands.append({"$type":"send_raycast",
                    "origin": TDWUtils.array_to_vector3(source),
                    "destination": TDWUtils.array_to_vector3(destination),
                    "id": str(self.user_magnebots[idx].robot_id)}) 
-                
+                '''
+                #print(self.user_magnebots[idx].robot_id, idx, key_pressed, self.keys_set)
+                extra_commands.append({"$type": "send_mouse_raycast",
+                              "id": str(self.user_magnebots[idx].robot_id),
+                              "avatar_id": str(self.user_magnebots[idx].robot_id)})
                 duration.append(1)
                 
             #elif key_pressed[j] == 'P':
@@ -1319,6 +1326,8 @@ class Simulation(Controller):
             screen_data = {}
             magnebot_images = {}
  
+            key_pressed = []
+            key_hold = []
 
             #Output data
             for i in range(len(resp) - 1):
@@ -1373,18 +1382,26 @@ class Simulation(Controller):
                     self.raycast_output(resp[i], all_ids)
                     
                     
+
                 elif r_id == "keyb":#For each keyboard key pressed
                     keys = KBoard(resp[i])
-                    key_pressed = [keys.get_pressed(j) for j in range(keys.get_num_pressed())]
-                    key_hold = [keys.get_held(j) for j in range(keys.get_num_held())]
-                    key_pressed.extend(self.extra_keys_pressed)
-                    self.extra_keys_pressed = []
-                    self.keyboard_output(key_pressed, key_hold, extra_commands, duration, keys_time_unheld, all_ids, messages)
+                    key_pressed_tmp = [keys.get_pressed(j) for j in range(keys.get_num_pressed())]
+                    key_hold_tmp = [keys.get_held(j) for j in range(keys.get_num_held())]
+                    
+                    key_pressed.extend(key_pressed_tmp)
+                    key_hold.extend(key_hold_tmp)
+                    
                     
                                 
                                 
-
-
+            #Process keyboard output
+            key_pressed.extend(self.extra_keys_pressed)
+            self.extra_keys_pressed = []
+            if key_pressed:
+                print(key_pressed)    
+            self.keyboard_output(key_pressed, key_hold, extra_commands, duration, keys_time_unheld, all_ids, messages)
+            
+            
             #Destroy messages in the user interface after some time
             to_eliminate = []
             for m_idx in range(len(messages)):
@@ -1448,73 +1465,73 @@ class Simulation(Controller):
             
             
             #Send frames to virtual cameras in system and occupancy maps if required, and all outputs needed
-            if cams:
-                idx = 0
 
-                for magnebot_id in self.user_magnebots_ids:
+            idx = 0
+
+            for magnebot_id in self.user_magnebots_ids:
+            
+                if cams and magnebot_id in magnebot_images:
+                    cams[idx+1].send(magnebot_images[magnebot_id])
+                    
+                item_info = {}
+                all_idx = all_ids.index(str(magnebot_id))
                 
-                    if magnebot_id in magnebot_images:
-                        cams[idx+1].send(magnebot_images[magnebot_id])
-                        
+                if magnebot_id in self.danger_sensor_request:
+                    _,item_info = self.danger_sensor_reading(magnebot_id)
+                    self.danger_sensor_request.remove(magnebot_id)
+                    
+                if magnebot_id in self.raycast_request:
+                    item_info = all_magnebots[all_idx].item_info
+                    self.raycast_request.remove(magnebot_id)
+                
+                
+                if not self.local:
+                    self.sio.emit('human_output', (all_idx, all_magnebots[idx].dynamic.transform.position.tolist(), item_info, all_magnebots[all_idx].company, self.timer))
+                    
+                idx += 1
+
+            
+            for m_idx, magnebot_id in enumerate(self.ai_magnebots_ids):
+                if cams and magnebot_id in magnebot_images:
+                    cams[idx+1].send(magnebot_images[magnebot_id])
+
+                #Occupancy maps
+
+                extra_status = [0]*3
+                
+                if magnebot_id in self.occupancy_map_request:
+                     extra_status[0] = 1
+               
+                limited_map, reduced_metadata = self.get_occupancy_map(magnebot_id)
+                
+                
+                if magnebot_id in self.objects_held_status_request:
+                    extra_status[1] = 1
+                
+                objects_held = self.get_objects_held_state(magnebot_id)
+                
+                
+                
+                if magnebot_id in self.danger_sensor_request:
+                    _,item_info = self.danger_sensor_reading(magnebot_id)
+                    self.danger_sensor_request.remove(magnebot_id)
+                    extra_status[2] = 1
+                else:
                     item_info = {}
-                    all_idx = all_ids.index(str(magnebot_id))
-                    
-                    if magnebot_id in self.danger_sensor_request:
-                        _,item_info = self.danger_sensor_reading(magnebot_id)
-                        self.danger_sensor_request.remove(magnebot_id)
-                        
-                    if magnebot_id in self.raycast_request:
-                        item_info = all_magnebots[all_idx].item_info
-                        self.raycast_request.remove(magnebot_id)
                     
                     
-                    if not self.local:
-                        self.sio.emit('human_output', (all_idx, all_magnebots[idx].dynamic.transform.position.tolist(), item_info, all_magnebots[all_idx].company, self.timer))
-                        
-                    idx += 1
-
                 
-                for m_idx, magnebot_id in enumerate(self.ai_magnebots_ids):
-                    if magnebot_id in magnebot_images:
-                        cams[idx+1].send(magnebot_images[magnebot_id])
+                    
+                all_idx = all_ids.index(str(magnebot_id))
+                
+                
+                #if all_idx in self.ai_status_request:
+                ai_status = all_magnebots[all_idx].past_status.value
+                    
+                if not self.local:
+                    self.sio.emit('ai_output', (all_idx, json_numpy.dumps(limited_map), reduced_metadata, objects_held, item_info, ai_status, extra_status, all_magnebots[all_idx].strength, self.timer) )
 
-                    #Occupancy maps
-
-                    extra_status = [0]*3
-                    
-                    if magnebot_id in self.occupancy_map_request:
-                         extra_status[0] = 1
-                   
-                    limited_map, reduced_metadata = self.get_occupancy_map(magnebot_id)
-                    
-                    
-                    if magnebot_id in self.objects_held_status_request:
-                        extra_status[1] = 1
-                    
-                    objects_held = self.get_objects_held_state(magnebot_id)
-                    
-                    
-                    
-                    if magnebot_id in self.danger_sensor_request:
-                        _,item_info = self.danger_sensor_reading(magnebot_id)
-                        self.danger_sensor_request.remove(magnebot_id)
-                        extra_status[2] = 1
-                    else:
-                        item_info = {}
-                        
-                        
-                    
-                        
-                    all_idx = all_ids.index(str(magnebot_id))
-                    
-                    
-                    #if all_idx in self.ai_status_request:
-                    ai_status = all_magnebots[all_idx].past_status.value
-                        
-                    if not self.local:
-                        self.sio.emit('ai_output', (all_idx, json_numpy.dumps(limited_map), reduced_metadata, objects_held, item_info, ai_status, extra_status, all_magnebots[all_idx].strength, self.timer) )
-
-                    idx += 1
+                idx += 1
                 
                 
             

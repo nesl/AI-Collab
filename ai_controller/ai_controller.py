@@ -5,6 +5,10 @@ import argparse
 from collections import defaultdict
 import numpy as np
 import pdb
+import sys
+
+sys.path.append("gym_collab/gym_collab/envs/")
+from action import Action
 
 parser = argparse.ArgumentParser(
     description="WebRTC audio / video / data-channels demo"
@@ -127,6 +131,7 @@ grab_up_left = 13
 grab_down_right = 14
 grab_down_left = 15
 drop_object = 16
+
 danger_sensing = 17
 get_occupancy_map = 18
 get_objects_held = 19
@@ -136,6 +141,8 @@ get_messages = 22
 send_message = 23
 request_item_info = 24
 request_agent_info = 25
+
+wait = 26
 
 Action space
     {
@@ -152,7 +159,7 @@ Observation space
     {
         "frame" : spaces.Box(low=0, high=5, shape=(map_size, map_size), dtype=int),
         "objects_held" : spaces.Discrete(2),
-        "action_status" : spaces.Discrete(8),
+        "action_status" : spaces.MultiDiscrete([2]*4)
         "item_output" : spaces.Dict(
             {
                 "item_weight" : spaces.Discrete(10),
@@ -177,7 +184,7 @@ Observation space
 '''
 
     
-def print_map(occupancy_map):
+def print_map(occupancy_map): #Occupancy maps require special printing so that the orientation is correct
     new_occupancy_map = occupancy_map.copy()
     for row_id in range(occupancy_map.shape[0]):
         new_occupancy_map[row_id,:] = occupancy_map[occupancy_map.shape[0]-row_id-1,:]
@@ -201,30 +208,74 @@ print_map(observation["frame"])
 
 next_observation = []
 
+latest_map = observation['frame'].copy()
+
+action_issued = [False,False]
+last_action = [0,0]
+
 while not done:
 
     action = env.action_space.sample()
     
+    #Make sure to issue concurrent actions but not of the same type. Else, wait.
+    if action["action"] < Action.danger_sensing.value and not action_issued[0]:
+        action_issued[0] = True
+        last_action[0] = action["action"]
+        print("Locomotion", Action(action["action"]))
+    elif action["action"] != Action.wait.value and action["action"] >= Action.danger_sensing.value and not action_issued[1]:
+        action_issued[1] = True
+        last_action[1] = action["action"]
+        
+        print("Sensing", Action(action["action"]))
+    else:
+        action["action"] = Action.wait.value
+
 
     #action = agent.get_action(processed_observation)
     
-    if next_observation and next_observation['action_status']:
-        print_map(next_observation["frame"])
-        
-        print(next_observation['item_output'], next_observation['objects_held'], next_observation['neighbors_output'], next_observation['strength'], next_observation['num_messages'], next_observation['num_items'])
- 
-        #print(env.Action(action))
-
+    
         
     
     next_observation, reward, terminated, truncated, info = env.step(action)
+    
     if reward != 0:
         print('Reward', reward)
-    processed_next_observation = (tuple(map(tuple, next_observation['frame'])), next_observation['objects_held'], next_observation['action_status'])
+        
+        
+    if next_observation and any(next_observation['action_status']):
+        
+        
+        ego_location = np.where(next_observation['frame'] == 5)
+        previous_ego_location = np.where(latest_map == 5)
+        latest_map[previous_ego_location[0][0],previous_ego_location[1][0]] = 0
+        latest_map[ego_location[0][0],ego_location[1][0]] = 5
+        
+        if Action(last_action[1]) == Action.get_occupancy_map: #Maintain the state of the occupancy map and update it whenever needed
+            
+            view_radius = int(args.view_radius)
+            
+            max_x = ego_location[0][0] + view_radius
+            max_y = ego_location[1][0] + view_radius
+            min_x = max(ego_location[0][0] - view_radius, 0)
+            min_y = max(ego_location[1][0] - view_radius, 0)
+            latest_map[min_x:max_x+1,min_y:max_y+1]= next_observation["frame"][min_x:max_x+1,min_y:max_y+1]
+            
+        print_map(latest_map)
+        
+        
+        print(next_observation['item_output'], next_observation['objects_held'], next_observation['neighbors_output'], next_observation['strength'], next_observation['num_messages'], next_observation['num_items'], next_observation['action_status'], last_action)
+
+        if any(next_observation['action_status'][:2]):
+            action_issued[0] = False
+        if any(next_observation['action_status'][2:4]):
+            action_issued[1] = False
+            
+
+    #processed_next_observation = (tuple(map(tuple, next_observation['frame'])), next_observation['objects_held'], next_observation['action_status'])
     
     #agent.update(processed_observation, action, reward, terminated, processed_next_observation)
 
-    processed_observation = processed_next_observation
+    #processed_observation = processed_next_observation
 
     if terminated or truncated:
         done = True
