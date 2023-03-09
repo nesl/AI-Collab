@@ -26,7 +26,7 @@ from aiortc.contrib.media import MediaBlackhole, MediaPlayer, MediaRecorder, Med
 import gymnasium as gym
 from gymnasium import spaces
 
-from action import Action
+from .action import Action
 
 
 class AICollabEnv(gym.Env):

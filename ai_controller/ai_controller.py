@@ -7,8 +7,7 @@ import numpy as np
 import pdb
 import sys
 
-sys.path.append("gym_collab/gym_collab/envs/")
-from action import Action
+from gym_collab.envs.action import Action
 
 parser = argparse.ArgumentParser(
     description="WebRTC audio / video / data-channels demo"
