@@ -166,9 +166,19 @@ For occupancy maps, the map is divided into cells of the size defined in **simul
  ```
 
 
-## Interface
+## User Interface
 
 The web interface consists of the camera views assigned to you robot, and a sidebar chat. This chat allows you to communicate with nearby robots, and to get information about your neighbors and scanned objects.
+
+To control the robot through the web interface, you need to first click in the video area and then you can use one of the next keyboard commands:
+
+* Arrows: To move the robot
+* Z: To grab a focused object or drop it with the left arm
+* X: To grab a focused object or drop it with the right arm
+* C: To move the camera downwards
+* V: To move the camera upwards
+* B: To danger sense around you
+* N: To focus on an object (this also gives you information about it)
 
 ![Interface](interface.png)
 
