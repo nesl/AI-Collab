@@ -34,7 +34,8 @@ class AICollabEnv(gym.Env):
     #### MAIN & SETUP OF HTTP SERVER ##############################################################################
 
 
-    def __init__(self, use_occupancy,view_radius, client_number, host, port, address, cert_file, key_file):
+    def __init__(self, use_occupancy, view_radius, client_number, address,
+                 host=None, port=None, cert_file=None, key_file=None):
 
         self.pcs = set()
         self.relay = MediaRelay()
