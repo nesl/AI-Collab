@@ -317,7 +317,7 @@ class AICollabEnv(gym.Env):
 
         self.observation_space = spaces.Dict(
             {
-                "frame": spaces.Box(low=0, high=5, shape=(map_size, map_size), dtype=np.int64),
+                "frame": spaces.Box(low=-1, high=5, shape=(map_size, map_size), dtype=np.int64),
                 "objects_held": spaces.Discrete(2),
                 "action_status": spaces.MultiDiscrete(np.array([2] * 4)),
 
