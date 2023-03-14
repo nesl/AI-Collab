@@ -418,20 +418,20 @@ class AICollabEnv(gym.Env):
 
         observation = {
 
-            "frame": np.zeros((map_size, map_size), dtype=np.int16),
+            "frame": np.zeros((map_size, map_size), dtype=np.int64),
             "objects_held": 0,
             "action_status": np.zeros(4, dtype=np.int16),
 
             "item_output": {
                 "item_weight": 0,
                 "item_danger_level": 0,
-                "item_location": np.zeros(2)
+                "item_location": np.zeros(2, dtype=np.float32)
             },
             "num_items": 0,
 
             "neighbors_output": {
                 "neighbor_type": 0,
-                "neighbor_location": np.zeros(2, dtype=np.int16)
+                "neighbor_location": np.zeros(2, dtype=np.float32)
             },
 
             "strength": 1,
