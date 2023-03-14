@@ -325,7 +325,7 @@ class AICollabEnv(gym.Env):
                     {
                         "item_weight": spaces.Discrete(10),
                         "item_danger_level": spaces.Discrete(3),
-                        "item_location": spaces.MultiDiscrete(np.array([map_size, map_size]))
+                        "item_location": spaces.Box(low=-np.infty, high=np.infty, shape=(2,))
                     }
                 ),
                 "num_items": spaces.Discrete(self.map_config['num_objects'] + 1),
@@ -333,12 +333,12 @@ class AICollabEnv(gym.Env):
                 "neighbors_output": spaces.Dict(
                     {
                         "neighbor_type": spaces.Discrete(2),
-                        "neighbor_location": spaces.MultiDiscrete(np.array([map_size, map_size]))
+                        "neighbor_location": spaces.Box(low=-np.infty, high=np.infty, shape=(2,))
                     }
 
                 ),
                 # Strength starts from zero
-                "strength": spaces.Discrete(len(self.map_config['all_robots']) + 1),
+                "strength": spaces.Discrete(len(self.map_config['all_robots']) + 2),
                 "num_messages": spaces.Discrete(100)
 
                 # "objects_danger_level" : spaces.Box(low=1,high=2,shape=(self.map_config['num_objects'],), dtype=int)
@@ -425,7 +425,7 @@ class AICollabEnv(gym.Env):
             "item_output": {
                 "item_weight": 0,
                 "item_danger_level": 0,
-                "item_location": np.zeros(2, dtype=np.int16)
+                "item_location": np.zeros(2)
             },
             "num_items": 0,
 
@@ -777,7 +777,7 @@ class AICollabEnv(gym.Env):
                     sensing_output["item_output"]["item_weight"] = self.object_info[complete_action["item"]][1]
                     sensing_output["item_output"]["item_danger_level"] = self.combine_danger_info(
                         self.object_info[complete_action["item"]][2])
-                    sensing_output["item_output"]["item_location"] = self.object_info[complete_action["item"]][3:5]
+                    sensing_output["item_output"]["item_location"] = np.array(self.object_info[complete_action["item"]][3:5])
                     terminated[1] = True
 
             elif action == Action.check_robot:
