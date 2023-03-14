@@ -311,7 +311,6 @@ class AICollabEnv(gym.Env):
                 "robot": spaces.Discrete(len(self.map_config['all_robots']) + 1),
                 # "message" : spaces.Text(min_length=0,max_length=100)
             }
-            # TODO: Fix incoherency between step() and action_space
         )
 
         # self.observation_space = spaces.Box(0, map_size - 1, shape=(2,), dtype=int)
