@@ -328,7 +328,7 @@ class AICollabEnv(gym.Env):
                         "item_location": spaces.MultiDiscrete(np.array([map_size, map_size]))
                     }
                 ),
-                "num_items": spaces.Discrete(self.map_config['num_objects']),
+                "num_items": spaces.Discrete(self.map_config['num_objects'] + 1),
 
                 "neighbors_output": spaces.Dict(
                     {
