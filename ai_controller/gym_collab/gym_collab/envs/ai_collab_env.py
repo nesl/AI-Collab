@@ -318,21 +318,23 @@ class AICollabEnv(gym.Env):
 
         self.observation_space = spaces.Dict(
             {
-                "frame": spaces.Box(low=0, high=5, shape=(map_size, map_size), dtype=int),
+                "frame": spaces.Box(low=0, high=5, shape=(map_size, map_size), dtype=np.int64),
                 "objects_held": spaces.Discrete(2),
-                "action_status": spaces.MultiDiscrete([2] * 4),
+                "action_status": spaces.MultiDiscrete(np.array([2] * 4)),
+
                 "item_output": spaces.Dict(
                     {
                         "item_weight": spaces.Discrete(10),
                         "item_danger_level": spaces.Discrete(3),
-                        "item_location": spaces.MultiDiscrete([map_size, map_size])
+                        "item_location": spaces.MultiDiscrete(np.array([map_size, map_size]))
                     }
                 ),
                 "num_items": spaces.Discrete(self.map_config['num_objects']),
+
                 "neighbors_output": spaces.Dict(
                     {
                         "neighbor_type": spaces.Discrete(2),
-                        "neighbor_location": spaces.MultiDiscrete([map_size, map_size])
+                        "neighbor_location": spaces.MultiDiscrete(np.array([map_size, map_size]))
                     }
 
                 ),
@@ -355,10 +357,10 @@ class AICollabEnv(gym.Env):
         # observed_state = {"frame": world_state, "message": self.messages}
         observation = {"frame": sensing_output["occupancy_map"],
                        "objects_held": sensing_output["objects_held"],
-                       "action_status": [int(action_terminated[0]),
-                                         int(action_truncated[0]),
-                                         int(action_terminated[1]),
-                                         int(action_truncated[1])],
+                       "action_status": np.array([int(action_terminated[0]),
+                                                  int(action_truncated[0]),
+                                                  int(action_terminated[1]),
+                                                  int(action_truncated[1])], dtype=np.int16),
                        "num_items": len(self.object_info),
                        "item_output": sensing_output["item_output"],
                        "neighbors_output": sensing_output["neighbors_output"],
@@ -417,20 +419,20 @@ class AICollabEnv(gym.Env):
 
         observation = {
 
-            "frame": np.zeros((map_size, map_size), dtype=np.int64),
+            "frame": np.zeros((map_size, map_size), dtype=np.int16),
             "objects_held": 0,
-            "action_status": [0, 0, 0, 0],
-            "num_items": 0,
+            "action_status": np.zeros(4, dtype=np.int16),
 
             "item_output": {
                 "item_weight": 0,
                 "item_danger_level": 0,
-                "item_location": np.zeros((map_size, map_size), dtype=np.int64)
+                "item_location": np.zeros(2, dtype=np.int16)
             },
+            "num_items": 0,
 
             "neighbors_output": {
                 "neighbor_type": 0,
-                "neighbor_location": np.zeros((map_size, map_size), dtype=np.int64)
+                "neighbor_location": np.zeros(2, dtype=np.int16)
             },
 
             "strength": 1,
@@ -451,7 +453,7 @@ class AICollabEnv(gym.Env):
 
         self.sio.emit("reset")
 
-        self.map = np.array([])
+        self.map = np.array([], dtype=np.int16)
 
         print("Reseting agent")
         while not self.agent_reset:
@@ -597,11 +599,18 @@ class AICollabEnv(gym.Env):
         action = Action(complete_action["action"])
 
         sensing_output = {
-            "occupancy_map": occupancy_map, "item_output": {
-                "item_weight": 0, "item_danger_level": 0, "item_location": [
-                    0, 0]}, "messages": "", "neighbors_output": {
-                "neighbor_type": 0, "neighbor_location": [
-                    0, 0]}, "objects_held": 0, "strength": strength}
+            "occupancy_map": occupancy_map,
+            "item_output": {
+                "item_weight": 0,
+                "item_danger_level": 0,
+                "item_location": np.array([0, 0], dtype=np.int16)},
+            "messages": "",
+            "neighbors_output": {
+                "neighbor_type": 0,
+                "neighbor_location": np.array([0, 0], dtype=np.int16)},
+            "objects_held": 0,
+            "strength": strength
+        }
 
         # print(state, sensing_state)
 
