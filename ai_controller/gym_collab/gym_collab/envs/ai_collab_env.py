@@ -602,11 +602,11 @@ class AICollabEnv(gym.Env):
             "item_output": {
                 "item_weight": 0,
                 "item_danger_level": 0,
-                "item_location": np.array([0, 0], dtype=np.int16)},
+                "item_location": np.array([0, 0], dtype=np.float32)},
             "messages": "",
             "neighbors_output": {
                 "neighbor_type": 0,
-                "neighbor_location": np.array([0, 0], dtype=np.int16)},
+                "neighbor_location": np.array([0, 0], dtype=np.float32)},
             "objects_held": 0,
             "strength": strength
         }
