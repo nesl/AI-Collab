@@ -139,6 +139,7 @@ For occupancy maps, the map is divided into cells of the size defined in **simul
 * 1: Ambient obstacle (wall)
 * 2: Manipulable object
 * 3: Magnebot
+* 4: Object being held by a magnebot
 * 5: Magnebot being controlled
 
 

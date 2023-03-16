@@ -1,4 +1,4 @@
-num_humans: 2 #number of human controlled robots
+num_humans: 1 #number of human controlled robots
 num_ais: 1 #number of ai controlled robots
 width: 360 #width of camera view
 height: 240 #height of camera view
@@ -6,4 +6,4 @@ timer: 10000 #play time in seconds
 cell_size: 0.5 #Cell size for occupancy map
 sensor_waiting_time: 0 #How much time to wait until sensor becomes available again after usage
 ai_skip_frames: 0 #Skip frames to simulate human response time
-fps: 0 #Target simulation frame rate. 0 means maximum possible
+fps: 40 #Target simulation frame rate. 0 means maximum possible
