@@ -75,7 +75,6 @@ class Simulation(Controller):
         super().__init__(port=port, check_version=check_version, launch_build=launch_build)
 
          
-        
         self.keys_set = []
         self.local = args.local
         self.options = args
@@ -84,7 +83,13 @@ class Simulation(Controller):
         
         self.reset = False
         
-        self.timer = float(self.cfg['timer'])
+        self.timer = time.time()
+
+        if float(self.cfg['timer']) > 0:
+            self.timer_limit = self.timer + float(self.cfg['timer'])
+        else:
+            self.timer_limit = 0
+            
         self.ai_skip_frames = int(self.cfg['ai_skip_frames'])
         
         self.occupancy_map_request = []
@@ -206,7 +211,7 @@ class Simulation(Controller):
                                   size=self.progress_bar_size,
                                   anchor=self.progress_bar_anchor,
                                   pivot=self.progress_bar_pivot,
-                                  color={"r": 1, "g": 0, "b": 0, "a": 1},
+                                  color={"r": 0, "g": 0, "b": 1, "a": 1},
                                   scale_factor={"x": 0, "y": self.progress_bar_scale["y"]},
                                   rgba=False)
             # Add some text.
@@ -224,15 +229,19 @@ class Simulation(Controller):
                         position={"x": 0, "y": 0})
 
             # Add some text.
-            mins, remainder = divmod(self.timer, 60)
-            secs,millisecs = divmod(remainder,1)
+            if self.timer_limit:
+                mins, remainder = divmod(self.timer_limit-self.timer, 60)
+                secs,millisecs = divmod(remainder,1)
+            else:
+                mins = 0
+                secs = 0
 
             #Add timer
             timer_text_id = ui.add_text(text='{:02d}:{:02d}'.format(int(mins), int(secs)),
                                   position= {"x": -60, "y": -30},
                                   anchor = {"x": 1, "y": 1},
                                   font_size=35,
-                                  color={"r": 0, "g": 0, "b": 1, "a": 1})
+                                  color={"r": 1, "g": 0, "b": 0, "a": 1})
             
             self.uis.append(ui)
             um.ui = ui
@@ -289,6 +298,7 @@ class Simulation(Controller):
                 extra_config['num_cells'] = self.static_occupancy_map.occupancy_map.shape
                 extra_config['num_objects'] = len(self.graspable_objects)
                 extra_config['all_robots'] = [(str(um.robot_id),um.controlled_by) for um in [*self.user_magnebots,*self.ai_magnebots]]
+                extra_config['timer_limit'] = self.timer_limit
                 
                 
                 self.sio.emit("simulator", (self.user_magnebots_ids,self.ai_magnebots_ids, self.options.video_index, extra_config))#[*self.user_magnebots_ids, *self.ai_magnebots_ids])
@@ -392,6 +402,8 @@ class Simulation(Controller):
                      "angle": 30,
                      "axis": "pitch"}]
                      
+        #commands.append({"$type": "simulate_physics", "value": False})
+                     
         fps = int(self.cfg['fps'])     
         if fps:    
             commands.append({"$type": "set_target_framerate", "framerate": fps})
@@ -421,7 +433,12 @@ class Simulation(Controller):
         self.graspable_objects = []
         
         
-        self.timer = float(self.cfg['timer'])
+        self.timer = time.time()
+        if float(self.cfg['timer']) > 0:
+            self.timer_limit = self.timer + float(self.cfg['timer'])
+        else:
+            self.timer_limit = 0
+        
         self.terminate = False
     
         
@@ -653,9 +670,9 @@ class Simulation(Controller):
                     
       
                     if danger_estimate >= 2: #Different color for different danger estimate
-                        color = (0, 0, 255)
-                    elif danger_estimate == 1:
                         color = (255, 0, 0)
+                    elif danger_estimate == 1:
+                        color = (0, 255, 0)
                     else:
                         color = (255, 255, 255)
 
@@ -1267,8 +1284,12 @@ class Simulation(Controller):
                 
 
             #We update timer
-            mins, remainder = divmod(self.timer, 60)
-            secs,millisecs = divmod(remainder,1)
+            if self.timer_limit:
+                mins, remainder = divmod(self.timer_limit-self.timer, 60)
+                secs,millisecs = divmod(remainder,1)
+            else:
+                mins = 0
+                secs = 0
 
             object_info_update = []
             
@@ -1672,7 +1693,7 @@ class Simulation(Controller):
                 
             
             #If timer expires end simulation, else keep going
-            if self.timer <= 0:
+            if self.timer_limit and self.timer_limit-self.timer <= 0:
                 for idx,um in enumerate(self.user_magnebots):
                     txt = um.ui.add_text(text="Failure!",
                                          position={"x": 0, "y": 0},
@@ -1682,8 +1703,7 @@ class Simulation(Controller):
                     messages.append([idx,txt,0])
                 self.terminate = True
             else:
-                self.timer -= time.time() - time_gone
-                time_gone = time.time()
+                self.timer = time.time() 
 
 
             #Reset world
@@ -1777,6 +1797,9 @@ if __name__ == "__main__":
     parser.add_argument('--no-debug-camera', action='store_true', help='do not instantiate debug top down camera')
     args = parser.parse_args()
 
+    print("Simulator starting")
+    
+
     with open(args.config, 'r') as file:
         cfg = yaml.safe_load(file)
 
@@ -1797,7 +1820,7 @@ if __name__ == "__main__":
 
     address = args.address
 
-    c = Simulation(args, cfg)
+    c = Simulation(args, cfg, launch_build=True)
 
     result = c.run()
     print("Simulation ended with result: ", result)

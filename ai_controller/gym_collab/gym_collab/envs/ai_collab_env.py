@@ -337,7 +337,7 @@ class AICollabEnv(gym.Env):
 
                 "neighbors_output": spaces.Dict(
                     {
-                        "neighbor_type": spaces.Discrete(2),
+                        "neighbor_type": spaces.Discrete(3, start=-1),
                         "neighbor_location": spaces.Box(low=-np.infty, high=np.infty, shape=(2,))
                     }
 
@@ -473,7 +473,7 @@ class AICollabEnv(gym.Env):
             "num_items": 0,
 
             "neighbors_output": {
-                "neighbor_type": 0,
+                "neighbor_type": -1,
                 "neighbor_location": np.zeros(2, dtype=np.float32)
             },
 
@@ -659,7 +659,7 @@ class AICollabEnv(gym.Env):
                 "item_location": np.array([0, 0], dtype=np.float32)},
             "messages": "",
             "neighbors_output": {
-                "neighbor_type": 0,
+                "neighbor_type": -1,
                 "neighbor_location": np.array([0, 0], dtype=np.float32)},
             "objects_held": 0,
             "strength": strength,
@@ -781,6 +781,9 @@ class AICollabEnv(gym.Env):
 
             # or action_status == ActionStatus.success:
             if action_status == ActionStatus.ongoing:
+                print("waiting", action_status, timer)
+                state = data["next_state"]
+            elif data["next_state"] == self.State.grasping_object and action == ActionStatus.success:
                 print("waiting", action_status, timer)
                 state = data["next_state"]
             elif time.time() - data['timer_locomotion'] > 10: #Timer if it gets stuck
@@ -1105,7 +1108,7 @@ class AICollabEnv(gym.Env):
                 if danger_data:
                     self.object_info[ob_idx][2].update(danger_data)
 
-                if ob[5] > timer:  # If data is fresh
+                if ob[5] < timer:  # If data is fresh
                     self.object_info[ob_idx][3] = float(position[0])
                     self.object_info[ob_idx][4] = float(position[1])
                     self.object_info[ob_idx][5] = float(timer)
@@ -1124,7 +1127,7 @@ class AICollabEnv(gym.Env):
 
         for ob_idx, ob in enumerate(self.neighbors_info):
 
-            if ob[0] == str(agent_key) and (ob[4] == -1 or ob[4] > timer):
+            if ob[0] == str(agent_key) and (ob[4] == -1 or ob[4] < timer):
                 self.neighbors_info[ob_idx][2] = float(position[0])
                 self.neighbors_info[ob_idx][3] = float(position[1])
                 self.neighbors_info[ob_idx][4] = float(timer)

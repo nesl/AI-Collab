@@ -303,7 +303,7 @@ function update_objects_info(object_key, timer, danger_data, position, weight, c
  			    label_element.innerHTML = label_string;
  			}
  			
- 			if(object_list_store[ob_idx][5]	> timer){
+ 			if(object_list_store[ob_idx][5]	< timer){
  			    object_list_store[ob_idx][3] = position[0]
  			    object_list_store[ob_idx][4] = position[1]
  			    object_list_store[ob_idx][5] = timer
@@ -403,7 +403,7 @@ function update_neighbors_info(agent_key, timer, position, convert_coordinates){
             
     for(ob_idx = 0; ob_idx < neighbors_list_store.length; ob_idx++){
                     
-        if(neighbors_list_store[ob_idx][0] == agent_key && (neighbors_list_store[ob_idx][4] == -1 || neighbors_list_store[ob_idx][4] > timer)){
+        if(neighbors_list_store[ob_idx][0] == agent_key && (neighbors_list_store[ob_idx][4] == -1 || neighbors_list_store[ob_idx][4] < timer)){
             neighbors_list_store[ob_idx][2] = position[0]
             neighbors_list_store[ob_idx][3] = position[1]
             neighbors_list_store[ob_idx][4] = timer
