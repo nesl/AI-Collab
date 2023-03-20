@@ -14,7 +14,7 @@ from tdw.tdw_utils import TDWUtils
 from tdw.add_ons.object_manager import ObjectManager
 from tdw.add_ons.ui import UI
 from tdw.quaternion_utils import QuaternionUtils
-from tdw.output_data import OutputData, Images, ScreenPosition, Transforms, Raycast, Keyboard as KBoard
+from tdw.output_data import OutputData, Images, ScreenPosition, Transforms, Raycast, Keyboard as KBoard, SegmentationColors
 from tdw.add_ons.keyboard import Keyboard
 from magnebot import Magnebot, Arm, ActionStatus, ImageFrequency
 from magnebot.util import get_default_post_processing_commands
@@ -94,6 +94,7 @@ class Simulation(Controller):
         self.raycast_request = []
         self.queue_perception_action = []
         self.extra_keys_pressed = []
+        self.segmentation_colors = {}
         
         
 
@@ -255,7 +256,7 @@ class Simulation(Controller):
         self.communicate(commands)
 
 
-
+        self.segmentation_colors = self.get_segmentation_colors()
 
 
         
@@ -511,10 +512,32 @@ class Simulation(Controller):
         
         
         
-        
         return commands
 
     
+    def get_segmentation_colors(self):
+    
+        commands = []
+    
+        commands.append({"$type": "send_segmentation_colors",
+           "frequency": "once"})
+           
+        resp = self.communicate(commands)
+        
+        segmentation_colors = dict()
+        for i in range(len(resp) - 1):
+            r_id = OutputData.get_data_type_id(resp[i])
+            # Get segmentation color output data.
+            if r_id == "segm":
+                segm = SegmentationColors(resp[i])
+                for j in range(segm.get_num()):
+                    object_id = segm.get_object_id(j)
+                    segmentation_color = segm.get_object_color(j)
+                    segmentation_colors[tuple(segmentation_color.tolist())] = object_id
+                    
+                    
+        return segmentation_colors
+               
     #Function to instantiate objects
     def instantiate_object(self, model_name, position, rotation, mass, danger_level, required_strength):
 
@@ -583,7 +606,9 @@ class Simulation(Controller):
                 self.user_magnebots[u_idx].item_info[o_id]['weight'] = int(self.required_strength[o_id])
                 self.user_magnebots[u_idx].item_info[o_id]['time'] = self.timer
                 self.user_magnebots[u_idx].item_info[o_id]['location'] = self.object_manager.transforms[o_id].position.tolist()
-
+                
+                if 'sensor' not in self.user_magnebots[u_idx].item_info[o_id]:
+                    self.user_magnebots[u_idx].item_info[o_id]['sensor'] = {}
 
                 self.raycast_request.append(str(self.user_magnebots[u_idx].robot_id))
                 '''
@@ -630,7 +655,7 @@ class Simulation(Controller):
                     if danger_estimate >= 2: #Different color for different danger estimate
                         color = (0, 0, 255)
                     elif danger_estimate == 1:
-                        color = (0, 255, 0)
+                        color = (255, 0, 0)
                     else:
                         color = (255, 255, 255)
 
@@ -668,7 +693,9 @@ class Simulation(Controller):
                 if self.user_magnebots[idx].action.status != ActionStatus.ongoing:
                     self.user_magnebots[idx].move_by(distance=10)
                 
-                if idx >= 0:
+                if keys_time_unheld[idx] > 3:
+                    keys_time_unheld[idx] = -20
+                else:
                     keys_time_unheld[idx] = 0      
 
                 #keys_time_unheld[idx] = -20
@@ -677,24 +704,33 @@ class Simulation(Controller):
                 idx = self.keys_set[1].index(key_pressed[j])
                 if self.user_magnebots[idx].action.status != ActionStatus.ongoing:
                     self.user_magnebots[idx].move_by(distance=-10)
-                if idx >= 0:
-                    keys_time_unheld[idx] = 0                      
+                
+                if keys_time_unheld[idx] > 3:
+                    keys_time_unheld[idx] = -20
+                else:
+                    keys_time_unheld[idx] = 0                       
                 #keys_time_unheld[idx] = -20
 
             elif key_pressed[j] in self.keys_set[2]: #Right
                 idx = self.keys_set[2].index(key_pressed[j])
                 if self.user_magnebots[idx].action.status != ActionStatus.ongoing:
                     self.user_magnebots[idx].turn_by(179)
-                if idx >= 0:
-                    keys_time_unheld[idx] = 0                      
+                
+                if keys_time_unheld[idx] > 3:
+                    keys_time_unheld[idx] = -20
+                else:
+                    keys_time_unheld[idx] = 0                        
                 #keys_time_unheld[idx] = -20
 
             elif key_pressed[j] in self.keys_set[3]: #Left
                 idx = self.keys_set[3].index(key_pressed[j])
                 if self.user_magnebots[idx].action.status != ActionStatus.ongoing:
                     self.user_magnebots[idx].turn_by(-179)
-                if idx >= 0:
-                    keys_time_unheld[idx] = 0                      
+                
+                if keys_time_unheld[idx] > 3:
+                    keys_time_unheld[idx] = -20
+                else:
+                    keys_time_unheld[idx] = 0                     
                 #keys_time_unheld[idx] = -20
 
             elif key_pressed[j] in self.keys_set[4] or key_pressed[j] in self.keys_set[5]: #Pick up/Drop with one of the arms
@@ -785,7 +821,7 @@ class Simulation(Controller):
                 r1 = Rotation.from_quat(self.user_magnebots[idx].dynamic.transform.rotation)
                 r2 = Rotation.from_euler('zxy', self.user_magnebots[idx].camera_rpy, degrees=True)
                 r3 = r2*r1
-                print(r3.inv().apply([0,0,1])*np.array([-1,-1,1])+self.user_magnebots[idx].dynamic.transform.position,self.user_magnebots[idx].dynamic.transform.position)
+                print(r3.inv().apply([0,0,1])*np.array([-1,-1,1]) +self.user_magnebots[idx].dynamic.transform.position,self.user_magnebots[idx].dynamic.transform.position)
                 print(r1.as_euler('xyz', degrees=True))
                 
                 print(r2.as_euler('zyx', degrees=True))
@@ -794,18 +830,35 @@ class Simulation(Controller):
                 destination = r3.inv().apply([0,0,1])*np.array([-1,-1,1])+self.user_magnebots[idx].dynamic.transform.position+new_camera_position_relative
 
                 print(source, destination, [self.object_manager.transforms[o].position for o in self.graspable_objects])
+                
+                extra_commands.append({"$type":"send_raycast",
+                   "origin": TDWUtils.array_to_vector3(source),
+                   "destination": 
+                   "id": str(self.user_magnebots[idx].robot_id)}) 
+                
+                
                 extra_commands.append({"$type":"send_raycast",
                    "origin": TDWUtils.array_to_vector3(source),
                    "destination": TDWUtils.array_to_vector3(destination),
                    "id": str(self.user_magnebots[idx].robot_id)}) 
-                   
                 '''
+                   
+                
                 #print(self.user_magnebots[idx].robot_id, idx, key_pressed, self.keys_set)
+                '''
                 extra_commands.append({"$type": "send_mouse_raycast",
                               "id": str(self.user_magnebots[idx].robot_id),
                               "avatar_id": str(self.user_magnebots[idx].robot_id)})
+                '''
+                extra_commands.append({"$type": "set_pass_masks",
+                              "avatar_id": str(self.user_magnebots[idx].robot_id),
+                              "pass_masks": ["_id", "_img"]})
+                
                 
                 duration.append(1)
+                
+
+                
                 
             #elif key_pressed[j] == 'P':
             #    self.reset = True
@@ -1406,7 +1459,43 @@ class Simulation(Controller):
                     #Process images from user magnebot cameras
                     elif images.get_avatar_id() in self.user_magnebots_ids:
                         idx = self.user_magnebots_ids.index(images.get_avatar_id())
-                        img_image = np.asarray(self.user_magnebots[idx].dynamic.get_pil_images()['img'])
+                        pil_images = self.user_magnebots[idx].dynamic.get_pil_images()
+                        
+                        if 'id' in pil_images: #This is for focusing on an object for human users
+                        
+                            commands.append({"$type": "set_pass_masks",
+                              "avatar_id": str(self.user_magnebots[idx].robot_id),
+                              "pass_masks": ["_img"]})
+                            p_size = pil_images['id'].size
+                            pointer_position = (round(pil_images['id'].size[0]/2),round(pil_images['id'].size[1]/2))
+                            color_center = pil_images['id'].getpixel(pointer_position)
+                            
+                            if color_center in self.segmentation_colors:
+                            
+                                o_id = self.segmentation_colors[color_center]
+                                
+                                pos_idx = len(all_ids)+self.graspable_objects.index(o_id)
+                                
+                                self.user_magnebots[idx].screen_positions["position_ids"].append(pos_idx)
+                                self.user_magnebots[idx].screen_positions["positions"].append(TDWUtils.array_to_vector3(self.object_manager.transforms[o_id].position))
+                                self.user_magnebots[idx].screen_positions["duration"].append(100)
+                                
+                                self.user_magnebots[idx].focus_object = o_id
+                    
+                                if o_id not in self.user_magnebots[idx].item_info:
+                                    self.user_magnebots[idx].item_info[o_id] = {}
+                                    
+                                self.user_magnebots[idx].item_info[o_id]['weight'] = int(self.required_strength[o_id])
+                                self.user_magnebots[idx].item_info[o_id]['time'] = self.timer
+                                self.user_magnebots[idx].item_info[o_id]['location'] = self.object_manager.transforms[o_id].position.tolist()
+                                
+                                if 'sensor' not in self.user_magnebots[idx].item_info[o_id]:
+                                    self.user_magnebots[idx].item_info[o_id]['sensor'] = {}
+
+                                self.raycast_request.append(str(self.user_magnebots[idx].robot_id))
+                        
+                        img_image = np.asarray(pil_images['img'])
+
                         magnebot_images[images.get_avatar_id()] = img_image
                     #Process images from ai magnebot cameras
                     elif images.get_avatar_id() in self.ai_magnebots_ids:
@@ -1491,7 +1580,7 @@ class Simulation(Controller):
             
             #Show view of magnebot
             if self.user_magnebots and str(self.user_magnebots[0].robot_id) in magnebot_images:
-                cv2.imshow('frame',magnebot_images[str(self.user_magnebots[0].robot_id)])
+                cv2.imshow('frame', magnebot_images[str(self.user_magnebots[0].robot_id)])
                 cv2.waitKey(1)
             
             
@@ -1526,6 +1615,7 @@ class Simulation(Controller):
                     self.danger_sensor_request.remove(magnebot_id)
                     
                 if magnebot_id in self.raycast_request:
+
                     item_info = all_magnebots[all_idx].item_info
                     self.raycast_request.remove(magnebot_id)
                 
@@ -1551,7 +1641,7 @@ class Simulation(Controller):
                 
                 
                 if magnebot_id in self.objects_held_status_request:
-                    extra_status[1] = 1
+                    extra_status[2] = 1
                 
                 objects_held = self.get_objects_held_state(magnebot_id)
                 
@@ -1560,7 +1650,7 @@ class Simulation(Controller):
                 if magnebot_id in self.danger_sensor_request:
                     _,item_info = self.danger_sensor_reading(magnebot_id)
                     self.danger_sensor_request.remove(magnebot_id)
-                    extra_status[2] = 1
+                    extra_status[1] = 1
                 else:
                     item_info = {}
                     
@@ -1672,6 +1762,8 @@ class Simulation(Controller):
             um.ui.attach_canvas_to_avatar(avatar_id=str(um.robot_id))
         self.communicate([])
         
+        self.segmentation_colors = self.get_segmentation_colors()
+        
     
 
 if __name__ == "__main__":
@@ -1680,11 +1772,12 @@ if __name__ == "__main__":
     parser.add_argument('--local', action='store_true', help='run locally only')
     parser.add_argument('--no_virtual_cameras', action='store_true', help='do not stream frames to virtual cameras')
     parser.add_argument('--address', type=str, default='https://172.17.15.69:4000' ,help='adress to connect to')
+    parser.add_argument('--config', type=str, default='config.yaml', help='Path to simulation configuration file')
     parser.add_argument('--video-index', type=int, default=0 ,help='index of the first /dev/video device to start streaming to')
     parser.add_argument('--no-debug-camera', action='store_true', help='do not instantiate debug top down camera')
     args = parser.parse_args()
 
-    with open('config.yaml', 'r') as file:
+    with open(args.config, 'r') as file:
         cfg = yaml.safe_load(file)
 
     num_users = cfg['num_humans']

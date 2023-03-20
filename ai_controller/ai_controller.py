@@ -218,7 +218,7 @@ print_map(observation["frame"])
 
 next_observation = []
 
-#actions_to_take = [*[1]*2,*[2]*4,11,*[3]*4,*[0]*5,16]
+actions_to_take = [*[1]*2,*[2]*3,11,19,*[3]*4,*[0]*5,16,19]
 
 
 action_issued = [False,False]
@@ -239,7 +239,7 @@ robotState = RobotState(observation['frame'].copy(), False, env.action_space["ro
 
 action = env.action_space.sample()
 
-#action["action"] = actions_to_take.pop(0)
+
 
 reward_machine_state = 0
 action["action"] = agents[reward_machine_state].get_action(processed_observation)
@@ -247,6 +247,8 @@ action["action"] = agents[reward_machine_state].get_action(processed_observation
 process_reward = 0
 process_last_action = action["action"]
 reward_machine_state = 0
+
+action["action"] = actions_to_take.pop(0)
 
 while not done:
 
@@ -326,6 +328,7 @@ while not done:
                             
                         
             elif Action(last_action[1]) == Action.get_objects_held:
+
                 robotState.object_held = bool(next_observation['objects_held'])
         
             elif Action(last_action[1]) == Action.check_item:
@@ -337,26 +340,29 @@ while not done:
             elif Action(last_action[1]) == Action.get_messages:
                 messages = info['messages']
             
-        
-        '''    
-        if next_observation['action_status'][0]:
+        '''
+        #Fixed set of actions
+        if next_observation['action_status'][0] or next_observation['action_status'][2]:
             action["action"] = actions_to_take.pop(0)
         elif next_observation['action_status'][1]:
             action["action"] = last_action[0]
+        elif next_observation['action_status'][3]:
+            action["action"] = last_action[1]
         '''
+        action["action"] = int(input("Next action > "))
             
         print_map(robotState.latest_map)
         
         
         print(next_observation['item_output'], next_observation['objects_held'], next_observation['neighbors_output'], next_observation['strength'], next_observation['num_messages'], next_observation['num_items'], next_observation['action_status'], last_action)
-        print(robotState.object_held)
+        print("Object held", robotState.object_held)
 
         if any(next_observation['action_status'][:2]):
             action_issued[0] = False
         if any(next_observation['action_status'][2:4]):
             action_issued[1] = False
             
-
+        '''
         #For Q Learning
         processed_next_observation = (tuple(map(tuple, robotState.latest_map)), robotState.object_held)
     
@@ -379,7 +385,7 @@ while not done:
             reward_machine_state = 0
         
         process_reward = 0
-        
+        '''
 
     #processed_observation = processed_next_observation
 

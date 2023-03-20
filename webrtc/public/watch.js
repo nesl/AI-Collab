@@ -255,6 +255,32 @@ function convert_to_real_coordinates(position){
 }
 
 
+function update_danger_estimate(label_string, danger_data){
+
+    var confidence_max = 0;
+    var sensor_user;
+    for (const s in danger_data){ //gets value with max confidence
+	    if(danger_data[s].confidence > confidence_max){
+		    confidence_max = danger_data[s].confidence;
+		    sensor_user = danger_data[s];
+	    }
+    }
+    //sensor_user = sensor_key_list[0];
+    var danger = sensor_user.value;
+    var color;
+    if(danger == 1){
+	    color = 'green';
+    }
+    else{
+	    color = 'red';
+    }
+
+    label_string +=  "<div style=\"color:" + color + "\">&#9632;</div> "+ String(sensor_user.confidence*100)+"%";
+    
+    return label_string;
+
+}
+
 function update_objects_info(object_key, timer, danger_data, position, weight, convert_coordinates){
 
 	var known_object = false;
@@ -269,9 +295,12 @@ function update_objects_info(object_key, timer, danger_data, position, weight, c
 	
 	for(ob_idx = 0; ob_idx < object_list_store.length; ob_idx++){
  		if(object_key == object_list_store[ob_idx][0]){ 
- 			if(!Object.keys(danger_data).length){
+ 			if(Object.keys(danger_data).length > 0){
  			    object_list_store[ob_idx][2] = Object.assign({}, danger_data, object_list_store[ob_idx][2]); //TODO update estimation in ui
- 			    
+ 			    var label_string = String(object_list_store[ob_idx][0]) + " (weight: " + String(object_list_store[ob_idx][1]) + ")";
+ 			    label_string = update_danger_estimate(label_string, danger_data);
+ 			    label_element = document.getElementById("label_" + String(object_list_store[ob_idx][0]));
+ 			    label_element.innerHTML = label_string;
  			}
  			
  			if(object_list_store[ob_idx][5]	> timer){
@@ -306,25 +335,7 @@ function update_objects_info(object_key, timer, danger_data, position, weight, c
 	    
 	    if(Object.keys(danger_data).length > 0){ 
 	    
-	        var confidence_max = 0;
-		    var sensor_user;
-		    for (const s in danger_data){ //gets value with max confidence
-			    if(danger_data[s].confidence > confidence_max){
-				    confidence_max = danger_data[s].confidence;
-				    sensor_user = danger_data[s];
-			    }
-		    }
-		    //sensor_user = sensor_key_list[0];
-		    var danger = sensor_user.value;
-		    var color;
-		    if(danger == 1){
-			    color = 'green';
-		    }
-		    else{
-			    color = 'red';
-		    }
-
-		    label_string +=  "<div style=\"color:" + color + "\">&#9632;</div> "+ String(sensor_user.confidence*100)+"%";
+	        label_string = update_danger_estimate(label_string, danger_data);
 	    }
 	    
 	    label_element.innerHTML = label_string;
