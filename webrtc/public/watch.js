@@ -124,7 +124,7 @@ function reset(){
             agent_type = 1;
         }
     
-        neighbors_list_store.push([map_config['all_robots'][um_idx][0], agent_type ,0,0,-1]);
+        neighbors_list_store.push([map_config['all_robots'][um_idx][0], agent_type ,0,0,-1, false]);
         
     
         var div_element = document.createElement("div");
@@ -138,7 +138,7 @@ function reset(){
         label_element.setAttribute("for", String(map_config['all_robots'][um_idx][0]));
         label_element.setAttribute("id", String(map_config['all_robots'][um_idx][0]) + '_entry');
         label_element.style.color = "black";
-        label_element.appendChild(document.createTextNode(String(map_config['all_robots'][um_idx][0]) + " (type: " + map_config['all_robots'][um_idx][1] + ")"));
+        label_element.appendChild(document.createTextNode(String(map_config['all_robots'][um_idx][0]) + " (type: " + map_config['all_robots'][um_idx][1] + ") " + "(distance: -1)"));
         
         
         div_element.appendChild(input_element);	
@@ -186,11 +186,11 @@ socket.on("human_output", (location, item_info, neighbors_info, timer) => {
     simulator_timer = timer;
 
     Object.keys(item_info).forEach(function(object_key) {
-        update_objects_info(object_key, item_info[object_key]['time'], item_info[object_key]['sensor'], [item_info[object_key]['location'][0],item_info[object_key]['location'][2]], item_info[object_key]['weight'], false)
+        update_objects_info(object_key, item_info[object_key]['time'], item_info[object_key]['sensor'], [item_info[object_key]['location'][0],item_info[object_key]['location'][2]], item_info[object_key]['weight'], false);
     });
     
     Object.keys(neighbors_info).forEach(function(neighbor_key) {
-        update_neighbors_info(neighbor_key, timer, [neighbors_info[neighbor_key][1][0],neighbors_info[neighbor_key][1][2]], false);
+        update_neighbors_info(neighbor_key, timer, neighbors_info[neighbor_key][1], false);
     });
     
     nearby_keys = Object.keys(neighbors_info);
@@ -199,10 +199,29 @@ socket.on("human_output", (location, item_info, neighbors_info, timer) => {
     
         const text_node = document.getElementById(neighbors_list_store[ob_idx][0] + '_entry');
         
+        const n_idx = Object.keys(neighbors_info).indexOf(neighbors_list_store[ob_idx][0]);
+        
+        const distance_string = "distance: ";
+        const distance_idx = text_node.innerHTML.indexOf(distance_string);
+        
+        //if(Object.keys(neighbors_info).includes(neighbors_list_store[ob_idx][0])){
+        //if(n_idx > -1){
         if(Object.keys(neighbors_info).includes(neighbors_list_store[ob_idx][0])){
+ 
+            /*
+            const x = Math.pow(neighbors_info[neighbors_list_store[ob_idx][0]][1][0] - location[0],2);
+            const y = Math.pow(neighbors_info[neighbors_list_store[ob_idx][0]][1][1] - location[2],2);
+            
+            var distance = Math.sqrt(x+y);
+            */
             text_node.style.color = "red";
+            text_node.innerHTML = text_node.innerHTML.slice(0,distance_idx+distance_string.length) + String(neighbors_info[neighbors_list_store[ob_idx][0]][2].toFixed(1)) + " m)";
+            neighbors_list_store[ob_idx][5] = true;
+             
         } else {
             text_node.style.color = "black";
+            text_node.innerHTML = text_node.innerHTML.slice(0,distance_idx+distance_string.length) + "-1 m)";
+            neighbors_list_store[ob_idx][5] = false;
         }
     }
     
@@ -238,7 +257,7 @@ play_area.onkeydown = function(evt) {
         kkey = evt.key.toUpperCase();
     }
     console.log(evt.key, kkey);
-    socket.emit("key", kkey);
+    socket.emit("key", kkey, simulator_timer);
 };
 
 
@@ -557,13 +576,15 @@ function sendCommand() {
 	
 	if(command_string === "All"){
 		for(nl_idx in neighbors_list_store){
-		    var human_or_robot = 0;
-		    if(! neighbors_list_store[nl_idx][1]){
-		        human_or_robot = "human";
-		    } else{
-		        human_or_robot = "ai";
+		    if(neighbors_list_store[nl_idx][5]){ //If it's closeby
+		        var human_or_robot = 0;
+		        if(! neighbors_list_store[nl_idx][1]){
+		            human_or_robot = "human";
+		        } else{
+		            human_or_robot = "ai";
+		        }
+		        neighbors_dict[neighbors_list_store[nl_idx][0]] = human_or_robot;
 		    }
-		    neighbors_dict[neighbors_list_store[nl_idx][0]] = human_or_robot;
 		}
 	} else{
 	
@@ -571,7 +592,7 @@ function sendCommand() {
 
 	    
 	    for(nl_idx in neighbors_list_store){
-	        if(neighbors_list_store[nl_idx][0] === robot_id){
+	        if(neighbors_list_store[nl_idx][0] === robot_id && neighbors_list_store[nl_idx][5]){
 	            	    
         	    if(! neighbors_list_store[nl_idx][1]){
 	                human_or_robot = "human";

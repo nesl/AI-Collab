@@ -261,16 +261,16 @@ class Simulation(Controller):
         commands = self.populate_world()
         
         
-
         self.communicate(commands)
 
 
+        
         self.segmentation_colors = self.get_segmentation_colors()
 
 
         
 
-        #pdb.set_trace()
+        
 
         
         #print(self.static_occupancy_map.occupancy_map)
@@ -323,6 +323,8 @@ class Simulation(Controller):
                 ai_magnebot.messages.append((source_agent_id,message))
                 print("message", message, source_agent_id, agent_id)
             """
+            
+            
 
             #Receive action for ai controlled robot
             @self.sio.event
@@ -524,8 +526,8 @@ class Simulation(Controller):
                       {"$type": "send_images","frequency": "always","ids": ["a"]},
                       {"$type": "set_img_pass_encoding", "value": False},
                       {"$type": "set_render_order", "render_order": 1, "sensor_name": "SensorContainer", "avatar_id": "a"}])
-                  
-        commands.append({"$type": "send_keyboard", "frequency": "always"})
+        
+            commands.append({"$type": "send_keyboard", "frequency": "always"})
         
         
         
@@ -699,11 +701,13 @@ class Simulation(Controller):
     '''
     
     #Process keyboard presses
-    def keyboard_output(self, key_pressed, key_hold, extra_commands, duration, keys_time_unheld, all_ids, messages):
+    def keyboard_output(self, key_pressed, key_hold, extra_commands, duration, keys_time_unheld, all_ids, messages, fps):
     
+
         #for j in range(keys.get_num_pressed()):
         for j in range(len(key_pressed)):
             idx = -1
+            
             if key_pressed[j] in self.keys_set[0]: #Advance
                 idx = self.keys_set[0].index(key_pressed[j])
                 #if self.user_magnebots[0].action.status != ActionStatus.ongoing:
@@ -711,7 +715,7 @@ class Simulation(Controller):
                     self.user_magnebots[idx].move_by(distance=10)
                 
                 if keys_time_unheld[idx] > 3:
-                    keys_time_unheld[idx] = -20
+                    keys_time_unheld[idx] = int(-0.5*fps)
                 else:
                     keys_time_unheld[idx] = 0      
 
@@ -723,7 +727,7 @@ class Simulation(Controller):
                     self.user_magnebots[idx].move_by(distance=-10)
                 
                 if keys_time_unheld[idx] > 3:
-                    keys_time_unheld[idx] = -20
+                    keys_time_unheld[idx] = int(-0.5*fps)
                 else:
                     keys_time_unheld[idx] = 0                       
                 #keys_time_unheld[idx] = -20
@@ -734,7 +738,7 @@ class Simulation(Controller):
                     self.user_magnebots[idx].turn_by(179)
                 
                 if keys_time_unheld[idx] > 3:
-                    keys_time_unheld[idx] = -20
+                    keys_time_unheld[idx] = int(-0.5*fps)
                 else:
                     keys_time_unheld[idx] = 0                        
                 #keys_time_unheld[idx] = -20
@@ -745,7 +749,7 @@ class Simulation(Controller):
                     self.user_magnebots[idx].turn_by(-179)
                 
                 if keys_time_unheld[idx] > 3:
-                    keys_time_unheld[idx] = -20
+                    keys_time_unheld[idx] = int(-0.5*fps)
                 else:
                     keys_time_unheld[idx] = 0                     
                 #keys_time_unheld[idx] = -20
@@ -1073,7 +1077,7 @@ class Simulation(Controller):
                     rkey2 = str(objects_locations[0][ol])+'_'+str(objects_locations[1][ol])
                     reduced_metadata[rkey2] = self.object_attributes_id[rkey]
             else:
-                limited_map = np.zeros_like(self.object_type_coords_map)
+                limited_map = np.ones_like(self.object_type_coords_map)*(-2)
                 limited_map[[0,limited_map.shape[0]-1],:] = -1
                 limited_map[:,[0,limited_map.shape[1]-1]] = -1
                 limited_map[x_min:x_max+1,y_min:y_max+1] = self.object_type_coords_map[x_min:x_max+1,y_min:y_max+1]
@@ -1119,7 +1123,7 @@ class Simulation(Controller):
             #self.sio.emit('occupancy_map', (all_idx, json_numpy.dumps(limited_map), reduced_metadata, objects_held))
             
         else:
-            limited_map = np.zeros_like(self.object_type_coords_map)
+            limited_map = np.ones_like(self.object_type_coords_map)*(-2)
             limited_map[x,y] = 5
             reduced_metadata = {}
             
@@ -1129,6 +1133,7 @@ class Simulation(Controller):
                 rkey = str(objects_locations[0][ol])+'_'+str(objects_locations[1][ol])
                 reduced_metadata[rkey] = self.object_attributes_id[rkey]
             
+            '''
             held_objects = np.where(self.object_type_coords_map == 4)
             
             held_objects_ego = [] #Get objects held by this robot
@@ -1140,6 +1145,7 @@ class Simulation(Controller):
                     for obi in self.object_attributes_id[str(held_objects[0][ho_idx])+'_'+str(held_objects[1][ho_idx])]:
                         if obi[0] in held_objects_ego:
                             limited_map[held_objects[0][ho_idx],held_objects[1][ho_idx]] = 4
+            '''
 
             
         return limited_map, reduced_metadata
@@ -1301,17 +1307,23 @@ class Simulation(Controller):
                 company = {}
                 
                 
+                pos1 = all_magnebots[idx].dynamic.transform.position[[0,2]] #Not interested in height coordinate
                 
                 for idx2 in range(len(all_magnebots)):
                     if idx == idx2:
                         continue
-                    if np.linalg.norm(all_magnebots[idx].dynamic.transform.position - all_magnebots[idx2].dynamic.transform.position) < 2: #TODO Check only two dimensions not three
+                        
+                    
+                    pos2 = all_magnebots[idx2].dynamic.transform.position[[0,2]]
+                    distance = np.linalg.norm(pos1 - pos2)
+                    
+                    if distance < int(self.cfg['strength_distance_limit']): #Check if robot is close enough to influence strength
                         all_magnebots[idx].strength += 1 #Increase strength
                         
                         
-                    if np.linalg.norm(all_magnebots[idx].dynamic.transform.position - all_magnebots[idx2].dynamic.transform.position) < 5: #TODO Check only two dimensions not three, view radius
+                    if distance < int(self.cfg['communication_distance_limit']): #Check if robot is close enough to communicate
                     
-                        company[all_magnebots[idx2].robot_id] = (all_magnebots[idx2].controlled_by, all_magnebots[idx2].dynamic.transform.position.tolist()) #Add information about neighbors
+                        company[all_magnebots[idx2].robot_id] = (all_magnebots[idx2].controlled_by, pos2.tolist(), float(distance)) #Add information about neighbors
                         
                 all_magnebots[idx].company = company 
                         
@@ -1554,7 +1566,7 @@ class Simulation(Controller):
             self.extra_keys_pressed = []
             #if key_pressed:
             #    print(key_pressed)    
-            self.keyboard_output(key_pressed, key_hold, extra_commands, duration, keys_time_unheld, all_ids, messages)
+            self.keyboard_output(key_pressed, key_hold, extra_commands, duration, keys_time_unheld, all_ids, messages, estimated_fps)
             
             
             #Destroy messages in the user interface after some time

@@ -134,6 +134,7 @@ The observation space consists of the next fields:
 
 For occupancy maps, the map is divided into cells of the size defined in **simulator/config.yaml**. The parameter *view_radius* specifies how many of these cells will conform the current view around the magnebot being controlled. The next values conform the occupancy map:
 
+* -2: Unknown
 * -1: Map boundaries
 * 0: No obstacle present
 * 1: Ambient obstacle (wall)

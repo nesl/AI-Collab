@@ -322,15 +322,15 @@ class AICollabEnv(gym.Env):
 
         self.observation_space = spaces.Dict(
             {
-                "frame": spaces.Box(low=-1, high=5, shape=(map_size, map_size), dtype=np.int64),
-                "objects_held": spaces.Discrete(2),
-                "action_status": spaces.MultiDiscrete(np.array([2] * 4)),
+                "frame": spaces.Box(low=-2, high=5, shape=(map_size, map_size), dtype=np.int64),
+                "objects_held": spaces.Discrete(3, start=-1),
+                "action_status": spaces.MultiDiscrete(np.array([2] * 4), dtype=np.int64),
 
                 "item_output": spaces.Dict(
                     {
                         "item_weight": spaces.Discrete(10),
                         "item_danger_level": spaces.Discrete(3),
-                        "item_location": spaces.Box(low=-np.infty, high=np.infty, shape=(2,))
+                        "item_location": spaces.Box(low=-np.infty, high=np.infty, shape=(2,), dtype=np.int64)
                     }
                 ),
                 "num_items": spaces.Discrete(self.map_config['num_objects'] + 1),
@@ -338,7 +338,7 @@ class AICollabEnv(gym.Env):
                 "neighbors_output": spaces.Dict(
                     {
                         "neighbor_type": spaces.Discrete(3, start=-1),
-                        "neighbor_location": spaces.Box(low=-np.infty, high=np.infty, shape=(2,))
+                        "neighbor_location": spaces.Box(low=-np.infty, high=np.infty, shape=(2,), dtype=np.int64)
                     }
 
                 ),
@@ -359,12 +359,13 @@ class AICollabEnv(gym.Env):
         world_state, sensing_output, action_terminated, action_truncated = self.take_action(
             action)
         # observed_state = {"frame": world_state, "message": self.messages}
+        
         observation = {"frame": sensing_output["occupancy_map"],
                        "objects_held": sensing_output["objects_held"],
                        "action_status": np.array([int(action_terminated[0]),
                                                   int(action_truncated[0]),
                                                   int(action_terminated[1]),
-                                                  int(action_truncated[1])], dtype=np.int16),
+                                                  int(action_truncated[1])], dtype=np.int64),
                        "num_items": len(self.object_info),
                        "item_output": sensing_output["item_output"],
                        "neighbors_output": sensing_output["neighbors_output"],
@@ -394,6 +395,7 @@ class AICollabEnv(gym.Env):
                     try:
                         if self.extra['dropped_object'] in object_metadata[key][0]:
                             reward += 1
+
                     except:
                         pdb.set_trace()
                         
@@ -403,7 +405,7 @@ class AICollabEnv(gym.Env):
         for xy in self.goal_coords:
             key = str(xy[0]) + '_' + str(xy[1])
 
-            if world_state[0][xy[0],xy[1]] in [0,2] and key in object_metadata and object_metadata[key][0][0] not in self.objects_in_goal:
+            if key in object_metadata and  isinstance(object_metadata[key][0], list) and object_metadata[key][0][0] not in self.objects_in_goal:
                 self.objects_in_goal.append(object_metadata[key][0][0]) 
 
         
@@ -461,20 +463,20 @@ class AICollabEnv(gym.Env):
 
         observation = {
 
-            "frame": np.zeros((map_size, map_size), dtype=np.int16),
-            "objects_held": 0,
-            "action_status": np.zeros(4, dtype=np.int16),
+            "frame": np.ones((map_size, map_size), dtype=np.int64)*(-2),
+            "objects_held": -1,
+            "action_status": np.zeros(4, dtype=np.int64),
 
             "item_output": {
                 "item_weight": 0,
                 "item_danger_level": 0,
-                "item_location": np.zeros(2, dtype=np.float32)
+                "item_location": np.ones(2, dtype=np.int64)*(-1)
             },
             "num_items": 0,
 
             "neighbors_output": {
                 "neighbor_type": -1,
-                "neighbor_location": np.zeros(2, dtype=np.float32)
+                "neighbor_location": np.ones(2, dtype=np.int64)*(-1)
             },
 
             "strength": 1,
@@ -656,20 +658,23 @@ class AICollabEnv(gym.Env):
             "item_output": {
                 "item_weight": 0,
                 "item_danger_level": 0,
-                "item_location": np.array([0, 0], dtype=np.float32)},
+                "item_location": np.array([-1, -1], dtype=np.int64)},
             "messages": "",
             "neighbors_output": {
                 "neighbor_type": -1,
-                "neighbor_location": np.array([0, 0], dtype=np.float32)},
-            "objects_held": 0,
+                "neighbor_location": np.array([-1, -1], dtype=np.int64)},
+            "objects_held": -1,
             "strength": strength,
             "objects_metadata": {}
         }
+        
+        
 
         # print(state, sensing_state)
 
         ego_location = np.where(occupancy_map == 5)
         ego_location = np.array([ego_location[0][0], ego_location[1][0]])
+        
 
         self.own_neighbors_info_entry[2] = float(ego_location[0])
         self.own_neighbors_info_entry[3] = float(ego_location[1])
@@ -783,12 +788,12 @@ class AICollabEnv(gym.Env):
             if action_status == ActionStatus.ongoing:
                 print("waiting", action_status, timer)
                 state = data["next_state"]
-            elif data["next_state"] == self.State.grasping_object and action == ActionStatus.success:
+            elif time.time() - data['timer_locomotion'] > 5 and action_status == ActionStatus.success:
                 print("waiting", action_status, timer)
                 state = data["next_state"]
             elif time.time() - data['timer_locomotion'] > 10: #Timer if it gets stuck
                 truncated[1] = True
-                print("Action stuck")
+                print("Action stuck", action_status)
                     
         elif state == self.State.grasping_object:
             if action_status != ActionStatus.ongoing:

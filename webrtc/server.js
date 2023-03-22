@@ -8,6 +8,9 @@ commander
   .usage('[OPTIONS]...')
   .option('--address <value>', 'IP address', '172.17.15.69')
   .option('--port <number>', 'Port', 4000)
+  .option('--log_messages', 'Log messages')
+  .option('--log_key_pressing', 'Log key pressing')
+  .option('--log_output', 'Log output from simulator')
   .parse(process.argv);
 
 const command_line_options = commander.opts();
@@ -21,6 +24,12 @@ const host = command_line_options.address;//'172.17.15.69'; //'localhost';
 const https = require("https");
 
 const fs = require("fs");
+
+
+var today = new Date();
+var date = today.getFullYear()+'_'+(today.getMonth()+1)+'_'+today.getDate();
+var time = today.getHours() + "_" + today.getMinutes() + "_" + today.getSeconds();
+var dateTime = date+'_'+time;
 
 // Creating object of key and certificate
 // for SSL
@@ -185,6 +194,11 @@ io.sockets.on("connection", socket => { //When a client connects
   
   socket.on("human_output", (idx, location, item_info, neighbors_info, timer) => {
     socket.to(all_ids[idx]).emit("human_output", location, item_info, neighbors_info, timer);
+    /*
+    if(command_line_options.log_output){
+        fs.appendFile(dateTime + '_output.txt', String(timer) +',' + '"'+message.replace(/"/g, '\\"')+'"'+','+keys_neighbors+'\n', err => {});
+    }
+    */
   });
   
   socket.on("agent_reset", (magnebot_id) => {
@@ -209,9 +223,12 @@ io.sockets.on("connection", socket => { //When a client connects
         console.log(source_id)
         console.log(neighbors_list)
         
+        var keys_neighbors = '"';
+        
         for (const [key, value] of Object.entries(neighbors_list)) {
             console.log(key)
             console.log(value)
+            keys_neighbors += key + ',';
             if(value === 'human'){
                 let c = clients_ids[user_ids_list.indexOf(key)]; 
                 console.log(c)
@@ -220,14 +237,24 @@ io.sockets.on("connection", socket => { //When a client connects
                 let c = ai_ids[ai_ids_list.indexOf(key)];
                 socket.to(c).emit('message', message, timestamp, source_id);
             }
+            
+        }
+        
+        keys_neighbors += '"';
+        
+        
+        if(command_line_options.log_messages){
+            fs.appendFile(dateTime + '_messages.txt', String(timestamp) +',' + '"'+message.replace(/"/g, '\\"')+'"'+','+keys_neighbors+'\n', err => {});
         }
     }
 
   });
   //Every time a key is pressed by someone in their browser, emulate that keypress using xdotool
-  socket.on("key", key => {
+  socket.on("key", (key, timestamp) => {
     socket.to(simulator).emit("key", key, socket_to_simulator_id(socket.id));
-    
+    if(command_line_options.log_key_pressing){
+        fs.appendFile(dateTime + '_key_pressing.txt', String(timestamp) +',' + key +'\n', err => {});
+    }
     /*
     let idx = clients_ids.indexOf(socket.id);
     
