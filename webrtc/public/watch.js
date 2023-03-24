@@ -162,8 +162,8 @@ socket.on("agent_reset", () => {
 map_config = {}
 socket.on("watcher", (robot_id_r, occupancy_map_config) => {
 
-    client_id = robot_id_r
-    map_config = occupancy_map_config
+    client_id = robot_id_r;
+    map_config = occupancy_map_config;
     
 
     for(ob_idx = 0; ob_idx < map_config['all_robots'].length; ob_idx++){ //Remove self
@@ -172,6 +172,14 @@ socket.on("watcher", (robot_id_r, occupancy_map_config) => {
             break;
         }
     }
+    
+    var communication_distance_limit = document.getElementById("comms_text");
+    
+    communication_distance_limit.innerHTML = "Maximum distance for communication: " + String(map_config['communication_distance_limit']) + ' m';
+    
+    var strength_distance_limit = document.getElementById("distance_text");
+    
+    strength_distance_limit.innerHTML = "Maximum distance for carrying objects: " + String(map_config['strength_distance_limit']) + ' m';
     
 
     
@@ -260,6 +268,17 @@ play_area.onkeydown = function(evt) {
     socket.emit("key", kkey, simulator_timer);
 };
 
+var sidebar_area = document.getElementById("sidebar");
+
+sidebar_area.onkeydown = function(evt) {
+
+
+    
+    if(evt.key.includes("Enter")){
+        sendCommand();
+    }
+
+}
 
 
 
@@ -294,7 +313,7 @@ function update_danger_estimate(label_string, danger_data){
 	    color = 'red';
     }
 
-    label_string +=  "<div style=\"color:" + color + "\">&#9632;</div> "+ String(sensor_user.confidence*100)+"%";
+    label_string +=  ' <p style="color:' + color + '">' + String((sensor_user.confidence*100).toFixed(2))+"% </p>" //" <div style=\"color:" + color + "\">&#9632;</div> "+ String((sensor_user.confidence*100).toFixed(2))+"%";
     
     return label_string;
 
@@ -317,7 +336,7 @@ function update_objects_info(object_key, timer, danger_data, position, weight, c
  			if(Object.keys(danger_data).length > 0){
  			    object_list_store[ob_idx][2] = Object.assign({}, danger_data, object_list_store[ob_idx][2]); //TODO update estimation in ui
  			    var label_string = String(object_list_store[ob_idx][0]) + " (weight: " + String(object_list_store[ob_idx][1]) + ")";
- 			    label_string = update_danger_estimate(label_string, danger_data);
+ 			    label_string = update_danger_estimate(label_string, object_list_store[ob_idx][2]);
  			    label_element = document.getElementById("label_" + String(object_list_store[ob_idx][0]));
  			    label_element.innerHTML = label_string;
  			}

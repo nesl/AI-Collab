@@ -23,6 +23,8 @@ from tdw.add_ons.occupancy_map import OccupancyMap
 
 from PIL import Image
 
+import datetime
+import json
 
 
 #Dimension of our camera view
@@ -63,9 +65,18 @@ class Enhanced_Magnebot(Magnebot):
         self.past_status = ActionStatus.ongoing
         self.view_radius = 0
         self.centered_view = 0
+        self.resetting_arm = False
         
-
-    
+    def reset(self,position):
+        super().reset(position=position)
+        self.resetting_arm = False
+        self.past_status = ActionStatus.ongoing
+        self.messages = []
+        self.grasping = False
+        self.screen_positions = {"position_ids":[],"positions":[],"duration":[]}
+        self.focus_object = ""
+        self.item_info = {}
+        self.company = {}
 
 #Main class
 class Simulation(Controller):
@@ -101,6 +112,11 @@ class Simulation(Controller):
         self.extra_keys_pressed = []
         self.segmentation_colors = {}
         
+        self.scenario = 1
+        
+        
+        if self.options.log_state:
+            self.log_state_f = open(datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S") + '_state.txt', "w")
         
 
         #Functionality of keys according to order of appearance: [Advance, Back, Right, Left, Grab with left arm, Grab with right arm, Camera down, Camera up, Activate sensor, Focus on object]
@@ -184,7 +200,7 @@ class Simulation(Controller):
             
         #Initializing user interface objects
         for um_idx,um in enumerate(self.user_magnebots):
-            um.collision_detection.objects = True
+            um.collision_detection.objects = False
             um.collision_detection.walls = False
             ui = UI(canvas_id=um_idx)
             ui.attach_canvas_to_avatar(avatar_id=str(um.robot_id))
@@ -299,6 +315,8 @@ class Simulation(Controller):
                 extra_config['num_objects'] = len(self.graspable_objects)
                 extra_config['all_robots'] = [(str(um.robot_id),um.controlled_by) for um in [*self.user_magnebots,*self.ai_magnebots]]
                 extra_config['timer_limit'] = self.timer_limit
+                extra_config['strength_distance_limit'] = self.cfg['strength_distance_limit']
+                extra_config['communication_distance_limit'] = self.cfg['communication_distance_limit']
                 
                 
                 self.sio.emit("simulator", (self.user_magnebots_ids,self.ai_magnebots_ids, self.options.video_index, extra_config))#[*self.user_magnebots_ids, *self.ai_magnebots_ids])
@@ -392,41 +410,48 @@ class Simulation(Controller):
     #Create the scene environment
     def create_scene(self):
     
-        commands = [#{'$type': 'add_scene','name': 'building_site','url': 'https://tdw-public.s3.amazonaws.com/scenes/linux/2019.1/building_site'}, 
-                    {"$type": "load_scene", "scene_name": "ProcGenScene"},
-                    TDWUtils.create_empty_room(10, 10),
-                    self.get_add_material("parquet_long_horizontal_clean",
-                                          library="materials_high.json"),
-                    {"$type": "set_screen_size",
-                     "width": width, #640,
-                     "height": height}, #480},
-                    {"$type": "rotate_directional_light_by",
-                     "angle": 30,
-                     "axis": "pitch"}]
+        
                      
         #commands.append({"$type": "simulate_physics", "value": False})
                      
         fps = int(self.cfg['fps'])     
         if fps:    
             commands.append({"$type": "set_target_framerate", "framerate": fps})
-        '''
-        commands = [#{'$type': 'add_scene','name': 'building_site','url': 'https://tdw-public.s3.amazonaws.com/scenes/linux/2019.1/building_site'}, 
-                    {"$type": "load_scene", "scene_name": "ProcGenScene"},
-                    TDWUtils.create_empty_room(20, 20),
-                    self.get_add_material("parquet_long_horizontal_clean",
-                                          library="materials_high.json"),
-                    {"$type": "set_screen_size",
-                     "width": width, #640,
-                     "height": height}, #480},
-                    {"$type": "rotate_directional_light_by",
-                     "angle": 30,
-                     "axis": "pitch"},
-                    {"$type": "create_interior_walls", "walls": [{"x": 6, "y": 1}, {"x": 6, "y": 2},{"x": 6, "y": 3},{"x": 6, "y": 4},{"x": 6, "y": 5},{"x": 1, "y": 6},{"x": 2, "y": 6},{"x": 3, "y": 6},{"x": 4, "y": 6},{"x": 5, "y": 6}]},
-                    {"$type": "create_interior_walls", "walls": [{"x": 14, "y": 1}, {"x": 14, "y": 2},{"x": 14, "y": 3},{"x": 14, "y": 4},{"x": 14, "y": 5},{"x": 19, "y": 6},{"x": 18, "y": 6},{"x": 17, "y": 6},{"x": 16, "y": 6},{"x": 15, "y": 6}]},   
-                    {"$type": "create_interior_walls", "walls": [{"x": 6, "y": 19}, {"x": 6, "y": 18},{"x": 6, "y": 17},{"x": 6, "y": 16},{"x": 6, "y": 15},{"x": 1, "y": 14},{"x": 2, "y": 14},{"x": 3, "y": 14},{"x": 4, "y": 14},{"x": 5, "y": 14}]},
-                    {"$type": "create_interior_walls", "walls": [{"x": 14, "y": 19}, {"x": 14, "y": 18},{"x": 14, "y": 17},{"x": 14, "y": 16},{"x": 14, "y": 15},{"x": 19, "y": 14},{"x": 18, "y": 14},{"x": 17, "y": 14},{"x": 16, "y": 14},{"x": 15, "y": 14}]}]
-        '''
+            
+            
+        if self.scenario == 0:
+            commands = [#{'$type': 'add_scene','name': 'building_site','url': 'https://tdw-public.s3.amazonaws.com/scenes/linux/2019.1/building_site'}, 
+                        {"$type": "load_scene", "scene_name": "ProcGenScene"},
+                        TDWUtils.create_empty_room(10, 10),
+                        self.get_add_material("parquet_long_horizontal_clean",
+                                              library="materials_high.json"),
+                        {"$type": "set_screen_size",
+                         "width": width, #640,
+                         "height": height}, #480},
+                        {"$type": "rotate_directional_light_by",
+                         "angle": 30,
+                         "axis": "pitch"}]
+        elif self.scenario == 1:
+            commands = [#{'$type': 'add_scene','name': 'building_site','url': 'https://tdw-public.s3.amazonaws.com/scenes/linux/2019.1/building_site'}, 
+                        {"$type": "load_scene", "scene_name": "ProcGenScene"},
+                        TDWUtils.create_empty_room(20, 20),
+                        self.get_add_material("parquet_long_horizontal_clean",
+                                              library="materials_high.json"),
+                        {"$type": "set_screen_size",
+                         "width": width, #640,
+                         "height": height}, #480},
+                        {"$type": "rotate_directional_light_by",
+                         "angle": 30,
+                         "axis": "pitch"},
+                        {"$type": "create_interior_walls", "walls": [{"x": 6, "y": 1}, {"x": 6, "y": 2},{"x": 6, "y": 3},{"x": 6, "y": 4},{"x": 6, "y": 5},{"x": 1, "y": 6},{"x": 2, "y": 6},{"x": 3, "y": 6},{"x": 4, "y": 6},{"x": 5, "y": 6}]},
+                        {"$type": "create_interior_walls", "walls": [{"x": 14, "y": 1}, {"x": 14, "y": 2},{"x": 14, "y": 3},{"x": 14, "y": 4},{"x": 14, "y": 5},{"x": 19, "y": 6},{"x": 18, "y": 6},{"x": 17, "y": 6},{"x": 16, "y": 6},{"x": 15, "y": 6}]},   
+                        {"$type": "create_interior_walls", "walls": [{"x": 6, "y": 19}, {"x": 6, "y": 18},{"x": 6, "y": 17},{"x": 6, "y": 16},{"x": 6, "y": 15},{"x": 1, "y": 14},{"x": 2, "y": 14},{"x": 3, "y": 14},{"x": 4, "y": 14},{"x": 5, "y": 14}]},
+                        {"$type": "create_interior_walls", "walls": [{"x": 14, "y": 19}, {"x": 14, "y": 18},{"x": 14, "y": 17},{"x": 14, "y": 16},{"x": 14, "y": 15},{"x": 19, "y": 14},{"x": 18, "y": 14},{"x": 17, "y": 14},{"x": 16, "y": 14},{"x": 15, "y": 14}]}]
+        
         return commands
+
+
+
 
     #Used to create all objects
     def populate_world(self):
@@ -455,40 +480,79 @@ class Simulation(Controller):
         commands = []
 
         #Instantiate and locate objects
-        max_coord = 3#8
-        object_models = ['iron_box'] #['iron_box','4ft_shelf_metal','trunck','lg_table_marble_green','b04_backpack','36_in_wall_cabinet_wood_beach_honey']
-        coords = {}
-        
-        #coords[object_models[0]] = [[max_coord,max_coord],[max_coord-1,max_coord-0.1],[max_coord-0.5,max_coord-0.2],[max_coord-0.4,max_coord],[max_coord,max_coord-0.5]]
-        coords[object_models[0]] = [[max_coord,max_coord]]
-        #coords[object_models[1]] = [[max_coord-3,max_coord]]
-
-        #coords[object_models[2]] = [[max_coord,max_coord-3]]
-        #coords[object_models[3]] = [[max_coord-2,max_coord-2]]
-        #coords[object_models[4]] = [[max_coord-1,max_coord-2]]
-        #coords[object_models[5]] = [[max_coord-3,max_coord-3]]
-
-        modifications = [[1.0,1.0],[-1.0,1.0],[1.0,-1.0],[-1.0,-1.0]]
-
-        final_coords = {}
-
-        for objm in object_models:
-            final_coords[objm] = []
         
 
-        for fc in final_coords.keys():
-            for m in modifications:
-                final_coords[fc].extend(np.array(coords[fc])*m)
+        
+        if self.scenario == 0:
+        
+            max_coord = 3#8
+            object_models = ['iron_box'] #['iron_box','4ft_shelf_metal','trunck','lg_table_marble_green','b04_backpack','36_in_wall_cabinet_wood_beach_honey']
+            coords = {}
+            
+            #coords[object_models[0]] = [[max_coord,max_coord],[max_coord-1,max_coord-0.1],[max_coord-0.5,max_coord-0.2],[max_coord-0.4,max_coord],[max_coord,max_coord-0.5]]
+            coords[object_models[0]] = [[max_coord,max_coord]]
+            #coords[object_models[1]] = [[max_coord-3,max_coord]]
 
-        for fc in final_coords.keys():
-            for c in final_coords[fc]:
+            #coords[object_models[2]] = [[max_coord,max_coord-3]]
+            #coords[object_models[3]] = [[max_coord-2,max_coord-2]]
+            #coords[object_models[4]] = [[max_coord-1,max_coord-2]]
+            #coords[object_models[5]] = [[max_coord-3,max_coord-3]]
 
-                weight = int(np.random.choice([1,2,3],1)[0])
-                danger_level = np.random.choice([1,2],1,p=[0.9,0.1])[0]
-                #commands.extend(self.instantiate_object(fc,{"x": c[0], "y": 0, "z": c[1]},{"x": 0, "y": 0, "z": 0},10,danger_level,weight))
-                commands.extend(self.instantiate_object(fc,{"x": c[0], "y": 0, "z": c[1]},{"x": 0, "y": 0, "z": 0},10,2,1)) #Danger level 2 and weight 1
-                #print("Position:", {"x": c[0], "y": 0, "z": c[1]})
+            modifications = [[1.0,1.0],[-1.0,1.0],[1.0,-1.0],[-1.0,-1.0]]
 
+            final_coords = {}
+
+            for objm in object_models:
+                final_coords[objm] = []
+            
+
+            for fc in final_coords.keys():
+                for m in modifications:
+                    final_coords[fc].extend(np.array(coords[fc])*m)
+
+            for fc in final_coords.keys():
+                for c in final_coords[fc]:
+
+                    weight = int(np.random.choice([1,2,3],1)[0])
+                    danger_level = np.random.choice([1,2],1,p=[0.9,0.1])[0]
+                    #commands.extend(self.instantiate_object(fc,{"x": c[0], "y": 0, "z": c[1]},{"x": 0, "y": 0, "z": 0},10,danger_level,weight))
+                    commands.extend(self.instantiate_object(fc,{"x": c[0], "y": 0, "z": c[1]},{"x": 0, "y": 0, "z": 0},10,2,1)) #Danger level 2 and weight 1
+                    #print("Position:", {"x": c[0], "y": 0, "z": c[1]})
+
+        elif self.scenario == 1:
+            max_coord = 8
+            object_models = ['iron_box','4ft_shelf_metal','trunck','lg_table_marble_green','b04_backpack','36_in_wall_cabinet_wood_beach_honey']
+            coords = {}
+            
+            coords[object_models[0]] = [[max_coord,max_coord],[max_coord-1,max_coord-0.1],[max_coord-0.5,max_coord-0.2],[max_coord-0.4,max_coord],[max_coord,max_coord-0.5]]
+
+            coords[object_models[1]] = [[max_coord-3,max_coord]]
+
+            coords[object_models[2]] = [[max_coord,max_coord-3]]
+            coords[object_models[3]] = [[max_coord-2,max_coord-2]]
+            coords[object_models[4]] = [[max_coord-1,max_coord-2]]
+            coords[object_models[5]] = [[max_coord-3,max_coord-3]]
+
+            modifications = [[1.0,1.0],[-1.0,1.0],[1.0,-1.0],[-1.0,-1.0]]
+
+            final_coords = {}
+
+            for objm in object_models:
+                final_coords[objm] = []
+            
+
+            for fc in final_coords.keys():
+                for m in modifications:
+                    final_coords[fc].extend(np.array(coords[fc])*m)
+
+            for fc in final_coords.keys():
+                for c in final_coords[fc]:
+
+                    weight = int(np.random.choice(list(range(1,num_users+num_ais+1)),1)[0])
+                    danger_level = np.random.choice([1,2],1,p=[0.9,0.1])[0]
+                    commands.extend(self.instantiate_object(fc,{"x": c[0], "y": 0, "z": c[1]},{"x": 0, "y": 0, "z": 0},10,danger_level,weight))
+                    #commands.extend(self.instantiate_object(fc,{"x": c[0], "y": 0, "z": c[1]},{"x": 0, "y": 0, "z": 0},10,2,1)) #Danger level 2 and weight 1
+                    #print("Position:", {"x": c[0], "y": 0, "z": c[1]})
 
         #commands.extend(self.instantiate_object('iron_box',{"x": 0, "y": 0, "z": 0},{"x": 0, "y": 0, "z": 0},10,1,1)) #Single box
 
@@ -794,12 +858,14 @@ class Simulation(Controller):
 
                             self.user_magnebots[idx].grasp(target=grasp_object, arm=arm)
                             self.user_magnebots[idx].grasping = True
+                            self.user_magnebots[idx].resetting_arm = True
                             
                             #self.communicate([])
 
                             #If dangerous object carried without being accompanied by an ai if human or by a human if an ai, ends the simulation
-                            '''
-                            if grasp_object in self.dangerous_objects and 'ai' not in self.user_magnebots[idx].company.values():
+                            
+                            if grasp_object in self.dangerous_objects and self.user_magnebots[idx].strength < 2:
+                                '''
                                 for um in self.user_magnebots:
                                     txt = um.ui.add_text(text="Dangerous object picked without help!",
                                      position={"x": 0, "y": 0},
@@ -807,8 +873,9 @@ class Simulation(Controller):
                                      font_size=20
                                      )
                                     messages.append([idx,txt,0])
-                                self.terminate = True
-                            '''
+                                '''
+                                self.reset = True
+                            
                             
 
                     
@@ -985,12 +1052,14 @@ class Simulation(Controller):
                         possible_danger_levels_tmp = possible_danger_levels.copy()
                         possible_danger_levels_tmp.remove(actual_danger_level)
                     
-                        danger_estimate = np.random.choice([actual_danger_level,*possible_danger_levels_tmp],1,p=[ego_magnebot.estimate_confidence,1-ego_magnebot.estimate_confidence])
+                        estimate_confidence = np.random.rand()
+                    
+                        danger_estimate = np.random.choice([actual_danger_level,*possible_danger_levels_tmp],1,p=[estimate_confidence,1-estimate_confidence])
                         danger_estimates[o] = danger_estimate[0]
                         
                         ego_magnebot.item_info[o]['sensor'][ego_magnebot.robot_id] = {}
                         ego_magnebot.item_info[o]['sensor'][ego_magnebot.robot_id]['value'] = int(danger_estimate[0])
-                        ego_magnebot.item_info[o]['sensor'][ego_magnebot.robot_id]['confidence'] = ego_magnebot.estimate_confidence
+                        ego_magnebot.item_info[o]['sensor'][ego_magnebot.robot_id]['confidence'] = estimate_confidence
 
                         
                     else: #If we already have a danger estimation reuse that one
@@ -1178,6 +1247,7 @@ class Simulation(Controller):
         estimated_fps = 0
         past_time = time.time()
         self.frame_num = 0
+        past_timer = self.timer
         
         
         keys_time_unheld = [0]*len(self.user_magnebots_ids)
@@ -1233,7 +1303,9 @@ class Simulation(Controller):
                 if o in held_objects:
                     ob_type = 4
                     
+
                 self.object_type_coords_map[pos_new[0],pos_new[1]] = ob_type
+
                 if str(pos_new[0])+'_'+str(pos_new[1]) not in self.object_attributes_id:
                     self.object_attributes_id[str(pos_new[0])+'_'+str(pos_new[1])] = []
                 self.object_attributes_id[str(pos_new[0])+'_'+str(pos_new[1])].append((o,self.required_strength[o]))
@@ -1247,7 +1319,10 @@ class Simulation(Controller):
                     self.object_attributes_id[str(pos_new[0])+'_'+str(pos_new[1])] = []
                 self.object_attributes_id[str(pos_new[0])+'_'+str(pos_new[1])].append((str(o.robot_id)))
 
-            #pdb.set_trace()
+            
+            if self.options.log_state and self.timer - past_timer > 1:
+                past_timer = self.timer
+                self.log_state_f.write(json.dumps({'time': self.timer, 'map': self.object_type_coords_map.tolist(), 'metadata': self.object_attributes_id}) + '\n')
             
 
             #Set a visual target whenever the user wants to help
@@ -1397,6 +1472,15 @@ class Simulation(Controller):
                 for arm in [Arm.left,Arm.right]:
                     if all_magnebots[idx].dynamic.held[arm].size > 0:
                         #Drop object if strength decreases
+                        
+                        if all_magnebots[idx].resetting_arm and all_magnebots[idx].action.status != ActionStatus.ongoing:
+                            all_magnebots[idx].resetting_arm = False
+                            try:
+                                all_magnebots[idx].reset_arm(arm)
+                            except:
+                                pdb.set_trace()
+                            print("Resetting arm")
+                        
                         if self.required_strength[all_magnebots[idx].dynamic.held[arm][0]] > all_magnebots[idx].strength:
                             all_magnebots[idx].drop(target=all_magnebots[idx].dynamic.held[arm][0], arm=arm)
                             all_magnebots[idx].grasping = False
@@ -1579,6 +1663,7 @@ class Simulation(Controller):
                     if self.terminate:
                         done = True
                 
+            to_eliminate.reverse()
             for te in to_eliminate:
                 try:
                     del messages[te]
@@ -1807,6 +1892,7 @@ if __name__ == "__main__":
     parser.add_argument('--config', type=str, default='config.yaml', help='Path to simulation configuration file')
     parser.add_argument('--video-index', type=int, default=0 ,help='index of the first /dev/video device to start streaming to')
     parser.add_argument('--no-debug-camera', action='store_true', help='do not instantiate debug top down camera')
+    parser.add_argument('--log-state', action='store_true', help='Log occupancy maps')
     args = parser.parse_args()
 
     print("Simulator starting")

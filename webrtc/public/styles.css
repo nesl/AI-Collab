@@ -6,6 +6,36 @@ html {
 video {
   width: 700px;
   height: 500px;
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+
+}
+
+.whole_area {
+  position: relative;
+}
+
+.help_box {
+
+  color: white;
+}
+
+.help_question:hover + .help_box {
+
+  position: absolute;
+  display: block;
+  color: white;
+
+}
+
+
+.help_question{
+  margin-left: 10%;
+  margin-right: 10%;
+  padding: 10px 0;
+  font-size: 20px;
+  color: white;
 }
 
 .sidebar {
@@ -20,7 +50,7 @@ video {
   padding-top: 20px;
 }
 
-h1, .user-count {
+.chat_title, .user-count {
   margin-left: 10%;
   margin-right: 10%;
   padding: 10px 0;

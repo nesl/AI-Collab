@@ -7,15 +7,26 @@
   </head>
   <body>
 
-    <div class="sidebar">
+    <div class="whole_area">
+    <div class="sidebar" id="sidebar">
+
 		<header>
-		<h1>Chat</h1>
+
+			<h1 style='float:left' class="chat_title">Chat</h1>
+
+
+			<h1 style='float:right' class='help_question'>?</h1>
+			
+	
 		</header>
+		<br><br><br>
+		<!--
 		<h2>Channel</h2>
 		<select name="dropdown" id="select_channel">
 		<option value="global">Global</option>
-	
+		
 		</select>
+		-->
 		<div class="sidechat">
 		  <section class="chat" id="chat">
 		
@@ -69,13 +80,35 @@
 
 		</div>
 		
+		<div class="help_box">
+			    <b> Controls </b> <br>
+			    Arrow Keys to advance <br>
+			    Z to grab/drop object with left arm <br>
+			    X to grab/drop object with right arm <br>
+			    C to rotate camera downwards <br>
+			    V to rotate camera upwards <br>
+			    B to take sensing action <br>
+			    N to focus in object (you need this to then grab an object)<br>
+			    <p id=distance_text>Maximum distance for carrying objects: </p>
+			    <p id=comms_text>Maximum distance for communication: </p>
+			    
+			    <p style="color: green;"> Benign object</p>
+    			    <p style="color: red;"> Dangerous object</p>
+		        </div>
+		
 	
 	</div>
-	<div id="play_area">
+	<div id="play_area" >
     <video playsinline autoplay muted></video>
     <video playsinline autoplay muted></video>
 	</div>
 
+    
+   
+
+ 
+
+    </div>
     <script src="/socket.io/socket.io.js"></script>
     <script src="/watch.js"></script>
 

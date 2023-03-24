@@ -58,6 +58,7 @@ var char_replacement = [{'Up':'Up','Down':'Down','Left':'Left','Right':'Right'},
 var clients_ids = [], user_ids_list = [], ai_ids_list = [], ai_ids = [], all_ids = [], all_ids_list = [];
 var init_xdotool = false;
 var video_idx_broadcaster = 0;
+var past_timer = 0
 
 
 function socket_to_simulator_id(socket_id){
@@ -194,11 +195,12 @@ io.sockets.on("connection", socket => { //When a client connects
   
   socket.on("human_output", (idx, location, item_info, neighbors_info, timer) => {
     socket.to(all_ids[idx]).emit("human_output", location, item_info, neighbors_info, timer);
-    /*
-    if(command_line_options.log_output){
-        fs.appendFile(dateTime + '_output.txt', String(timer) +',' + '"'+message.replace(/"/g, '\\"')+'"'+','+keys_neighbors+'\n', err => {});
+    
+    if(command_line_options.log_output && (timer - past_timer > 1 || Object.keys(item_info).length > 0)){
+        past_timer = timer;
+        fs.appendFile(dateTime + '_output.txt', String(timer) +',' + socket_to_simulator_id(all_ids[idx]) + ',' + String(location[0]) + ',' + String(location[2]) + ',' + JSON.stringify(item_info) + ',' + JSON.stringify(neighbors_info) + '\n', err => {});
     }
-    */
+    
   });
   
   socket.on("agent_reset", (magnebot_id) => {
@@ -244,7 +246,7 @@ io.sockets.on("connection", socket => { //When a client connects
         
         
         if(command_line_options.log_messages){
-            fs.appendFile(dateTime + '_messages.txt', String(timestamp) +',' + '"'+message.replace(/"/g, '\\"')+'"'+','+keys_neighbors+'\n', err => {});
+            fs.appendFile(dateTime + '_messages.txt', String(timestamp) +',' + socket_to_simulator_id(socket.id) + ',' + '"'+message.replace(/"/g, '\\"')+'"'+','+keys_neighbors+'\n', err => {});
         }
     }
 
@@ -253,7 +255,7 @@ io.sockets.on("connection", socket => { //When a client connects
   socket.on("key", (key, timestamp) => {
     socket.to(simulator).emit("key", key, socket_to_simulator_id(socket.id));
     if(command_line_options.log_key_pressing){
-        fs.appendFile(dateTime + '_key_pressing.txt', String(timestamp) +',' + key +'\n', err => {});
+        fs.appendFile(dateTime + '_key_pressing.txt', String(timestamp) +',' + socket_to_simulator_id(socket.id) + ',' + key +'\n', err => {});
     }
     /*
     let idx = clients_ids.indexOf(socket.id);
