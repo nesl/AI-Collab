@@ -75,7 +75,7 @@
 		<div class="collapsible_content" id="collapsible_nearby_team_members">
 
 		</div>
-		<button class="collapsible" id="collapsible_object_tag">Object Information (0)</button>
+		<button class="collapsible" onclick="fill_info()" id="collapsible_object_tag">Object Information (0)</button>
 		<div class="collapsible_content" id="collapsible_object_information">
 
 		</div>
@@ -90,7 +90,7 @@
 			    B to take sensing action <br>
 			    N to focus in object (you need this to then grab an object)<br>
 			    <p id=distance_text>Maximum distance for carrying objects: </p>
-			    <p id=comms_text>Maximum distance for communication: </p>
+			    <p id=comms_text>Maximum distance for communication (-1 is out of range): </p>
 			    
 			    <p style="color: green;"> Benign object</p>
     			    <p style="color: red;"> Dangerous object</p>

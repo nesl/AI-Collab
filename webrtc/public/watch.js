@@ -74,7 +74,26 @@ socket.on("broadcaster", () => {
 
 var own_neighbors_info_entry = [];
 var object_list_store = [];
+var object_html_store = {};
 var neighbors_list_store = [];
+
+
+function reset_collapsible(object_info_div){
+
+    
+	
+}
+
+
+let chat_input_text = document.getElementById("command_text");
+
+chat_input_text.addEventListener("keydown", (event) => {
+
+	if( event.key.includes("Enter")){
+		sendCommand();
+	}
+
+});
 
 function reset(){
 
@@ -92,6 +111,32 @@ function reset(){
     var object_info_div = document.getElementById("collapsible_object_information");
     
     object_info_div.innerHTML = '';
+    
+    var text_search = document.createElement("input");
+    text_search.setAttribute("type", "text");
+    text_search.setAttribute("placeholder", "Search...");
+    text_search.addEventListener("change",function (event) {
+		
+		   
+    	var object_info_div = document.getElementById("collapsible_object_information");
+
+		const original_length = object_info_div.childNodes.length;
+
+		for (let i = original_length-1; i > 0; i--) { 
+			object_info_div.removeChild(object_info_div.childNodes[i]);
+		}
+		
+		Object.keys(object_html_store).forEach(function(object_key) {
+		
+			const pattern = new RegExp('^' + event.target.value);
+			if(pattern.test(object_key)){
+		    	object_info_div.appendChild(object_html_store[object_key]);
+		    }
+		});
+		
+	});
+	
+    object_info_div.appendChild(text_search);
     
     var chat = document.getElementById("chat");
     
@@ -268,17 +313,8 @@ play_area.onkeydown = function(evt) {
     socket.emit("key", kkey, simulator_timer);
 };
 
-var sidebar_area = document.getElementById("sidebar");
-
-sidebar_area.onkeydown = function(evt) {
 
 
-    
-    if(evt.key.includes("Enter")){
-        sendCommand();
-    }
-
-}
 
 
 
@@ -313,7 +349,7 @@ function update_danger_estimate(label_string, danger_data){
 	    color = 'red';
     }
 
-    label_string +=  ' <p style="color:' + color + '">' + String((sensor_user.confidence*100).toFixed(2))+"% </p>" //" <div style=\"color:" + color + "\">&#9632;</div> "+ String((sensor_user.confidence*100).toFixed(2))+"%";
+    label_string +=  '<p style="color:' + color + '">' + String((sensor_user.confidence*100).toFixed(2))+"% </p>" //" <div style=\"color:" + color + "\">&#9632;</div> "+ String((sensor_user.confidence*100).toFixed(2))+"%";
     
     return label_string;
 
@@ -337,7 +373,8 @@ function update_objects_info(object_key, timer, danger_data, position, weight, c
  			    object_list_store[ob_idx][2] = Object.assign({}, danger_data, object_list_store[ob_idx][2]); //TODO update estimation in ui
  			    var label_string = String(object_list_store[ob_idx][0]) + " (weight: " + String(object_list_store[ob_idx][1]) + ")";
  			    label_string = update_danger_estimate(label_string, object_list_store[ob_idx][2]);
- 			    label_element = document.getElementById("label_" + String(object_list_store[ob_idx][0]));
+ 			    //label_element = document.getElementById("label_" + String(object_list_store[ob_idx][0]));
+ 			    label_element = object_html_store[object_key].children[1]
  			    label_element.innerHTML = label_string;
  			}
  			
@@ -381,7 +418,10 @@ function update_objects_info(object_key, timer, danger_data, position, weight, c
 	    
 	    div_element.appendChild(input_element);	
 	    div_element.appendChild(label_element);
-	    object_info_div.appendChild(div_element);
+	    
+	    object_html_store[object_key] = div_element;
+	    
+	    
 
 
 	}
@@ -389,9 +429,26 @@ function update_objects_info(object_key, timer, danger_data, position, weight, c
 
   
     collapsible_tag.innerHTML = "Object Information (" + String(object_list_store.length) + ")";
+    
+    fill_info();
 }
 
 
+function fill_info(){
+
+    var object_info_div = document.getElementById("collapsible_object_information");
+
+	const original_length = object_info_div.childNodes.length;
+
+	for (let i = original_length-1; i > 0; i--) { 
+		object_info_div.removeChild(object_info_div.childNodes[i]);
+	}
+    
+    Object.keys(object_html_store).forEach(function(object_key) {
+        object_info_div.appendChild(object_html_store[object_key]);
+    });
+
+}
 
 //Update object info
 socket.on("objects_update", (object_list, source_id) => {
@@ -491,6 +548,8 @@ function newMessage(message, id){
 	p_element.innerHTML = "<strong>"+ String(id) + "</strong>: " + message;
 
 	chat.appendChild(p_element);
+	
+	p_element.scrollIntoView();
 }
 
 

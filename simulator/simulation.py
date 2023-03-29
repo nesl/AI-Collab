@@ -112,7 +112,7 @@ class Simulation(Controller):
         self.extra_keys_pressed = []
         self.segmentation_colors = {}
         
-        self.scenario = 1
+        self.scenario = 0
         
         
         if self.options.log_state:
@@ -238,6 +238,11 @@ class Simulation(Controller):
                                   font_size=18)
 
             
+            status_text_id = ui.add_text(text="Status: ",
+            				position={"x": 80, "y": 10},
+                                  	anchor={"x": 0, "y": 0},
+                                  	font_size=18,
+                                  	color={"r": 1, "g": 0, "b": 0, "a": 1})
             
             ui.add_image(image='pointer.png',
                         size={"x": reticule_size, "y": reticule_size},
@@ -261,7 +266,7 @@ class Simulation(Controller):
             
             self.uis.append(ui)
             um.ui = ui
-            um.ui_elements = ((bar_id,text_id,timer_text_id))
+            um.ui_elements = ((bar_id,text_id,timer_text_id, status_text_id))
 
 
         #Needed to get objects positions
@@ -767,13 +772,14 @@ class Simulation(Controller):
     #Process keyboard presses
     def keyboard_output(self, key_pressed, key_hold, extra_commands, duration, keys_time_unheld, all_ids, messages, fps):
     
-
+        
         #for j in range(keys.get_num_pressed()):
         for j in range(len(key_pressed)):
             idx = -1
             
             if key_pressed[j] in self.keys_set[0]: #Advance
                 idx = self.keys_set[0].index(key_pressed[j])
+                print(self.user_magnebots[idx].action.status)
                 #if self.user_magnebots[0].action.status != ActionStatus.ongoing:
                 if self.user_magnebots[idx].action.status != ActionStatus.ongoing:
                     self.user_magnebots[idx].move_by(distance=10)
@@ -786,7 +792,9 @@ class Simulation(Controller):
                 #keys_time_unheld[idx] = -20
 
             elif key_pressed[j] in self.keys_set[1]: #Back
+                
                 idx = self.keys_set[1].index(key_pressed[j])
+                print(self.user_magnebots[idx].action.status)
                 if self.user_magnebots[idx].action.status != ActionStatus.ongoing:
                     self.user_magnebots[idx].move_by(distance=-10)
                 
@@ -798,6 +806,7 @@ class Simulation(Controller):
 
             elif key_pressed[j] in self.keys_set[2]: #Right
                 idx = self.keys_set[2].index(key_pressed[j])
+                print(self.user_magnebots[idx].action.status)
                 if self.user_magnebots[idx].action.status != ActionStatus.ongoing:
                     self.user_magnebots[idx].turn_by(179)
                 
@@ -809,6 +818,7 @@ class Simulation(Controller):
 
             elif key_pressed[j] in self.keys_set[3]: #Left
                 idx = self.keys_set[3].index(key_pressed[j])
+                print(self.user_magnebots[idx].action.status)
                 if self.user_magnebots[idx].action.status != ActionStatus.ongoing:
                     self.user_magnebots[idx].turn_by(-179)
                 
@@ -963,6 +973,7 @@ class Simulation(Controller):
             
             if key_hold[j] in self.keys_set[0]: #Advance
                 idx = self.keys_set[0].index(key_hold[j])
+                print(self.user_magnebots[idx].action.status)
                 #if self.user_magnebots[0].action.status != ActionStatus.ongoing:
                 #print(self.user_magnebots[idx].action.status)
                 if self.user_magnebots[idx].action.status != ActionStatus.ongoing:
@@ -970,14 +981,17 @@ class Simulation(Controller):
                 
             elif key_hold[j] in self.keys_set[1]: #Back
                 idx = self.keys_set[1].index(key_hold[j])
+                print(self.user_magnebots[idx].action.status)
                 if self.user_magnebots[idx].action.status != ActionStatus.ongoing:
                     self.user_magnebots[idx].move_by(distance=-10)
             elif key_hold[j] in self.keys_set[2]: #Right
                 idx = self.keys_set[2].index(key_hold[j])
+                print(self.user_magnebots[idx].action.status)
                 if self.user_magnebots[idx].action.status != ActionStatus.ongoing:
                     self.user_magnebots[idx].turn_by(179)
             elif key_hold[j] in self.keys_set[3]: #Left
                 idx = self.keys_set[3].index(key_hold[j])
+                print(self.user_magnebots[idx].action.status)
                 if self.user_magnebots[idx].action.status != ActionStatus.ongoing:
                     self.user_magnebots[idx].turn_by(-179)
          
@@ -1444,6 +1458,8 @@ class Simulation(Controller):
                     #We modify timer
                     all_magnebots[idx].ui.set_text(ui_id=all_magnebots[idx].ui_elements[2],text='{:02d}:{:02d}'.format(int(mins), int(secs)))
                     
+                    #We modify action status
+                    all_magnebots[idx].ui.set_text(ui_id=all_magnebots[idx].ui_elements[3],text="Status: " + all_magnebots[idx].action.status.name)
                     
                     #Add screen position markers requested by each particular user magnebot
                     
