@@ -25,6 +25,7 @@ from PIL import Image
 
 import datetime
 import json
+import os
 
 
 #Dimension of our camera view
@@ -35,6 +36,7 @@ num_users = 2
 num_ais = 1
 
 cams = []
+video = []
 global_refresh_sensor = 0
 
 address = ''
@@ -116,7 +118,14 @@ class Simulation(Controller):
         
         
         if self.options.log_state:
-            self.log_state_f = open(datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S") + '_state.txt', "w")
+            log_dir = './log/'
+            if not os.path.exists(log_dir):
+                os.makedirs(log_dir)
+            
+            self.log_state_f = open(log_dir + datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S") + '_state.txt', "w")
+            self.log_state_f.write(str(self.cfg)+'\n')
+            self.log_state_f.write(str(self.options))
+            self.log_state_f.close()
         
 
         #Functionality of keys according to order of appearance: [Advance, Back, Right, Left, Grab with left arm, Grab with right arm, Camera down, Camera up, Activate sensor, Focus on object]
@@ -1336,7 +1345,16 @@ class Simulation(Controller):
             
             if self.options.log_state and self.timer - past_timer > 1:
                 past_timer = self.timer
-                self.log_state_f.write(json.dumps({'time': self.timer, 'map': self.object_type_coords_map.tolist(), 'metadata': self.object_attributes_id}) + '\n')
+                object_metadata = []
+                
+                for key in self.object_attributes_id.keys():
+                    xy = key.split('_')
+
+                    type_object = int(self.object_type_coords_map[int(xy[0]),int(xy[1])])
+
+                    object_metadata.append([int(xy[0]),int(xy[1]),type_object,self.object_attributes_id[key]])
+                
+                self.sio.emit("log_output", (json.dumps({'metadata':object_metadata}),past_timer))
             
 
             #Set a visual target whenever the user wants to help
@@ -1584,6 +1602,8 @@ class Simulation(Controller):
                                 magnebot_images[images.get_avatar_id()] = np.asarray(pil_image)
                                 if cams:
                                     cams[0].send(img_image)
+                                    if self.options.create_video:
+                                        video[0].write(img_image)
                                 #cv2.imshow('frame',np.asarray(pil_image))
                                 #cv2.waitKey(1)
                                 
@@ -1741,6 +1761,10 @@ class Simulation(Controller):
                 if cams and magnebot_id in magnebot_images:
                     cams[idx+1].send(magnebot_images[magnebot_id])
                     
+                    if self.options.create_video:
+                        pdb.set_trace()
+                        video[idx+1].write(magnebot_images[magnebot_id])
+                    
                 item_info = {}
                 all_idx = all_ids.index(str(magnebot_id))
                 
@@ -1763,6 +1787,9 @@ class Simulation(Controller):
             for m_idx, magnebot_id in enumerate(self.ai_magnebots_ids):
                 if cams and magnebot_id in magnebot_images:
                     cams[idx+1].send(magnebot_images[magnebot_id])
+                    
+                    if self.options.create_video:
+                        video[idx+1].write(magnebot_images[magnebot_id])
 
                 #Occupancy maps
 
@@ -1909,6 +1936,7 @@ if __name__ == "__main__":
     parser.add_argument('--video-index', type=int, default=0 ,help='index of the first /dev/video device to start streaming to')
     parser.add_argument('--no-debug-camera', action='store_true', help='do not instantiate debug top down camera')
     parser.add_argument('--log-state', action='store_true', help='Log occupancy maps')
+    parser.add_argument('--create-video', type=str, default='', help='Create videos for all views')
     args = parser.parse_args()
 
     print("Simulator starting")
@@ -1931,6 +1959,12 @@ if __name__ == "__main__":
             cams.append(pyvirtualcam.Camera(width=width, height=height, fps=20, device='/dev/video'+str(user)))
         for ai in range(args.video_index+num_users+1,args.video_index+num_users+1+num_ais):
             cams.append(pyvirtualcam.Camera(width=width, height=height, fps=20, device='/dev/video'+str(ai)))
+            
+        if args.create_video:
+            for c_idx in range(len(cams)):
+                video.append(cv2.VideoWriter(args.create_video+ '_' + str(c_idx), cv2.VideoWriter_fourcc(*'MJPG'), 20, (width,height)))
+                print("Created ", args.create_video+ '_' + str(c_idx))
+            
 
     address = args.address
 

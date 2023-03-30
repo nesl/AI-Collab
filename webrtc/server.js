@@ -8,9 +8,7 @@ commander
   .usage('[OPTIONS]...')
   .option('--address <value>', 'IP address', '172.17.15.69')
   .option('--port <number>', 'Port', 4000)
-  .option('--log_messages', 'Log messages')
-  .option('--log_key_pressing', 'Log key pressing')
-  .option('--log_output', 'Log output from simulator')
+  .option('--log', 'Log everything')
   .parse(process.argv);
 
 const command_line_options = commander.opts();
@@ -25,6 +23,11 @@ const https = require("https");
 
 const fs = require("fs");
 
+var dir = './log/';
+
+if (!fs.existsSync(dir)){
+    fs.mkdirSync(dir);
+}
 
 var today = new Date();
 var date = today.getFullYear()+'_'+(today.getMonth()+1)+'_'+today.getDate();
@@ -196,11 +199,16 @@ io.sockets.on("connection", socket => { //When a client connects
   socket.on("human_output", (idx, location, item_info, neighbors_info, timer) => {
     socket.to(all_ids[idx]).emit("human_output", location, item_info, neighbors_info, timer);
     
-    if(command_line_options.log_output && (timer - past_timer > 1 || Object.keys(item_info).length > 0)){
+    if(command_line_options.log && (timer - past_timer > 1 || Object.keys(item_info).length > 0)){
         past_timer = timer;
-        fs.appendFile(dateTime + '_output.txt', String(timer) +',' + socket_to_simulator_id(all_ids[idx]) + ',' + String(location[0]) + ',' + String(location[2]) + ',' + JSON.stringify(item_info) + ',' + JSON.stringify(neighbors_info) + '\n', err => {});
+        fs.appendFile(dir + dateTime + '.txt', String(timer) +',' + '3' + ',' + socket_to_simulator_id(all_ids[idx]) + ',' + JSON.stringify(item_info) + ',' + JSON.stringify(neighbors_info) + '\n', err => {});
     }
     
+  });
+  
+  socket.on("log_output", (location_map, timestamp) => {
+
+  	fs.appendFile(dir + dateTime + '.txt', String(timestamp) +',' + '0' + ',' + JSON.stringify(location_map) + '\n', err => {});
   });
   
   socket.on("agent_reset", (magnebot_id) => {
@@ -245,8 +253,8 @@ io.sockets.on("connection", socket => { //When a client connects
         keys_neighbors += '"';
         
         
-        if(command_line_options.log_messages){
-            fs.appendFile(dateTime + '_messages.txt', String(timestamp) +',' + socket_to_simulator_id(socket.id) + ',' + '"'+message.replace(/"/g, '\\"')+'"'+','+keys_neighbors+'\n', err => {});
+        if(command_line_options.log){
+            fs.appendFile(dir + dateTime + '.txt', String(timestamp) +',' + '2' + ',' + socket_to_simulator_id(socket.id) + ',' + '"'+message.replace(/"/g, '\\"')+'"'+','+keys_neighbors+'\n', err => {});
         }
     }
 
@@ -254,8 +262,8 @@ io.sockets.on("connection", socket => { //When a client connects
   //Every time a key is pressed by someone in their browser, emulate that keypress using xdotool
   socket.on("key", (key, timestamp) => {
     socket.to(simulator).emit("key", key, socket_to_simulator_id(socket.id));
-    if(command_line_options.log_key_pressing){
-        fs.appendFile(dateTime + '_key_pressing.txt', String(timestamp) +',' + socket_to_simulator_id(socket.id) + ',' + key +'\n', err => {});
+    if(command_line_options.log){
+        fs.appendFile(dir + dateTime + '.txt', String(timestamp) +',' + '1' + ',' + socket_to_simulator_id(socket.id) + ',' + key +'\n', err => {});
     }
     /*
     let idx = clients_ids.indexOf(socket.id);
