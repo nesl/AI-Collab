@@ -15,7 +15,7 @@
 			<h1 style='float:left' class="chat_title">Chat</h1>
 
 
-			<h1 style='float:right' class='help_question'>?</h1>
+			<button style='float:right' class='help_question' onclick="togglePopup()">?</h1>
 			
 	
 		</header>
@@ -80,24 +80,38 @@
 
 		</div>
 		
-		<div class="help_box">
-			    <b> Controls </b> <br>
-			    Arrow Keys to advance <br>
-			    Z to grab/drop object with left arm <br>
-			    X to grab/drop object with right arm <br>
-			    C to rotate camera downwards <br>
-			    V to rotate camera upwards <br>
-			    B to take sensing action <br>
-			    N to focus in object (you need this to then grab an object)<br>
-			    <p id=distance_text>Maximum distance for carrying objects: </p>
-			    <p id=comms_text>Maximum distance for communication (-1 is out of range): </p>
-			    
-			    <p style="color: green;"> Benign object</p>
-    			    <p style="color: red;"> Dangerous object</p>
-		        </div>
+		
+	        
 		
 	
 	</div>
+	<div class="popup" id="popup-1">
+	        	<div class="overlay"></div>
+	        	<div class="content">
+	        		<div class="close-btn" onclick="togglePopup()">&times;</div>
+	        		<h1> Instructions </h1> <br>
+	        		Sense objects and bring the dangerous objects into the middle of the room. When you sense an object you will see whether the object is dangerous or benign according to the color of the object ID, and in your sidebar you will be able to consult the object, as well as the confidence in the prediction. Objects have a weight associated with them, and you will only be able to carry those that match your strength level. Strength level is modified by the amount of robots that are close to you and you may only be able to carry a heavy object when you have a given quantity of robots near you. A dangerous object can only be carried if there are other robots nearby, if not, the game will end if you carry one. You need to compare estimates of danger level in order to be sure you are not carrying a dangerous object alone. You can talk with your fellow robots through the sidebar chat. <br>
+	        		<h1> Controls </h1> <br>
+				    Arrow Keys to advance <br>
+				    Z to grab/drop object with left arm <br>
+				    X to grab/drop object with right arm <br>
+				    C to rotate camera downwards <br>
+				    V to rotate camera upwards <br>
+				    B to take sensing action <br>
+				    N to focus in object (you need this to then grab an object)<br>
+				    <p id=distance_text>Maximum distance for carrying objects: </p>
+				    <p id=comms_text>Maximum distance for communication (-1 is out of range): </p>
+				    
+				    <p style="color: blue;"> Benign object</p>
+	    			    <p style="color: red;"> Dangerous object</p>
+	    			    
+	    			    You can send messages by putting the text and then pressing Enter <br>
+	    			    To search for an object, input the pattern and then press Enter
+	    			    
+	    			  
+	        		</div>
+		</div>
+
 	<div id="play_area" >
     <video playsinline autoplay muted></video>
     <video playsinline autoplay muted></video>

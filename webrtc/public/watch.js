@@ -78,11 +78,7 @@ var object_html_store = {};
 var neighbors_list_store = [];
 
 
-function reset_collapsible(object_info_div){
 
-    
-	
-}
 
 
 let chat_input_text = document.getElementById("command_text");
@@ -95,10 +91,24 @@ chat_input_text.addEventListener("keydown", (event) => {
 
 });
 
+
+function removeTags(str) {
+    if ((str===null) || (str===''))
+        return false;
+    else
+        str = str.toString();
+          
+    // Regular expression to identify HTML tags in
+    // the input string. Replacing the identified
+    // HTML tag with a null string.
+    return str.replace( /(<([^>]+)>)/ig, '');
+}
+
 function reset(){
 
     object_list_store = [];
     neighbors_list_store = [];
+    object_html_store = {};
     own_neighbors_info_entry = [client_id, 0, 0, 0, -1];
     
     var neighbor_info_div = document.getElementById("collapsible_nearby_team_members");
@@ -137,6 +147,11 @@ function reset(){
 	});
 	
     object_info_div.appendChild(text_search);
+    
+    
+    var collapsible_tag_objects = document.getElementById("collapsible_object_tag");
+    
+    collapsible_tag_objects.innerHTML = "Object Information (0)";
     
     var chat = document.getElementById("chat");
     
@@ -194,21 +209,22 @@ function reset(){
         
     }
     
-    collapsible_tag.innerHTML = "Team Members (" + String(neighbors_list_store.length) + ")";
+    collapsible_tag.innerHTML = "Team Members (" + removeTags(String(neighbors_list_store.length)) + ")";
 
 
 }
 
 socket.on("agent_reset", () => {
-    reset()
+    reset();
 });
 
 
-map_config = {}
-socket.on("watcher", (robot_id_r, occupancy_map_config) => {
+var map_config = {};
+
+socket.on("watcher", (robot_id_r, config_options) => {
 
     client_id = robot_id_r;
-    map_config = occupancy_map_config;
+    map_config = config_options;
     
 
     for(ob_idx = 0; ob_idx < map_config['all_robots'].length; ob_idx++){ //Remove self
@@ -220,13 +236,12 @@ socket.on("watcher", (robot_id_r, occupancy_map_config) => {
     
     var communication_distance_limit = document.getElementById("comms_text");
     
-    communication_distance_limit.innerHTML = "Maximum distance for communication: " + String(map_config['communication_distance_limit']) + ' m';
+    communication_distance_limit.innerHTML = "Maximum distance for communication: " + removeTags(String(map_config['communication_distance_limit'])) + ' m';
     
     var strength_distance_limit = document.getElementById("distance_text");
     
-    strength_distance_limit.innerHTML = "Maximum distance for carrying objects: " + String(map_config['strength_distance_limit']) + ' m';
+    strength_distance_limit.innerHTML = "Maximum distance for carrying objects: " + removeTags(String(map_config['strength_distance_limit'])) + ' m';
     
-
     
     reset();
 });
@@ -268,7 +283,7 @@ socket.on("human_output", (location, item_info, neighbors_info, timer) => {
             var distance = Math.sqrt(x+y);
             */
             text_node.style.color = "red";
-            text_node.innerHTML = text_node.innerHTML.slice(0,distance_idx+distance_string.length) + String(neighbors_info[neighbors_list_store[ob_idx][0]][2].toFixed(1)) + " m)";
+            text_node.innerHTML = text_node.innerHTML.slice(0,distance_idx+distance_string.length) + removeTags(String(neighbors_info[neighbors_list_store[ob_idx][0]][2].toFixed(1))) + " m)";
             neighbors_list_store[ob_idx][5] = true;
              
         } else {
@@ -315,7 +330,9 @@ play_area.onkeydown = function(evt) {
 
 
 
-
+function togglePopup(){
+	document.getElementById("popup-1").classList.toggle("active");
+}
 
 
 function convert_to_real_coordinates(position){
@@ -343,13 +360,13 @@ function update_danger_estimate(label_string, danger_data){
     var danger = sensor_user.value;
     var color;
     if(danger == 1){
-	    color = 'green';
+	    color = 'blue';
     }
     else{
 	    color = 'red';
     }
 
-    label_string +=  '<p style="color:' + color + '">' + String((sensor_user.confidence*100).toFixed(2))+"% </p>" //" <div style=\"color:" + color + "\">&#9632;</div> "+ String((sensor_user.confidence*100).toFixed(2))+"%";
+    label_string +=  '<p style="color:' + color + '">' + removeTags(String((sensor_user.confidence*100).toFixed(2)))+"% </p>" //" <div style=\"color:" + color + "\">&#9632;</div> "+ String((sensor_user.confidence*100).toFixed(2))+"%";
     
     return label_string;
 
@@ -371,7 +388,7 @@ function update_objects_info(object_key, timer, danger_data, position, weight, c
  		if(object_key == object_list_store[ob_idx][0]){ 
  			if(Object.keys(danger_data).length > 0){
  			    object_list_store[ob_idx][2] = Object.assign({}, danger_data, object_list_store[ob_idx][2]); //TODO update estimation in ui
- 			    var label_string = String(object_list_store[ob_idx][0]) + " (weight: " + String(object_list_store[ob_idx][1]) + ")";
+ 			    var label_string = removeTags(String(object_list_store[ob_idx][0]) + " (weight: " + String(object_list_store[ob_idx][1]) + ")");
  			    label_string = update_danger_estimate(label_string, object_list_store[ob_idx][2]);
  			    //label_element = document.getElementById("label_" + String(object_list_store[ob_idx][0]));
  			    label_element = object_html_store[object_key].children[1]
@@ -406,7 +423,7 @@ function update_objects_info(object_key, timer, danger_data, position, weight, c
 	    label_element.setAttribute("for", String(object_key));
 	    label_element.setAttribute("id", "label_" + String(object_key));
 	    
-	    var label_string = String(object_key) + " (weight: " + String(weight) + ")";
+	    var label_string = removeTags(String(object_key) + " (weight: " + String(weight) + ")");
 	    
 	    if(Object.keys(danger_data).length > 0){ 
 	    
@@ -428,7 +445,7 @@ function update_objects_info(object_key, timer, danger_data, position, weight, c
  	
 
   
-    collapsible_tag.innerHTML = "Object Information (" + String(object_list_store.length) + ")";
+    collapsible_tag.innerHTML = "Object Information (" + removeTags(String(object_list_store.length)) + ")";
     
     fill_info();
 }
@@ -545,11 +562,11 @@ function findCheckedRadio(radio_elements,final_string,pattern){
 function newMessage(message, id){
 	const chat = document.getElementById("chat");
 	var p_element = document.createElement("p");
-	p_element.innerHTML = "<strong>"+ String(id) + "</strong>: " + message;
+	p_element.innerHTML = "<strong>"+ removeTags(String(id)) + "</strong>: " + message;
 
 	chat.appendChild(p_element);
 	
-	p_element.scrollIntoView();
+	p_element.scrollIntoView({block: "nearest", inline: "nearest"});
 }
 
 
@@ -727,4 +744,6 @@ function get_corrected_neighbors_info(target_id){
     return corrected_neighbors_info;
 }
 
+
+togglePopup();
 

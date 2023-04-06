@@ -26,6 +26,7 @@ from PIL import Image
 import datetime
 import json
 import os
+import random
 
 
 #Dimension of our camera view
@@ -95,6 +96,7 @@ class Simulation(Controller):
         self.no_debug_camera = args.no_debug_camera
         
         self.reset = False
+        self.reset_message = False
         
         self.timer = time.time()
 
@@ -113,8 +115,11 @@ class Simulation(Controller):
         self.queue_perception_action = []
         self.extra_keys_pressed = []
         self.segmentation_colors = {}
+        self.scenario_size = 20
+        self.robot_names_translate = {}
+        self.object_names_translate = {}
         
-        self.scenario = 0
+        self.scenario = 1
         
         
         if self.options.log_state:
@@ -173,13 +178,16 @@ class Simulation(Controller):
         self.uis = []
 
         #Create ai magnebots
-        for ai_idx in range(num_ais):                                   
-            self.ai_magnebots.append(Enhanced_Magnebot(robot_id=self.get_unique_id(), position=self.ai_spawn_positions[ai_idx],image_frequency=ImageFrequency.always, controlled_by='ai'))
+        for ai_idx in range(num_ais):  
+            robot_id = self.get_unique_id()                                 
+            self.ai_magnebots.append(Enhanced_Magnebot(robot_id=robot_id, position=self.ai_spawn_positions[ai_idx],image_frequency=ImageFrequency.always, controlled_by='ai'))
+            self.robot_names_translate[str(robot_id)] = chr(ord('A') + ai_idx)
         
         #Create user magnebots
         for us_idx in range(num_users):
-            self.user_magnebots.append(Enhanced_Magnebot(robot_id=self.get_unique_id(), position=self.user_spawn_positions[us_idx], image_frequency=ImageFrequency.always, pass_masks=['_img'],key_set=self.proposed_key_sets[us_idx], controlled_by='human'))
-
+            robot_id = self.get_unique_id()
+            self.user_magnebots.append(Enhanced_Magnebot(robot_id=robot_id, position=self.user_spawn_positions[us_idx], image_frequency=ImageFrequency.always, pass_masks=['_img'],key_set=self.proposed_key_sets[us_idx], controlled_by='human'))
+            self.robot_names_translate[str(robot_id)] = chr(ord('A') + us_idx + num_ais)
 
 
         reticule_size = 9
@@ -327,13 +335,15 @@ class Simulation(Controller):
                 extra_config['cell_size'] = self.cfg['cell_size']
                 extra_config['num_cells'] = self.static_occupancy_map.occupancy_map.shape
                 extra_config['num_objects'] = len(self.graspable_objects)
-                extra_config['all_robots'] = [(str(um.robot_id),um.controlled_by) for um in [*self.user_magnebots,*self.ai_magnebots]]
+                extra_config['all_robots'] = [(self.robot_names_translate[str(um.robot_id)],um.controlled_by) for um in [*self.user_magnebots,*self.ai_magnebots]]
                 extra_config['timer_limit'] = self.timer_limit
                 extra_config['strength_distance_limit'] = self.cfg['strength_distance_limit']
                 extra_config['communication_distance_limit'] = self.cfg['communication_distance_limit']
+
                 
-                
-                self.sio.emit("simulator", (self.user_magnebots_ids,self.ai_magnebots_ids, self.options.video_index, extra_config))#[*self.user_magnebots_ids, *self.ai_magnebots_ids])
+                translated_user_magnebots_ids = [self.robot_names_translate[robot_id] for robot_id in self.user_magnebots_ids]
+                translated_ai_magnebots_ids = [self.robot_names_translate[robot_id] for robot_id in self.ai_magnebots_ids]
+                self.sio.emit("simulator", (translated_user_magnebots_ids,translated_ai_magnebots_ids, self.options.video_index, extra_config))#[*self.user_magnebots_ids, *self.ai_magnebots_ids])
 
             @self.sio.event
             def connect_error(data):
@@ -357,11 +367,12 @@ class Simulation(Controller):
             """
             
             
-
+            
             #Receive action for ai controlled robot
             @self.sio.event
-            def ai_action(action_message, agent_id):
-                print('New command:', action_message, agent_id)
+            def ai_action(action_message, agent_id_translated): #No arbitrary eval should be allowed, check here
+                print('New command:', action_message, agent_id_translated)
+                agent_id = list(self.robot_names_translate.keys())[list(self.robot_names_translate.values()).index(agent_id_translated)]
                 ai_agent_idx = self.ai_magnebots_ids.index(agent_id)
                 ai_agent = self.ai_magnebots[ai_agent_idx]
                 
@@ -396,7 +407,9 @@ class Simulation(Controller):
 
             #Indicate use of occupancy maps
             @self.sio.event
-            def watcher_ai(agent_id, view_radius, centered):
+            def watcher_ai(agent_id_translated, view_radius, centered):
+            
+                agent_id = list(self.robot_names_translate.keys())[list(self.robot_names_translate.values()).index(agent_id_translated)]
                 ai_agent_idx = self.ai_magnebots_ids.index(agent_id)
 
                 self.ai_magnebots[ai_agent_idx].view_radius = int(view_radius)
@@ -409,7 +422,10 @@ class Simulation(Controller):
                 
             #Key
             @self.sio.event
-            def key(key, agent_id):
+            def key(key, agent_id_translated):
+            
+                agent_id = list(self.robot_names_translate.keys())[list(self.robot_names_translate.values()).index(agent_id_translated)]
+                
                 user_agent_idx = self.user_magnebots_ids.index(agent_id)
                 
                 if key in self.user_magnebots[0].key_set: #Check whether key is in magnebot key set
@@ -434,9 +450,10 @@ class Simulation(Controller):
             
             
         if self.scenario == 0:
+            self.scenario_size = 10
             commands = [#{'$type': 'add_scene','name': 'building_site','url': 'https://tdw-public.s3.amazonaws.com/scenes/linux/2019.1/building_site'}, 
                         {"$type": "load_scene", "scene_name": "ProcGenScene"},
-                        TDWUtils.create_empty_room(10, 10),
+                        TDWUtils.create_empty_room(self.scenario_size, self.scenario_size),
                         self.get_add_material("parquet_long_horizontal_clean",
                                               library="materials_high.json"),
                         {"$type": "set_screen_size",
@@ -446,9 +463,10 @@ class Simulation(Controller):
                          "angle": 30,
                          "axis": "pitch"}]
         elif self.scenario == 1:
+            self.scenario_size = 20
             commands = [#{'$type': 'add_scene','name': 'building_site','url': 'https://tdw-public.s3.amazonaws.com/scenes/linux/2019.1/building_site'}, 
                         {"$type": "load_scene", "scene_name": "ProcGenScene"},
-                        TDWUtils.create_empty_room(20, 20),
+                        TDWUtils.create_empty_room(self.scenario_size, self.scenario_size),
                         self.get_add_material("parquet_long_horizontal_clean",
                                               library="materials_high.json"),
                         {"$type": "set_screen_size",
@@ -473,6 +491,7 @@ class Simulation(Controller):
         
         self.graspable_objects = []
         
+        self.object_names_translate = {}
         
         self.timer = time.time()
         if float(self.cfg['timer']) > 0:
@@ -499,7 +518,7 @@ class Simulation(Controller):
         
         if self.scenario == 0:
         
-            max_coord = 3#8
+            max_coord = int(self.scenario_size/2)-2#8
             object_models = ['iron_box'] #['iron_box','4ft_shelf_metal','trunck','lg_table_marble_green','b04_backpack','36_in_wall_cabinet_wood_beach_honey']
             coords = {}
             
@@ -524,47 +543,62 @@ class Simulation(Controller):
                 for m in modifications:
                     final_coords[fc].extend(np.array(coords[fc])*m)
 
+            object_index = 0
             for fc in final_coords.keys():
                 for c in final_coords[fc]:
 
                     weight = int(np.random.choice([1,2,3],1)[0])
                     danger_level = np.random.choice([1,2],1,p=[0.9,0.1])[0]
                     #commands.extend(self.instantiate_object(fc,{"x": c[0], "y": 0, "z": c[1]},{"x": 0, "y": 0, "z": 0},10,danger_level,weight))
-                    commands.extend(self.instantiate_object(fc,{"x": c[0], "y": 0, "z": c[1]},{"x": 0, "y": 0, "z": 0},10,2,1)) #Danger level 2 and weight 1
+                    commands.extend(self.instantiate_object(fc,{"x": c[0], "y": 0, "z": c[1]},{"x": 0, "y": 0, "z": 0},10,2,1, object_index)) #Danger level 2 and weight 1
                     #print("Position:", {"x": c[0], "y": 0, "z": c[1]})
-
+                    object_index += 1
+                    
         elif self.scenario == 1:
-            max_coord = 8
-            object_models = ['iron_box','4ft_shelf_metal','trunck','lg_table_marble_green','b04_backpack','36_in_wall_cabinet_wood_beach_honey']
-            coords = {}
+            max_coord = int(self.scenario_size/2)-2
+            object_models = {'iron_box':5, 'duffle_bag':1} #,'4ft_shelf_metal':1,'trunck':1,'lg_table_marble_green':1,'b04_backpack':1,'36_in_wall_cabinet_wood_beach_honey':1}
+
+
+            possible_ranges = [np.arange(max_coord-3,max_coord+0.5,0.5),np.arange(max_coord-3,max_coord+0.5,0.5)]
+            possible_locations = [[i, j] for i in possible_ranges[0] for j in possible_ranges[1]]
             
-            coords[object_models[0]] = [[max_coord,max_coord],[max_coord-1,max_coord-0.1],[max_coord-0.5,max_coord-0.2],[max_coord-0.4,max_coord],[max_coord,max_coord-0.5]]
-
-            coords[object_models[1]] = [[max_coord-3,max_coord]]
-
-            coords[object_models[2]] = [[max_coord,max_coord-3]]
-            coords[object_models[3]] = [[max_coord-2,max_coord-2]]
-            coords[object_models[4]] = [[max_coord-1,max_coord-2]]
-            coords[object_models[5]] = [[max_coord-3,max_coord-3]]
 
             modifications = [[1.0,1.0],[-1.0,1.0],[1.0,-1.0],[-1.0,-1.0]]
 
-            final_coords = {}
+            final_coords = {objm: [] for objm in object_models.keys()}
 
-            for objm in object_models:
-                final_coords[objm] = []
             
 
             for fc in final_coords.keys():
-                for m in modifications:
-                    final_coords[fc].extend(np.array(coords[fc])*m)
+                for n_obj in range(object_models[fc]):
+                    location = random.choice(possible_locations)
+                    possible_locations.remove(location)
+                    for m in modifications:
+                        final_coords[fc].append(np.array(location)*m)
 
+
+            object_index = 0
             for fc in final_coords.keys():
                 for c in final_coords[fc]:
-
-                    weight = int(np.random.choice(list(range(1,num_users+num_ais+1)),1)[0])
+                    
+                    possible_weights = list(range(1,num_users+num_ais+1))
+                    weights_probs = [1]*len(possible_weights)
+                    
+                    for p_idx in range(len(possible_weights)):
+                        if not p_idx:
+                            weights_probs[p_idx] /= 2
+                        elif p_idx == len(possible_weights)-1:
+                            weights_probs[p_idx] = weights_probs[p_idx-1]
+                        else:
+                            weights_probs[p_idx] = weights_probs[p_idx-1]/2
+                    
+                    weight = int(np.random.choice(possible_weights,1,p=weights_probs)[0])
                     danger_level = np.random.choice([1,2],1,p=[0.9,0.1])[0]
-                    commands.extend(self.instantiate_object(fc,{"x": c[0], "y": 0, "z": c[1]},{"x": 0, "y": 0, "z": 0},10,danger_level,weight))
+                    try:
+                        commands.extend(self.instantiate_object(fc,{"x": c[0], "y": 0, "z": c[1]},{"x": 0, "y": 0, "z": 0},10,danger_level,weight, object_index))
+                    except:
+                        pdb.set_trace()
+                    object_index += 1
                     #commands.extend(self.instantiate_object(fc,{"x": c[0], "y": 0, "z": c[1]},{"x": 0, "y": 0, "z": 0},10,2,1)) #Danger level 2 and weight 1
                     #print("Position:", {"x": c[0], "y": 0, "z": c[1]})
 
@@ -578,12 +612,12 @@ class Simulation(Controller):
         
         #Create a rug
         self.rug: int = self.get_unique_id()
-        """
-        commands.extend(self.get_add_physics_object(model_name="carpet_rug",
+        
+        commands.extend(self.get_add_physics_object(model_name="satiro_sculpture",
                                          object_id=self.rug,
                                          position={"x": 0, "y": 0, "z": 0},
                                          rotation={"x": 0, "y": 0, "z": 0}))
-        """
+        
         
         
                   
@@ -597,7 +631,7 @@ class Simulation(Controller):
         if not self.no_debug_camera:       
                         
             commands.extend([{"$type": "create_avatar", "type": "A_Img_Caps_Kinematic", "id": "a"}, 
-            {"$type": "teleport_avatar_to", "avatar_id": "a", "position": {"x": 0, "y": 10, "z": 0}},
+            {"$type": "teleport_avatar_to", "avatar_id": "a", "position": {"x": 0, "y": 30, "z": 0}},
             {"$type": "look_at_position", "avatar_id": "a", "position": {"x": 0, "y": 0, "z": 0}},
             {"$type": "rotate_avatar_by", "angle": 90, "axis": "yaw", "is_world": True, "avatar_id": "a"}])
             commands.extend([{"$type": "set_pass_masks","pass_masks": ["_img"],"avatar_id": "a"},
@@ -636,10 +670,11 @@ class Simulation(Controller):
         return segmentation_colors
                
     #Function to instantiate objects
-    def instantiate_object(self, model_name, position, rotation, mass, danger_level, required_strength):
+    def instantiate_object(self, model_name, position, rotation, mass, danger_level, required_strength, object_index):
 
         object_id = self.get_unique_id()
         self.graspable_objects.append(object_id)
+        self.object_names_translate[object_id] = str(object_index)
         self.required_strength[object_id] = required_strength
         self.danger_level[object_id] = danger_level
         command = self.get_add_physics_object(model_name=model_name,
@@ -687,6 +722,7 @@ class Simulation(Controller):
             
             u_idx = self.user_magnebots_ids.index(str(raycast.get_raycast_id()))
             
+            
             if not self.user_magnebots[u_idx].grasping: #Grasping also uses raycasting but we don't want to use this code for that situation
             
                 self.user_magnebots[u_idx].screen_positions["position_ids"].append(pos_idx)
@@ -719,7 +755,7 @@ class Simulation(Controller):
         scre = ScreenPosition(resp)
                     
         idx = self.user_magnebots_ids.index(scre.get_avatar_id())
-        
+
         if scre.get_id() in all_magnebots[idx].screen_positions['position_ids']: #Screen coordinate was requested by particular magnebot
         
             scre_coords = scre.get_screen()
@@ -731,16 +767,19 @@ class Simulation(Controller):
                 temp_all_ids = all_ids + self.graspable_objects
                 mid = temp_all_ids[scre.get_id()]
                 color = (255, 255, 255)                        
-
+                
 
                 #Coordinates can be for a magnebot or object
                 if mid in self.ai_magnebots_ids:
-                    mid = 'A_'+mid
+                    mid = 'A_'+self.robot_names_translate[mid]
                 elif mid in self.user_magnebots_ids:
-                    mid = 'U_'+mid
+
+                    mid = 'U_'+self.robot_names_translate[mid]
                 else: #For object
 
                     avatar = self.user_magnebots[self.user_magnebots_ids.index(scre.get_avatar_id())]
+                    
+                    mid = self.object_names_translate[mid]
                     if mid in avatar.danger_estimates:
                         danger_estimate = avatar.danger_estimates[mid]
                     else:
@@ -752,7 +791,7 @@ class Simulation(Controller):
                     if danger_estimate >= 2: #Different color for different danger estimate
                         color = (255, 0, 0)
                     elif danger_estimate == 1:
-                        color = (0, 255, 0)
+                        color = (0, 0, 255)
                     else:
                         color = (255, 255, 255)
 
@@ -884,16 +923,16 @@ class Simulation(Controller):
                             #If dangerous object carried without being accompanied by an ai if human or by a human if an ai, ends the simulation
                             
                             if grasp_object in self.dangerous_objects and self.user_magnebots[idx].strength < 2:
-                                '''
-                                for um in self.user_magnebots:
-                                    txt = um.ui.add_text(text="Dangerous object picked without help!",
+                                
+                                for um_idx,um in enumerate(self.user_magnebots):
+                                    txt = um.ui.add_text(text="Failure! Dangerous object picked up!",
                                      position={"x": 0, "y": 0},
-                                     color={"r": 0, "g": 0, "b": 1, "a": 1},
+                                     color={"r": 1, "g": 0, "b": 0, "a": 1},
                                      font_size=20
                                      )
-                                    messages.append([idx,txt,0])
-                                '''
-                                self.reset = True
+                                    messages.append([um_idx,txt,0])
+                                
+                                self.reset_message = True
                             
                             
 
@@ -1061,36 +1100,40 @@ class Simulation(Controller):
                     near_items_pos.append(TDWUtils.array_to_vector3(self.object_manager.transforms[o].position))
                     actual_danger_level = self.danger_level[o]
                     
+                    o_translated = self.object_names_translate[o]
                     
-                    if o not in ego_magnebot.item_info:
-                        ego_magnebot.item_info[o] = {}
+                    if o_translated not in ego_magnebot.item_info:
+                        ego_magnebot.item_info[o_translated] = {}
                         
-                    ego_magnebot.item_info[o]['weight'] = int(self.required_strength[o])
+                    ego_magnebot.item_info[o_translated]['weight'] = int(self.required_strength[o])
                     
-                    if 'sensor' not in ego_magnebot.item_info[o]:
-                        ego_magnebot.item_info[o]['sensor'] = {}
+                    if 'sensor' not in ego_magnebot.item_info[o_translated]:
+                        ego_magnebot.item_info[o_translated]['sensor'] = {}
+                    
+                    
+                    robot_id_translated = self.robot_names_translate[str(ego_magnebot.robot_id)]
                     
                     #Get danger estimation, value and confidence level
-                    if ego_magnebot.robot_id not in ego_magnebot.item_info[o]['sensor']:
+                    if robot_id_translated not in ego_magnebot.item_info[o_translated]['sensor']:
                         possible_danger_levels_tmp = possible_danger_levels.copy()
                         possible_danger_levels_tmp.remove(actual_danger_level)
                     
                         estimate_confidence = np.random.rand()
                     
                         danger_estimate = np.random.choice([actual_danger_level,*possible_danger_levels_tmp],1,p=[estimate_confidence,1-estimate_confidence])
-                        danger_estimates[o] = danger_estimate[0]
+                        danger_estimates[o_translated] = danger_estimate[0]
                         
-                        ego_magnebot.item_info[o]['sensor'][ego_magnebot.robot_id] = {}
-                        ego_magnebot.item_info[o]['sensor'][ego_magnebot.robot_id]['value'] = int(danger_estimate[0])
-                        ego_magnebot.item_info[o]['sensor'][ego_magnebot.robot_id]['confidence'] = estimate_confidence
+                        ego_magnebot.item_info[o_translated]['sensor'][robot_id_translated] = {}
+                        ego_magnebot.item_info[o_translated]['sensor'][robot_id_translated]['value'] = int(danger_estimate[0])
+                        ego_magnebot.item_info[o_translated]['sensor'][robot_id_translated]['confidence'] = estimate_confidence
 
                         
                     else: #If we already have a danger estimation reuse that one
-                        danger_estimates[o] = ego_magnebot.item_info[o]['sensor'][ego_magnebot.robot_id]['value']
+                        danger_estimates[o_translated] = ego_magnebot.item_info[o_translated]['sensor'][robot_id_translated]['value']
                         
                         
-                    ego_magnebot.item_info[o]['time'] = self.timer
-                    ego_magnebot.item_info[o]['location'] = self.object_manager.transforms[o].position.tolist()
+                    ego_magnebot.item_info[o_translated]['time'] = self.timer
+                    ego_magnebot.item_info[o_translated]['location'] = self.object_manager.transforms[o].position.tolist()
                         
             #If objects were detected
             if near_items_pos:
@@ -1136,8 +1179,8 @@ class Simulation(Controller):
         magnebots_locations = np.where(self.object_type_coords_map == 3)
         locations_magnebot_map = {str(j):[magnebots_locations[0][i],magnebots_locations[1][i]] for i in range(len(magnebots_locations[0])) for j in self.object_attributes_id[str(magnebots_locations[0][i])+'_'+str(magnebots_locations[1][i])]}
 
-        x = locations_magnebot_map[magnebot_id][0]
-        y = locations_magnebot_map[magnebot_id][1]
+        x = locations_magnebot_map[self.robot_names_translate[str(magnebot_id)]][0]
+        y = locations_magnebot_map[self.robot_names_translate[str(magnebot_id)]][1]
         
         
         if magnebot_id in self.occupancy_map_request and self.ai_magnebots[m_idx].view_radius:
@@ -1254,7 +1297,7 @@ class Simulation(Controller):
         for arm_idx, arm in enumerate([Arm.left,Arm.right]):
             
             if self.ai_magnebots[m_idx].dynamic.held[arm].size > 0:
-                objects_held[arm_idx] = int(self.ai_magnebots[m_idx].dynamic.held[arm][0])
+                objects_held[arm_idx] = self.object_names_translate[str(int(self.ai_magnebots[m_idx].dynamic.held[arm][0]))]
                 
         return objects_held
     
@@ -1278,11 +1321,13 @@ class Simulation(Controller):
         all_magnebots = [*self.user_magnebots,*self.ai_magnebots]
 
         
+        
         #Include the positions of other magnebots in the view of all user magnebots
         for um in self.user_magnebots:
             um.screen_positions["position_ids"].extend(list(range(0,len(all_ids))))
             um.screen_positions["positions"].extend([-1]*len(all_ids))
             um.screen_positions["duration"].extend([-1]*len(all_ids))
+        
             
         time_gone = time.time()
         
@@ -1326,12 +1371,14 @@ class Simulation(Controller):
                 if o in held_objects:
                     ob_type = 4
                     
-
-                self.object_type_coords_map[pos_new[0],pos_new[1]] = ob_type
+                try:
+                    self.object_type_coords_map[pos_new[0],pos_new[1]] = ob_type
+                except:
+                    pdb.set_trace()
 
                 if str(pos_new[0])+'_'+str(pos_new[1]) not in self.object_attributes_id:
                     self.object_attributes_id[str(pos_new[0])+'_'+str(pos_new[1])] = []
-                self.object_attributes_id[str(pos_new[0])+'_'+str(pos_new[1])].append((o,self.required_strength[o]))
+                self.object_attributes_id[str(pos_new[0])+'_'+str(pos_new[1])].append((self.object_names_translate[o],self.required_strength[o]))
             #pdb.set_trace()
             for o in [*self.user_magnebots,*self.ai_magnebots]:
                 pos = o.dynamic.transform.position
@@ -1340,10 +1387,10 @@ class Simulation(Controller):
                 self.object_type_coords_map[pos_new[0],pos_new[1]] = 3
                 if str(pos_new[0])+'_'+str(pos_new[1]) not in self.object_attributes_id:
                     self.object_attributes_id[str(pos_new[0])+'_'+str(pos_new[1])] = []
-                self.object_attributes_id[str(pos_new[0])+'_'+str(pos_new[1])].append((str(o.robot_id)))
+                self.object_attributes_id[str(pos_new[0])+'_'+str(pos_new[1])].append((self.robot_names_translate[str(o.robot_id)]))
 
             
-            if self.options.log_state and self.timer - past_timer > 1:
+            if self.options.log_state: # and self.timer - past_timer > 1:
                 past_timer = self.timer
                 object_metadata = []
                 
@@ -1389,6 +1436,7 @@ class Simulation(Controller):
                     to_eliminate.append(ex_idx)
                 commands.append(extra_commands[ex_idx])
             
+            to_eliminate.reverse()
             for e in to_eliminate:
                 del duration[e]
                 del extra_commands[e]
@@ -1430,7 +1478,7 @@ class Simulation(Controller):
                         
                     if distance < int(self.cfg['communication_distance_limit']): #Check if robot is close enough to communicate
                     
-                        company[all_magnebots[idx2].robot_id] = (all_magnebots[idx2].controlled_by, pos2.tolist(), float(distance)) #Add information about neighbors
+                        company[self.robot_names_translate[str(all_magnebots[idx2].robot_id)]] = (all_magnebots[idx2].controlled_by, pos2.tolist(), float(distance)) #Add information about neighbors
                         
                 all_magnebots[idx].company = company 
                         
@@ -1489,19 +1537,26 @@ class Simulation(Controller):
                         
                             if all_magnebots[idx].screen_positions['duration'][sc_idx] == 0:
                                 to_delete.append(sc_idx)
+                            
                             elif all_magnebots[idx].screen_positions['position_ids'][sc_idx] not in screen_positions['position_ids']:
 
                                 screen_positions["position_ids"].append(all_magnebots[idx].screen_positions['position_ids'][sc_idx])
                                 screen_positions["positions"].append(all_magnebots[idx].screen_positions['positions'][sc_idx])
+                            
+                                
+                                
+                                
+                    
                         
+                    to_delete.reverse()
                     for e in to_delete:
-                        try:
-                            del all_magnebots[idx].screen_positions['position_ids'][e]                           
-                            del all_magnebots[idx].screen_positions['positions'][e]    
-                            del all_magnebots[idx].screen_positions['duration'][e]    
-                        except:
-                            print("Error deleting")
-                            #pdb.set_trace()
+                        
+                        del all_magnebots[idx].screen_positions['position_ids'][e]                           
+                        del all_magnebots[idx].screen_positions['positions'][e]    
+                        del all_magnebots[idx].screen_positions['duration'][e]    
+
+                        
+                        
 
                 for arm in [Arm.left,Arm.right]:
                     if all_magnebots[idx].dynamic.held[arm].size > 0:
@@ -1558,8 +1613,9 @@ class Simulation(Controller):
                 commands.append({"$type": "send_screen_positions", "position_ids": screen_positions["position_ids"], "positions":screen_positions["positions"], "ids": [*self.user_magnebots_ids], "frequency": "once"})
 
             
-            
+            #print(commands)
             resp = self.communicate(commands)
+
             duration_fps = time.time()-past_time
             estimated_fps = (estimated_fps + 1/duration_fps)/2
             #print(estimated_fps)
@@ -1635,15 +1691,16 @@ class Simulation(Controller):
                                 
                                 self.user_magnebots[idx].focus_object = o_id
                     
-                                if o_id not in self.user_magnebots[idx].item_info:
-                                    self.user_magnebots[idx].item_info[o_id] = {}
+                                o_translated = self.object_names_translate[o_id]
+                                if o_translated not in self.user_magnebots[idx].item_info:
+                                    self.user_magnebots[idx].item_info[o_translated] = {}
                                     
-                                self.user_magnebots[idx].item_info[o_id]['weight'] = int(self.required_strength[o_id])
-                                self.user_magnebots[idx].item_info[o_id]['time'] = self.timer
-                                self.user_magnebots[idx].item_info[o_id]['location'] = self.object_manager.transforms[o_id].position.tolist()
+                                self.user_magnebots[idx].item_info[o_translated]['weight'] = int(self.required_strength[o_id])
+                                self.user_magnebots[idx].item_info[o_translated]['time'] = self.timer
+                                self.user_magnebots[idx].item_info[o_translated]['location'] = self.object_manager.transforms[o_id].position.tolist()
                                 
-                                if 'sensor' not in self.user_magnebots[idx].item_info[o_id]:
-                                    self.user_magnebots[idx].item_info[o_id]['sensor'] = {}
+                                if 'sensor' not in self.user_magnebots[idx].item_info[o_translated]:
+                                    self.user_magnebots[idx].item_info[o_translated]['sensor'] = {}
 
                                 self.raycast_request.append(str(self.user_magnebots[idx].robot_id))
                         
@@ -1698,6 +1755,9 @@ class Simulation(Controller):
                     to_eliminate.append(m_idx)
                     if self.terminate:
                         done = True
+                    if self.reset_message:
+                        self.reset_message = False
+                        self.reset = True
                 
             to_eliminate.reverse()
             for te in to_eliminate:
@@ -1716,22 +1776,22 @@ class Simulation(Controller):
             #Game ends when all dangerous objects are left in the rug
             goal_counter = 0
             
-            """"
+            
             for sd in self.dangerous_objects:
-                if np.linalg.norm(self.object_manager.transforms[sd].position-self.object_manager.transforms[self.rug].position) < 1:
+                if np.linalg.norm(self.object_manager.transforms[sd].position[[0,2]]) < 2:
                     goal_counter += 1
-            """
+            
+            
             if goal_counter == len(self.dangerous_objects):
                 for idx,um in enumerate(self.user_magnebots):
                     txt = um.ui.add_text(text="Success!",
                                          position={"x": 0, "y": 0},
-                                         color={"r": 0, "g": 0, "b": 1, "a": 1},
+                                         color={"r": 0, "g": 1, "b": 0, "a": 1},
                                          font_size=20
                                          )
                     messages.append([idx,txt,0])
-                self.terminate = True
-                    
-            
+                self.reset_message = True
+                        
             #Show view of magnebot
             if self.user_magnebots and str(self.user_magnebots[0].robot_id) in magnebot_images:
                 cv2.imshow('frame', magnebot_images[str(self.user_magnebots[0].robot_id)])
@@ -1762,7 +1822,7 @@ class Simulation(Controller):
                     cams[idx+1].send(magnebot_images[magnebot_id])
                     
                     if self.options.create_video:
-                        pdb.set_trace()
+                        #pdb.set_trace()
                         video[idx+1].write(magnebot_images[magnebot_id])
                     
                 item_info = {}
@@ -1837,7 +1897,7 @@ class Simulation(Controller):
                 for idx,um in enumerate(self.user_magnebots):
                     txt = um.ui.add_text(text="Failure!",
                                          position={"x": 0, "y": 0},
-                                         color={"r": 0, "g": 0, "b": 1, "a": 1},
+                                         color={"r": 1, "g": 0, "b": 0, "a": 1},
                                          font_size=20
                                          )
                     messages.append([idx,txt,0])
@@ -1853,8 +1913,9 @@ class Simulation(Controller):
                 #resp = self.communicate({"$type": "destroy_all_objects"})
                 self.reset_world()
                 
-                for am in all_magnebots:
-                    self.sio.emit("agent_reset", str(am.robot_id))
+                if not self.local:
+                    for am in all_magnebots:
+                        self.sio.emit("agent_reset", (self.robot_names_translate[str(am.robot_id)],self.timer))
                 
                 self.reset = False
                 #pdb.set_trace()
@@ -1874,6 +1935,8 @@ class Simulation(Controller):
         
         for go in self.graspable_objects:
             commands.append({"$type": "destroy_object", "id": go})
+            
+        commands.append({"$type": "destroy_object", "id": self.rug})
             
         commands.append({"$type": "destroy_avatar", "avatar_id": 'a'})   
         self.communicate(commands)
@@ -1936,7 +1999,7 @@ if __name__ == "__main__":
     parser.add_argument('--video-index', type=int, default=0 ,help='index of the first /dev/video device to start streaming to')
     parser.add_argument('--no-debug-camera', action='store_true', help='do not instantiate debug top down camera')
     parser.add_argument('--log-state', action='store_true', help='Log occupancy maps')
-    parser.add_argument('--create-video', type=str, default='', help='Create videos for all views')
+    parser.add_argument('--create-video', action='store_true', help='Create videos for all views')
     args = parser.parse_args()
 
     print("Simulator starting")
@@ -1961,9 +2024,15 @@ if __name__ == "__main__":
             cams.append(pyvirtualcam.Camera(width=width, height=height, fps=20, device='/dev/video'+str(ai)))
             
         if args.create_video:
+            log_dir = './videos/'
+            if not os.path.exists(log_dir):
+                os.makedirs(log_dir)
             for c_idx in range(len(cams)):
-                video.append(cv2.VideoWriter(args.create_video+ '_' + str(c_idx), cv2.VideoWriter_fourcc(*'MJPG'), 20, (width,height)))
-                print("Created ", args.create_video+ '_' + str(c_idx))
+                video_name = log_dir+datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S") + '_' + str(c_idx) + '.mp4'
+                video_tmp = cv2.VideoWriter(video_name, cv2.VideoWriter_fourcc(*'MJPG'), 20, (width,height))
+                video.append(video_tmp)
+                print("Created ", video_name)
+                
             
 
     address = args.address

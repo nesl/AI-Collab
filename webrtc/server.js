@@ -61,7 +61,8 @@ var char_replacement = [{'Up':'Up','Down':'Down','Left':'Left','Right':'Right'},
 var clients_ids = [], user_ids_list = [], ai_ids_list = [], ai_ids = [], all_ids = [], all_ids_list = [];
 var init_xdotool = false;
 var video_idx_broadcaster = 0;
-var past_timer = 0
+var past_timer = 0, past_timer2 = 0;
+var message_sent = false;
 
 
 function socket_to_simulator_id(socket_id){
@@ -201,19 +202,27 @@ io.sockets.on("connection", socket => { //When a client connects
     
     if(command_line_options.log && (timer - past_timer > 1 || Object.keys(item_info).length > 0)){
         past_timer = timer;
-        fs.appendFile(dir + dateTime + '.txt', String(timer) +',' + '3' + ',' + socket_to_simulator_id(all_ids[idx]) + ',' + JSON.stringify(item_info) + ',' + JSON.stringify(neighbors_info) + '\n', err => {});
+        fs.appendFile(dir + dateTime + '.txt', String(timer.toFixed(2)) +',' + '3' + ',' + socket_to_simulator_id(all_ids[idx]) + ',' + JSON.stringify(item_info) + ',' + JSON.stringify(neighbors_info) + '\n', err => {});
     }
     
   });
   
-  socket.on("log_output", (location_map, timestamp) => {
+  socket.on("log_output", (location_map, timer) => {
 
-  	fs.appendFile(dir + dateTime + '.txt', String(timestamp) +',' + '0' + ',' + JSON.stringify(location_map) + '\n', err => {});
+	if(command_line_options.log && (timer - past_timer2 > 1 || message_sent)){
+		past_timer2 = timer;
+		message_sent = false;
+  		fs.appendFile(dir + dateTime + '.txt', String(timer.toFixed(2)) +',' + '0' + ',' + JSON.stringify(location_map) + '\n', err => {});
+	}
   });
   
-  socket.on("agent_reset", (magnebot_id) => {
+  socket.on("agent_reset", (magnebot_id, timer, object_names_translate) => {
     socket.to(simulator_id_to_socket(magnebot_id)).emit("agent_reset");
+    if(command_line_options.log){
+    	fs.appendFile(dir + dateTime + '.txt', String(timer.toFixed(2)) + ',4,' + magnebot_id + '\n', err => {});
+    }
   });
+  
   
   socket.on("message", (message, timestamp, neighbors_list) => { //Forwarding messages between robots
 
@@ -227,6 +236,8 @@ io.sockets.on("connection", socket => { //When a client connects
     }
     */
     //const origin_id = user_ids_list[clients_ids.indexOf(socket.id)]
+    
+    message_sent = true;
     
     if(all_ids.indexOf(socket.id) >= 0 && neighbors_list){
         let source_id = socket_to_simulator_id(socket.id)
@@ -254,7 +265,7 @@ io.sockets.on("connection", socket => { //When a client connects
         
         
         if(command_line_options.log){
-            fs.appendFile(dir + dateTime + '.txt', String(timestamp) +',' + '2' + ',' + socket_to_simulator_id(socket.id) + ',' + '"'+message.replace(/"/g, '\\"')+'"'+','+keys_neighbors+'\n', err => {});
+            fs.appendFile(dir + dateTime + '.txt', String(timestamp.toFixed(2)) +',' + '2' + ',' + socket_to_simulator_id(socket.id) + ',' + '"'+message.replace(/"/g, '\\"')+'"'+','+keys_neighbors+'\n', err => {});
         }
     }
 
@@ -263,7 +274,7 @@ io.sockets.on("connection", socket => { //When a client connects
   socket.on("key", (key, timestamp) => {
     socket.to(simulator).emit("key", key, socket_to_simulator_id(socket.id));
     if(command_line_options.log){
-        fs.appendFile(dir + dateTime + '.txt', String(timestamp) +',' + '1' + ',' + socket_to_simulator_id(socket.id) + ',' + key +'\n', err => {});
+        fs.appendFile(dir + dateTime + '.txt', String(timestamp.toFixed(2)) +',' + '1' + ',' + socket_to_simulator_id(socket.id) + ',' + key +'\n', err => {});
     }
     /*
     let idx = clients_ids.indexOf(socket.id);
