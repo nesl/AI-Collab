@@ -49,8 +49,8 @@ address = ''
 #This class inherits the magnebot class, we just add a number of attributes over it
 class Enhanced_Magnebot(Magnebot):
 
-    def __init__(self,robot_id, position, controlled_by, key_set=None,image_frequency=ImageFrequency.never,pass_masks=['_img'],strength=1):
-        super().__init__(robot_id=robot_id, position=position,image_frequency=image_frequency,pass_masks=pass_masks)
+    def __init__(self,robot_id, position, controlled_by, key_set=None,image_frequency=ImageFrequency.never,pass_masks=['_img'],strength=1, check_version=False):
+        super().__init__(robot_id=robot_id, position=position,image_frequency=image_frequency,pass_masks=pass_masks,check_version=check_version)
         self.key_set = key_set
         self.ui = []
         self.ui_elements = {}
@@ -69,6 +69,7 @@ class Enhanced_Magnebot(Magnebot):
         self.view_radius = 0
         self.centered_view = 0
         self.resetting_arm = False
+        self.key_pressed = ''
         
     def reset(self,position):
         super().reset(position=position)
@@ -85,7 +86,7 @@ class Enhanced_Magnebot(Magnebot):
 class Simulation(Controller):
   
 
-    def __init__(self, args, cfg, port: int = 1071, check_version: bool = True, launch_build: bool = True):
+    def __init__(self, args, cfg, port: int = 1071, check_version: bool = False, launch_build: bool = True):
         super().__init__(port=port, check_version=check_version, launch_build=launch_build)
 
          
@@ -119,7 +120,7 @@ class Simulation(Controller):
         self.robot_names_translate = {}
         self.object_names_translate = {}
         
-        self.scenario = 1
+        self.scenario = self.options.scenario
         
         
         if self.options.log_state:
@@ -156,13 +157,15 @@ class Simulation(Controller):
 
 
         # Create the scene.
+        
 
         commands = self.create_scene()
         
 
         
-
+        print("Creating scene")
         self.communicate(commands)
+        print("Created scene")
 
         self.static_occupancy_map.generate() #Get occupancy map only with walls
         
@@ -300,7 +303,7 @@ class Simulation(Controller):
         
         
         self.communicate(commands)
-
+        print("Populated world")
 
         
         self.segmentation_colors = self.get_segmentation_colors()
@@ -381,6 +384,54 @@ class Simulation(Controller):
                 
                 for actions in action_message:
                 
+                    if actions[0] == 'send_occupancy_map':
+                        function = self.send_occupancy_map
+                    elif actions[0] == 'send_objects_held_status':
+                        function = self.send_objects_held_status
+                    elif actions[0] == 'send_danger_sensor_reading':
+                        function = self.send_danger_sensor_reading
+                    elif actions[0] == 'turn_by':
+                        
+                        ai_agent.turn_by(float(actions[1]), aligned_at=float(actions[2]))
+                    elif actions[0] == 'turn_to':
+                        object_id = list(self.object_names_translate.keys())[list(self.object_names_translate.values()).index(actions[1])]
+                        ai_agent.turn_to(object_id, aligned_at=float(actions[2]))
+                    elif actions[0] == 'move_by':
+                        ai_agent.move_by(float(actions[1]), arrived_at=float(actions[2]))
+                    elif actions[0] == 'move_to':
+
+                        ai_agent.move_to(json.loads(actions[1]), arrived_at=float(actions[2]), aligned_at=float(actions[3]), arrived_offset=float(actions[4]))
+                    elif actions[0] == 'reach_for':
+                        object_id = list(self.object_names_translate.keys())[list(self.object_names_translate.values()).index(actions[1])]
+                        ai_agent.reach_for(object_id, Arm(int(actions[2])))
+                    elif actions[0] == 'grasp':
+                        object_id = list(self.object_names_translate.keys())[list(self.object_names_translate.values()).index(actions[1])]
+                        ai_agent.grasp(object_id, Arm(int(actions[2])))
+                    elif actions[0] == 'drop':
+                        object_id = list(self.object_names_translate.keys())[list(self.object_names_translate.values()).index(actions[1])]
+                        ai_agent.drop(object_id, Arm(int(actions[2])))
+                    elif actions[0] == 'reset_arm':
+                        ai_agent.reset_arm(Arm(int(actions[1])))
+                    elif actions[0] == 'rotate_camera':
+                        ai_agent.rotate_camera(float(actions[1]), float(actions[2]), float(actions[3]))
+                    elif actions[0] == 'look_at':
+                        ai_agent.look_at(json.loads(actions[1]))
+                    elif actions[0] == 'move_camera':
+                        function = ai_agent.move_camera(json.loads(actions[1]))
+                    elif actions[0] == 'reset_camera':
+                        ai_agent.reset_camera()
+                    elif actions[0] == 'slide_torso':
+                        ai_agent.slide_torso(float(actions[1]))
+                    elif actions[0] == 'reset_position':
+                        ai_agent.reset_position()
+                    else:
+                        continue
+                    
+                    if 'send_' in actions[0]:
+                        self.queue_perception_action.append([function,[agent_id],self.ai_skip_frames])
+
+                    
+                    '''
                     if 'send_' in actions[0]: # or 'send_occupancy_map' in actions[0] or 'send_objects_held_status' in actions[0]:
                         eval_string = "self."
                     else:
@@ -403,7 +454,10 @@ class Simulation(Controller):
                         #print("Eval string", eval_string)
 
                         eval(eval_string + ")")
-
+                    '''
+                    
+                    
+                    
 
             #Indicate use of occupancy maps
             @self.sio.event
@@ -478,8 +532,18 @@ class Simulation(Controller):
                         {"$type": "create_interior_walls", "walls": [{"x": 6, "y": 1}, {"x": 6, "y": 2},{"x": 6, "y": 3},{"x": 6, "y": 4},{"x": 6, "y": 5},{"x": 1, "y": 6},{"x": 2, "y": 6},{"x": 3, "y": 6},{"x": 4, "y": 6},{"x": 5, "y": 6}]},
                         {"$type": "create_interior_walls", "walls": [{"x": 14, "y": 1}, {"x": 14, "y": 2},{"x": 14, "y": 3},{"x": 14, "y": 4},{"x": 14, "y": 5},{"x": 19, "y": 6},{"x": 18, "y": 6},{"x": 17, "y": 6},{"x": 16, "y": 6},{"x": 15, "y": 6}]},   
                         {"$type": "create_interior_walls", "walls": [{"x": 6, "y": 19}, {"x": 6, "y": 18},{"x": 6, "y": 17},{"x": 6, "y": 16},{"x": 6, "y": 15},{"x": 1, "y": 14},{"x": 2, "y": 14},{"x": 3, "y": 14},{"x": 4, "y": 14},{"x": 5, "y": 14}]},
-                        {"$type": "create_interior_walls", "walls": [{"x": 14, "y": 19}, {"x": 14, "y": 18},{"x": 14, "y": 17},{"x": 14, "y": 16},{"x": 14, "y": 15},{"x": 19, "y": 14},{"x": 18, "y": 14},{"x": 17, "y": 14},{"x": 16, "y": 14},{"x": 15, "y": 14}]}]
+                        {"$type": "create_interior_walls", "walls": [{"x": 14, "y": 19}, {"x": 14, "y": 18},{"x": 14, "y": 17},{"x": 14, "y": 16},{"x": 14, "y": 15},{"x": 19, "y": 14},{"x": 18, "y": 14},{"x": 17, "y": 14},{"x": 16, "y": 14},{"x": 15, "y": 14}]},
+                        {"$type": "set_floor_color", "color": {"r": 1, "g": 1, "b": 1, "a": 1}},
+                        {"$type": "set_proc_gen_walls_color", "color": {"r": 1, "g": 1, "b": 0, "a": 1.0}}]
         
+        
+            #self.communicate(commands)
+            
+            #commands = [{"$type": "create_interior_walls", "walls": [{"x": 6, "y": 19}, {"x": 6, "y": 18},{"x": 6, "y": 17},{"x": 6, "y": 16},{"x": 6, "y": 15},{"x": 1, "y": 14},{"x": 2, "y": 14},{"x": 3, "y": 14},{"x": 4, "y": 14},{"x": 5, "y": 14}]}]
+                        
+            #self.communicate(commands)
+            
+            #commands = [{"$type": "create_interior_walls", "walls": [{"x": 14, "y": 19}, {"x": 14, "y": 18},{"x": 14, "y": 17},{"x": 14, "y": 16},{"x": 14, "y": 15},{"x": 19, "y": 14},{"x": 18, "y": 14},{"x": 17, "y": 14},{"x": 16, "y": 14},{"x": 15, "y": 14}]}]
         return commands
 
 
@@ -592,7 +656,10 @@ class Simulation(Controller):
                         else:
                             weights_probs[p_idx] = weights_probs[p_idx-1]/2
                     
-                    weight = int(np.random.choice(possible_weights,1,p=weights_probs)[0])
+                    if len(possible_weights) == 1:
+                        weight = 1
+                    else:
+                        weight = int(np.random.choice(possible_weights,1,p=weights_probs)[0])
                     danger_level = np.random.choice([1,2],1,p=[0.9,0.1])[0]
                     try:
                         commands.extend(self.instantiate_object(fc,{"x": c[0], "y": 0, "z": c[1]},{"x": 0, "y": 0, "z": 0},10,danger_level,weight, object_index))
@@ -610,12 +677,44 @@ class Simulation(Controller):
         commands.extend(get_default_post_processing_commands())
 
         
-        #Create a rug
-        self.rug: int = self.get_unique_id()
+        #Create environment objects
+        
+        self.env_objects = []
+        
+        self.env_objects.append(self.get_unique_id())
         
         commands.extend(self.get_add_physics_object(model_name="satiro_sculpture",
-                                         object_id=self.rug,
+                                         object_id=self.env_objects[-1],
                                          position={"x": 0, "y": 0, "z": 0},
+                                         rotation={"x": 0, "y": 0, "z": 0}))
+                                         
+        self.env_objects.append(self.get_unique_id())
+        
+        commands.extend(self.get_add_physics_object(model_name="zenblocks",
+                                         object_id=self.env_objects[-1],
+                                         position={"x": max_coord-4, "y": 0, "z": max_coord-2},
+                                         rotation={"x": 0, "y": 0, "z": 0}))
+     
+                                         
+        self.env_objects.append(self.get_unique_id())
+        
+        commands.extend(self.get_add_physics_object(model_name="amphora_jar_vase",
+                                         object_id=self.env_objects[-1],
+                                         position={"x": 3-max_coord, "y": 0, "z": 5-max_coord},
+                                         rotation={"x": 0, "y": 0, "z": 0}))
+                                         
+        self.env_objects.append(self.get_unique_id())
+        
+        commands.extend(self.get_add_physics_object(model_name="b04_candle_holder_metal",
+                                         object_id=self.env_objects[-1],
+                                         position={"x": 3-max_coord, "y": 0, "z": max_coord-4},
+                                         rotation={"x": 0, "y": 0, "z": 0}))
+                                         
+        self.env_objects.append(self.get_unique_id())
+        
+        commands.extend(self.get_add_physics_object(model_name="cgaxis_models_50_12_vray",
+                                         object_id=self.env_objects[-1],
+                                         position={"x": max_coord-4, "y": 0, "z": 3-max_coord},
                                          rotation={"x": 0, "y": 0, "z": 0}))
         
         
@@ -820,6 +919,11 @@ class Simulation(Controller):
     #Process keyboard presses
     def keyboard_output(self, key_pressed, key_hold, extra_commands, duration, keys_time_unheld, all_ids, messages, fps):
     
+        max_time_unheld = 3
+        
+
+        #print(keys_time_unheld, key_pressed)
+
         
         #for j in range(keys.get_num_pressed()):
         for j in range(len(key_pressed)):
@@ -829,52 +933,60 @@ class Simulation(Controller):
                 idx = self.keys_set[0].index(key_pressed[j])
                 print(self.user_magnebots[idx].action.status)
                 #if self.user_magnebots[0].action.status != ActionStatus.ongoing:
-                if self.user_magnebots[idx].action.status != ActionStatus.ongoing:
-                    self.user_magnebots[idx].move_by(distance=10)
+                #if self.user_magnebots[idx].key_pressed != key_pressed[j] or self.user_magnebots[idx].action.status != ActionStatus.ongoing:
+                self.user_magnebots[idx].move_by(distance=10)
                 
-                if keys_time_unheld[idx] > 3:
+                if keys_time_unheld[idx] > max_time_unheld:
                     keys_time_unheld[idx] = int(-0.5*fps)
-                else:
+                elif keys_time_unheld[idx] >= 0:
                     keys_time_unheld[idx] = 0      
 
                 #keys_time_unheld[idx] = -20
+                
+                self.user_magnebots[idx].key_pressed = key_pressed[j]
 
             elif key_pressed[j] in self.keys_set[1]: #Back
                 
                 idx = self.keys_set[1].index(key_pressed[j])
                 print(self.user_magnebots[idx].action.status)
-                if self.user_magnebots[idx].action.status != ActionStatus.ongoing:
-                    self.user_magnebots[idx].move_by(distance=-10)
+                #if self.user_magnebots[idx].key_pressed != key_pressed[j] or self.user_magnebots[idx].action.status != ActionStatus.ongoing:
+                self.user_magnebots[idx].move_by(distance=-10)
                 
-                if keys_time_unheld[idx] > 3:
+                if keys_time_unheld[idx] > max_time_unheld:
                     keys_time_unheld[idx] = int(-0.5*fps)
-                else:
+                elif keys_time_unheld[idx] >= 0:
                     keys_time_unheld[idx] = 0                       
                 #keys_time_unheld[idx] = -20
+                
+                self.user_magnebots[idx].key_pressed = key_pressed[j]
 
             elif key_pressed[j] in self.keys_set[2]: #Right
                 idx = self.keys_set[2].index(key_pressed[j])
                 print(self.user_magnebots[idx].action.status)
-                if self.user_magnebots[idx].action.status != ActionStatus.ongoing:
-                    self.user_magnebots[idx].turn_by(179)
+                #if self.user_magnebots[idx].key_pressed != key_pressed[j] or self.user_magnebots[idx].action.status != ActionStatus.ongoing:
+                self.user_magnebots[idx].turn_by(179)
                 
-                if keys_time_unheld[idx] > 3:
+                if keys_time_unheld[idx] > max_time_unheld:
                     keys_time_unheld[idx] = int(-0.5*fps)
-                else:
+                elif keys_time_unheld[idx] >= 0:
                     keys_time_unheld[idx] = 0                        
                 #keys_time_unheld[idx] = -20
+                
+                self.user_magnebots[idx].key_pressed = key_pressed[j]
 
             elif key_pressed[j] in self.keys_set[3]: #Left
                 idx = self.keys_set[3].index(key_pressed[j])
                 print(self.user_magnebots[idx].action.status)
-                if self.user_magnebots[idx].action.status != ActionStatus.ongoing:
-                    self.user_magnebots[idx].turn_by(-179)
+                #if self.user_magnebots[idx].key_pressed != key_pressed[j] or self.user_magnebots[idx].action.status != ActionStatus.ongoing:
+                self.user_magnebots[idx].turn_by(-179)
                 
-                if keys_time_unheld[idx] > 3:
+                if keys_time_unheld[idx] > max_time_unheld:
                     keys_time_unheld[idx] = int(-0.5*fps)
-                else:
+                elif keys_time_unheld[idx] >= 0:
                     keys_time_unheld[idx] = 0                     
                 #keys_time_unheld[idx] = -20
+                
+                self.user_magnebots[idx].key_pressed = key_pressed[j]
 
             elif key_pressed[j] in self.keys_set[4] or key_pressed[j] in self.keys_set[5]: #Pick up/Drop with one of the arms
                 if key_pressed[j] in self.keys_set[4]:
@@ -1005,7 +1117,7 @@ class Simulation(Controller):
                 
 
                 
-                
+            
             #elif key_pressed[j] == 'P':
             #    self.reset = True
             
@@ -1071,7 +1183,7 @@ class Simulation(Controller):
             for um_idx in range(len(self.user_magnebots)):
                 keys_time_unheld[um_idx] += 1
                 #print(keys_time_unheld[um_idx])
-                if keys_time_unheld[um_idx] == 3: #3
+                if keys_time_unheld[um_idx] == max_time_unheld: #3
                     print("stop magnebot")
                     self.user_magnebots[um_idx].stop()
 
@@ -1297,7 +1409,8 @@ class Simulation(Controller):
         for arm_idx, arm in enumerate([Arm.left,Arm.right]):
             
             if self.ai_magnebots[m_idx].dynamic.held[arm].size > 0:
-                objects_held[arm_idx] = self.object_names_translate[str(int(self.ai_magnebots[m_idx].dynamic.held[arm][0]))]
+                objects_held[arm_idx] = self.object_names_translate[int(self.ai_magnebots[m_idx].dynamic.held[arm][0])]
+
                 
         return objects_held
     
@@ -1361,6 +1474,13 @@ class Simulation(Controller):
             multiple = self.cfg['cell_size']
             self.object_attributes_id = {}
             
+            #Environmental objects
+            for o in self.env_objects:
+                pos = self.object_manager.transforms[o].position
+                pos_new = [round((pos[0]+abs(min_pos))/multiple), round((pos[2]+abs(min_pos))/multiple)]
+                self.object_type_coords_map[pos_new[0],pos_new[1]] = 1
+            
+            #Graspable objects
             for o in self.graspable_objects:
                 pos = self.object_manager.transforms[o].position
                 pos_new = [round((pos[0]+abs(min_pos))/multiple), round((pos[2]+abs(min_pos))/multiple)]
@@ -1379,7 +1499,8 @@ class Simulation(Controller):
                 if str(pos_new[0])+'_'+str(pos_new[1]) not in self.object_attributes_id:
                     self.object_attributes_id[str(pos_new[0])+'_'+str(pos_new[1])] = []
                 self.object_attributes_id[str(pos_new[0])+'_'+str(pos_new[1])].append((self.object_names_translate[o],self.required_strength[o]))
-            #pdb.set_trace()
+            
+            #Magnebots
             for o in [*self.user_magnebots,*self.ai_magnebots]:
                 pos = o.dynamic.transform.position
                 pos_new = [round((pos[0]+abs(min_pos))/multiple), round((pos[2]+abs(min_pos))/multiple)]
@@ -1801,12 +1922,13 @@ class Simulation(Controller):
             to_remove = []
             #Execute delayed actions
             for qa_idx in range(len(self.queue_perception_action)):
-                if not self.queue_perception_action[qa_idx][1]:
-                    self.queue_perception_action[qa_idx][1] -= 1
+                if not self.queue_perception_action[qa_idx][2]:
+                    self.queue_perception_action[qa_idx][2] -= 1
                 else:
-                    eval(self.queue_perception_action[qa_idx][0])
+                    self.queue_perception_action[qa_idx][0](*self.queue_perception_action[qa_idx][1])
                     to_remove.append(qa_idx)
                     
+            to_remove.reverse()
             for tr in to_remove:
                 del self.queue_perception_action[tr]
             
@@ -1936,7 +2058,8 @@ class Simulation(Controller):
         for go in self.graspable_objects:
             commands.append({"$type": "destroy_object", "id": go})
             
-        commands.append({"$type": "destroy_object", "id": self.rug})
+        for env_obj in self.env_objects:
+            commands.append({"$type": "destroy_object", "id": env_obj})
             
         commands.append({"$type": "destroy_avatar", "avatar_id": 'a'})   
         self.communicate(commands)
@@ -2000,6 +2123,7 @@ if __name__ == "__main__":
     parser.add_argument('--no-debug-camera', action='store_true', help='do not instantiate debug top down camera')
     parser.add_argument('--log-state', action='store_true', help='Log occupancy maps')
     parser.add_argument('--create-video', action='store_true', help='Create videos for all views')
+    parser.add_argument('--scenario', type=int, default=1, help='Choose scenario')
     args = parser.parse_args()
 
     print("Simulator starting")

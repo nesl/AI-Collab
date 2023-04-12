@@ -324,6 +324,13 @@ play_area.onkeydown = function(evt) {
     } else{
         kkey = evt.key.toUpperCase();
     }
+    
+    /*
+    if(kkey == "W"){
+    	let chat_input_text = document.getElementById("command_text");
+    	chat_input_text.focus();
+    }
+    */
     console.log(evt.key, kkey);
     socket.emit("key", kkey, simulator_timer);
 };

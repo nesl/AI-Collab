@@ -536,29 +536,29 @@ class AICollabEnv(gym.Env):
     # https://github.com/alters-mit/magnebot/blob/main/doc/manual/magnebot/actions.md\
 
     def turn_by(self, angle, aligned_at=1):
-        return ["turn_by", str(angle), "aligned_at=" + str(aligned_at)]
+        return ["turn_by", str(angle), str(aligned_at)]
 
     def turn_to(self, target, aligned_at=1):
-        return ["turn_to", str(target), "aligned_at=" + str(aligned_at)]
+        return ["turn_to", str(target), str(aligned_at)]
 
     def move_by(self, distance, arrived_at=0.1):
-        return ["move_by", str(distance), "arrived_at=" + str(arrived_at)]
+        return ["move_by", str(distance), str(arrived_at)]
 
     def move_to(self, target, arrived_at=0.1, aligned_at=1, arrived_offset=0):
-        return ["move_to", str(target), "arrived_at=" + str(arrived_at),
-                "aligned_at=" + str(aligned_at), "arrived_offset=" + str(arrived_offset)]
+        return ["move_to", json.dumps(target), str(arrived_at),
+                str(aligned_at), str(arrived_offset)]
 
     def reach_for(self, target, arm):
-        return ["reach_for", str(target), str(arm)]
+        return ["reach_for", str(target), str(arm.value)]
 
     def grasp(self, target, arm):
-        return ["grasp", str(target), str(arm)]
+        return ["grasp", str(target), str(arm.value)]
 
     def drop(self, target, arm):
-        return ["drop", str(target), str(arm)]
+        return ["drop", str(target), str(arm.value)]
 
     def reset_arm(self, arm):
-        return ["reset_arm", str(arm)]
+        return ["reset_arm", str(arm.value)]
 
     def reset_position(self):
         return ["reset_position"]
