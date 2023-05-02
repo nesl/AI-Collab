@@ -1,5 +1,5 @@
-num_humans: 0 #number of human controlled robots
-num_ais: 1 #number of ai controlled robots
+num_humans: 3 #number of human controlled robots
+num_ais: 0 #number of ai controlled robots
 width: 360 #width of camera view
 height: 240 #height of camera view
 timer: 0 #play time in seconds, 0 if infinite play time
@@ -7,5 +7,6 @@ cell_size: 0.5 #Cell size for occupancy map
 sensor_waiting_time: 0 #How much time to wait until sensor becomes available again after usage
 ai_skip_frames: 0 #Skip frames to simulate human response time
 fps: 0 #Target simulation frame rate. 0 means maximum possible
-strength_distance_limit: 2 #Maximum separation between robots to influence strength factor
+strength_distance_limit: 3 #Maximum separation between robots to influence strength factor
 communication_distance_limit: 5 #Maximum separation at which a robot can be to be able to communicate with another
+goal_radius: 3 #Goal radius, starting from the center of the scenario

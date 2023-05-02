@@ -266,4 +266,8 @@ function handleError(error) {
   console.error("Error: ", error);
 }
 
+function manualReset(){
+  socket.emit("reset");
+}
+
 socket.emit("broadcaster_load");

@@ -63,6 +63,11 @@ var init_xdotool = false;
 var video_idx_broadcaster = 0;
 var past_timer = 0, past_timer2 = 0;
 var message_sent = false;
+const disable_list = [];
+
+const passcode = Math.random().toString(36).substring(2,7);
+
+console.log("Code: ", passcode);
 
 
 function socket_to_simulator_id(socket_id){
@@ -96,16 +101,25 @@ io.sockets.on("connection", socket => { //When a client connects
     */
   });
 
-  socket.on("watcher", (client_number) => { //When a human client connects
+  socket.on("watcher", (client_number, code) => { //When a human client connects
 
-    socket.to(broadcaster).emit("watcher", socket.id, client_number);
 
-    if(client_number != 0){
-        clients_ids[client_number-1] = socket.id;
-        all_ids[client_number-1] = socket.id;
-        
-        
-        socket.emit("watcher", user_ids_list[client_number-1], map_config);
+    if(code == passcode){
+
+
+	    socket.to(broadcaster).emit("watcher", socket.id, client_number);
+
+	    if(client_number != 0){
+	    
+	    	console.log(all_ids, socket.id, client_number)
+			clients_ids[client_number-1] = socket.id;
+			all_ids[client_number-1] = socket.id;
+		
+		
+			socket.emit("watcher", user_ids_list[client_number-1], map_config);
+	    }
+    } else{
+    	socket.emit("passcode-rejected");
     }
         
     
@@ -163,7 +177,7 @@ io.sockets.on("connection", socket => { //When a client connects
   });
   
   socket.on("reset", () => {
-    socket.to(simulator).emit("reset", socket_to_simulator_id(socket.id));
+    socket.to(simulator).emit("reset"); //, socket_to_simulator_id(socket.id));
   })
 
   //WEBRTC connection setup
@@ -192,17 +206,26 @@ io.sockets.on("connection", socket => { //When a client connects
     socket.to(all_ids[idx]).emit("ai_status",status);
   });
   
-  socket.on("ai_output", (idx, object_type_coords_map, object_attributes_id, objects_held, sensing_results, ai_status, extra_status, strength, timer) => {//AI output forwarding
-    socket.to(all_ids[idx]).emit("ai_output", object_type_coords_map, object_attributes_id, objects_held, sensing_results, ai_status, extra_status, strength, timer);
+  socket.on("ai_output", (idx, object_type_coords_map, object_attributes_id, objects_held, sensing_results, ai_status, extra_status, strength, timer, disable) => {//AI output forwarding
+    socket.to(all_ids[idx]).emit("ai_output", object_type_coords_map, object_attributes_id, objects_held, sensing_results, ai_status, extra_status, strength, timer, disable);
+    
+    if((! disable_list.includes(all_ids_list[idx])) && disable){
+    	disable_list.push(all_ids_list[idx]);
+    }
+    
   });
   
   
-  socket.on("human_output", (idx, location, item_info, neighbors_info, timer) => {
-    socket.to(all_ids[idx]).emit("human_output", location, item_info, neighbors_info, timer);
+  socket.on("human_output", (idx, location, item_info, neighbors_info, timer, disable) => {
+    socket.to(all_ids[idx]).emit("human_output", location, item_info, neighbors_info, timer, disable);
     
     if(command_line_options.log && (timer - past_timer > 1 || Object.keys(item_info).length > 0)){
         past_timer = timer;
         fs.appendFile(dir + dateTime + '.txt', String(timer.toFixed(2)) +',' + '3' + ',' + socket_to_simulator_id(all_ids[idx]) + ',' + JSON.stringify(item_info) + ',' + JSON.stringify(neighbors_info) + '\n', err => {});
+    }
+    
+    if((! disable_list.includes(all_ids_list[idx])) && disable){
+    	disable_list.push(all_ids_list[idx]);
     }
     
   });
@@ -217,6 +240,13 @@ io.sockets.on("connection", socket => { //When a client connects
   });
   
   socket.on("agent_reset", (magnebot_id, timer, object_names_translate) => {
+  
+    if(disable_list.includes(magnebot_id)){
+
+		const disable_index = disable_list.indexOf(magnebot_id);
+		disable_list.splice(disable_index, 1);
+    }
+
     socket.to(simulator_id_to_socket(magnebot_id)).emit("agent_reset");
     if(command_line_options.log){
     	fs.appendFile(dir + dateTime + '.txt', String(timer.toFixed(2)) + ',4,' + magnebot_id + '\n', err => {});
@@ -237,45 +267,61 @@ io.sockets.on("connection", socket => { //When a client connects
     */
     //const origin_id = user_ids_list[clients_ids.indexOf(socket.id)]
     
-    message_sent = true;
     
-    if(all_ids.indexOf(socket.id) >= 0 && neighbors_list){
-        let source_id = socket_to_simulator_id(socket.id)
-        console.log(source_id)
-        console.log(neighbors_list)
-        
-        var keys_neighbors = '"';
-        
-        for (const [key, value] of Object.entries(neighbors_list)) {
-            console.log(key)
-            console.log(value)
-            keys_neighbors += key + ',';
-            if(value === 'human'){
-                let c = clients_ids[user_ids_list.indexOf(key)]; 
-                console.log(c)
-                socket.to(c).emit("message", message, timestamp, source_id);
-            } else if(value === 'ai'){
-                let c = ai_ids[ai_ids_list.indexOf(key)];
-                socket.to(c).emit('message', message, timestamp, source_id);
-            }
-            
-        }
-        
-        keys_neighbors += '"';
-        
-        
-        if(command_line_options.log){
-            fs.appendFile(dir + dateTime + '.txt', String(timestamp.toFixed(2)) +',' + '2' + ',' + socket_to_simulator_id(socket.id) + ',' + '"'+message.replace(/"/g, '\\"')+'"'+','+keys_neighbors+'\n', err => {});
-        }
+    var sim_id = socket_to_simulator_id(socket.id);
+  	
+    if(! disable_list.includes(sim_id)){
+		message_sent = true;
+		
+		if(all_ids.indexOf(socket.id) >= 0 && neighbors_list){
+		    let source_id = socket_to_simulator_id(socket.id)
+		    console.log(source_id)
+		    console.log(neighbors_list)
+		    
+		    var keys_neighbors = '"';
+		    
+		    for (const [key, value] of Object.entries(neighbors_list)) {
+		        console.log(key)
+		        console.log(value)
+		        
+		        if(! disable_list.includes(key)){
+				    keys_neighbors += key + ',';
+				    if(value === 'human'){
+				        let c = clients_ids[user_ids_list.indexOf(key)]; 
+				        
+					    console.log(c)
+					    socket.to(c).emit("message", message, timestamp, source_id);
+				        
+				    } else if(value === 'ai'){
+				        let c = ai_ids[ai_ids_list.indexOf(key)];
+				        socket.to(c).emit('message', message, timestamp, source_id);
+				    }
+			    }
+		        
+		    }
+		    
+		    keys_neighbors += '"';
+		    
+		    
+		    if(command_line_options.log){
+		        fs.appendFile(dir + dateTime + '.txt', String(timestamp.toFixed(2)) +',' + '2' + ',' + socket_to_simulator_id(socket.id) + ',' + '"'+message.replace(/"/g, '\\"')+'"'+','+keys_neighbors+'\n', err => {});
+		    }
+		}
     }
 
   });
   //Every time a key is pressed by someone in their browser, emulate that keypress using xdotool
   socket.on("key", (key, timestamp) => {
-    socket.to(simulator).emit("key", key, socket_to_simulator_id(socket.id));
-    if(command_line_options.log){
-        fs.appendFile(dir + dateTime + '.txt', String(timestamp.toFixed(2)) +',' + '1' + ',' + socket_to_simulator_id(socket.id) + ',' + key +'\n', err => {});
-    }
+  
+  	var sim_id = socket_to_simulator_id(socket.id);
+  	
+    if(! disable_list.includes(sim_id)){
+		console.log(sim_id, socket.id, all_ids);
+		socket.to(simulator).emit("key", key, sim_id);
+		if(command_line_options.log){
+		    fs.appendFile(dir + dateTime + '.txt', String(timestamp.toFixed(2)) +',' + '1' + ',' + sim_id + ',' + key +'\n', err => {});
+		}
+	}
     /*
     let idx = clients_ids.indexOf(socket.id);
     
@@ -309,6 +355,12 @@ io.sockets.on("connection", socket => { //When a client connects
   socket.on("set_goal", (obj_id) => { //Set visual goal
     socket.to(simulator).emit("set_goal",clients_ids.indexOf(socket.id), obj_id);
   });
+  
+  
+  socket.on("disable", () => {
+  	socket.to(simulator).emit("disable", socket_to_simulator_id(socket.id));
+  });
+  
 });
 
 //server.listen(port, host, () => console.log(`Server is running on port ${port}`));

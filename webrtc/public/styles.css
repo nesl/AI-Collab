@@ -50,6 +50,19 @@ video {
   padding-top: 20px;
 }
 
+.leftbar {
+  height: 100%; /* Full-height: remove this if you want "auto" height */
+  width: 300px; /* Set the width of the sidebar */
+  position: fixed; /* Fixed Sidebar (stay in place on scroll) */
+  z-index: 1; /* Stay on top */
+  top: 0; /* Stay at the top */
+  left: 0;
+  background: black; /* Black */
+  overflow-x: hidden; /* Disable horizontal scroll */
+  /*overflow-y: hidden;*/
+  padding-top: 20px;
+}
+
 .chat_title, .user-count {
   margin-left: 10%;
   margin-right: 10%;
@@ -105,11 +118,21 @@ input[type = "text"], button.send {
  
 }
 
-button.send:hover {
+
+button.send:hover{
   cursor: pointer;
   background: #ddd;
 }
 
+button.end {
+  width: 100%;
+  background: red;
+}
+
+button.end:hover {
+  cursor: pointer;
+  background: orange;
+}
 
 input[type = "radio"] {
 	background: #fff;
@@ -157,6 +180,21 @@ label {
   transition: max-height 0.2s ease-out;
   background-color: #f1f1f1;
   
+}
+
+.entry {
+  padding: 0 18px;
+  overflow-y: scroll;
+  transition: max-height 0.2s ease-out;
+  background-color: #f1f1f1;
+}
+
+.entry_object {
+  padding: 0 18px;
+  overflow-y: scroll;
+  transition: max-height 0.2s ease-out;
+  background-color: #f1f1f1;
+  height: 60vh;
 }
 
 .wrapper {

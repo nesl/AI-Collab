@@ -61,10 +61,21 @@ socket.on("candidate", (id, candidate) => {
 });
 
 
+function submitCode(){
+
+ var code = document.getElementById("pass-text").value;
+
+ socket.emit("watcher", client_number, code);
+
+}
 
 socket.on("connect", () => {
-  socket.emit("watcher", client_number);
   
+  document.getElementById("popup-pass").classList.toggle("active");
+});
+
+socket.on("passcode-rejected", () => {
+    document.getElementById("pass-result").innerHTML = "Password rejected";
 });
 
 socket.on("broadcaster", () => {
@@ -118,21 +129,23 @@ function reset(){
     var collapsible_tag = document.getElementById("collapsible_nearby_team_members_tag");
     
     
-    var object_info_div = document.getElementById("collapsible_object_information");
+    var object_info_div = document.getElementById("object_entries");
     
     object_info_div.innerHTML = '';
     
-    var text_search = document.createElement("input");
-    text_search.setAttribute("type", "text");
-    text_search.setAttribute("placeholder", "Search...");
+    //var text_search = document.createElement("input");
+    //text_search.setAttribute("type", "text");
+    //text_search.setAttribute("placeholder", "Search...");
+    
+    var text_search = document.getElementById("search_input");
     text_search.addEventListener("change",function (event) {
 		
 		   
-    	var object_info_div = document.getElementById("collapsible_object_information");
+    	var object_info_div = document.getElementById("object_entries");
 
 		const original_length = object_info_div.childNodes.length;
 
-		for (let i = original_length-1; i > 0; i--) { 
+		for (let i = original_length-1; i >= 0; i--) { 
 			object_info_div.removeChild(object_info_div.childNodes[i]);
 		}
 		
@@ -146,7 +159,7 @@ function reset(){
 		
 	});
 	
-    object_info_div.appendChild(text_search);
+    //object_info_div.appendChild(text_search);
     
     
     var collapsible_tag_objects = document.getElementById("collapsible_object_tag");
@@ -198,8 +211,19 @@ function reset(){
         label_element.setAttribute("for", String(map_config['all_robots'][um_idx][0]));
         label_element.setAttribute("id", String(map_config['all_robots'][um_idx][0]) + '_entry');
         label_element.style.color = "black";
-        label_element.appendChild(document.createTextNode(String(map_config['all_robots'][um_idx][0]) + " (type: " + map_config['all_robots'][um_idx][1] + ") " + "(distance: -1)"));
         
+        const tbl = document.createElement('table');
+        const tr1 = tbl.insertRow();
+	const td1 = tr1.insertCell();
+	td1.appendChild(document.createTextNode("Agent " + String(map_config['all_robots'][um_idx][0]) + " (type: " + map_config['all_robots'][um_idx][1] + ")"));
+	
+	const tr2 = tbl.insertRow();
+	const td2 = tr2.insertCell();
+	td2.appendChild(document.createTextNode("(location: Out of Range)"));
+	
+        label_element.appendChild(tbl);
+        
+        label_element.style.color = "red";
         
         div_element.appendChild(input_element);	
         div_element.appendChild(label_element);
@@ -222,6 +246,9 @@ socket.on("agent_reset", () => {
 var map_config = {};
 
 socket.on("watcher", (robot_id_r, config_options) => {
+
+    document.getElementById("popup-pass").classList.toggle("active");
+    togglePopup();
 
     client_id = robot_id_r;
     map_config = config_options;
@@ -248,13 +275,27 @@ socket.on("watcher", (robot_id_r, config_options) => {
 
 simulator_timer  = -1;
 
-socket.on("human_output", (location, item_info, neighbors_info, timer) => {
+socket.on("human_output", (location, item_info, neighbors_info, timer, disable) => {
 
 
     simulator_timer = timer;
 
+
+    if(disable){
+        document.getElementById("command_text").disabled = true;
+    }
+
+    
+    if(Object.keys(item_info).length){
+        Object.keys(object_html_store).forEach(function(object_key) {
+            object_html_store[object_key].style.borderWidth = "thin" ;
+        });
+    }
+    
     Object.keys(item_info).forEach(function(object_key) {
+    	
         update_objects_info(object_key, item_info[object_key]['time'], item_info[object_key]['sensor'], [item_info[object_key]['location'][0],item_info[object_key]['location'][2]], item_info[object_key]['weight'], false);
+        
     });
     
     Object.keys(neighbors_info).forEach(function(neighbor_key) {
@@ -267,10 +308,11 @@ socket.on("human_output", (location, item_info, neighbors_info, timer) => {
     
         const text_node = document.getElementById(neighbors_list_store[ob_idx][0] + '_entry');
         
+        
         const n_idx = Object.keys(neighbors_info).indexOf(neighbors_list_store[ob_idx][0]);
         
-        const distance_string = "distance: ";
-        const distance_idx = text_node.innerHTML.indexOf(distance_string);
+        const distance_string = "location: ";
+        const distance_idx = text_node.children[0].rows[1].cells[0].textContent.indexOf(distance_string);
         
         //if(Object.keys(neighbors_info).includes(neighbors_list_store[ob_idx][0])){
         //if(n_idx > -1){
@@ -282,14 +324,37 @@ socket.on("human_output", (location, item_info, neighbors_info, timer) => {
             
             var distance = Math.sqrt(x+y);
             */
-            text_node.style.color = "red";
-            text_node.innerHTML = text_node.innerHTML.slice(0,distance_idx+distance_string.length) + removeTags(String(neighbors_info[neighbors_list_store[ob_idx][0]][2].toFixed(1))) + " m)";
+            
+            const disabled = neighbors_info[neighbors_list_store[ob_idx][0]][3];
+            
+            if(disabled){
+                text_node.style.color = "red";
+                text_node.children[0].rows[1].cells[0].textContent = "Disabled";
+            } else {
+                text_node.style.color = "black";
+            
+            
+            
+                const divmod_results = divmod(neighbors_list_store[ob_idx][4], 60);
+                const divmod_results2 = divmod(divmod_results[1],1);
+                
+                text_node.children[0].rows[1].cells[0].textContent = "Last seen in location (" + removeTags(String(neighbors_info[neighbors_list_store[ob_idx][0]][1][0].toFixed(1))) + "," + removeTags(String(neighbors_info[neighbors_list_store[ob_idx][0]][1][1].toFixed(1))) + ") at time " + removeTags(pad(String(divmod_results[0]),2) + ":" + pad(String(divmod_results2[0]),2));
+            }
+            
+            
+            
+            
             neighbors_list_store[ob_idx][5] = true;
              
         } else {
-            text_node.style.color = "black";
-            text_node.innerHTML = text_node.innerHTML.slice(0,distance_idx+distance_string.length) + "-1 m)";
-            neighbors_list_store[ob_idx][5] = false;
+        
+            if(neighbors_list_store[ob_idx][5]){
+		    text_node.style.color = "red";
+		    
+		    //text_node.children[0].rows[1].cells[0].textContent = "Last seen: " + text_node.children[0].rows[1].cells[0].textContent;
+		    //text_node.children[0].rows[1].cells[0].textContent = "location: " + " Last Seen in" + removeTags(String(neighbors_info[neighbors_list_store[ob_idx][0]][1][0].toFixed(1))) + "," + removeTags(String(neighbors_info[neighbors_list_store[ob_idx][0]][1][1].toFixed(1))) + " at " + removeTags(String(neighbors_info[neighbors_list_store[ob_idx][0]][4].toFixed(1))) +  ")"; //"Out of Range)";
+		    neighbors_list_store[ob_idx][5] = false;
+            }
         }
     }
     
@@ -306,7 +371,9 @@ window.onunload = window.onbeforeunload = () => {
 var play_area = document.getElementById("play_area");
 
 //Only in the play area do we catch keyboard events
-play_area.onkeydown = function(evt) {
+//play_area.onkeydown = function(evt) {
+
+play_area.addEventListener("keydown", (evt) => {
     
     
     var kkey;
@@ -333,7 +400,31 @@ play_area.onkeydown = function(evt) {
     */
     console.log(evt.key, kkey);
     socket.emit("key", kkey, simulator_timer);
-};
+});
+
+
+
+play_area.addEventListener('mouseover', function() {
+    play_area.focus();
+    const ct = document.getElementById("active_text");
+    ct.innerHTML = "Active";
+    ct.style.color = "green";
+});
+
+play_area.addEventListener('click', function() {
+    play_area.focus();
+    const ct = document.getElementById("active_text");
+    ct.innerHTML = "Active";
+    ct.style.color = "green";
+});
+
+play_area.addEventListener('focusout', function() {
+    const ct = document.getElementById("active_text");
+    ct.innerHTML = "Not active";
+    ct.style.color = "red";
+});
+
+
 
 
 
@@ -353,7 +444,7 @@ function convert_to_real_coordinates(position){
 }
 
 
-function update_danger_estimate(label_string, danger_data){
+function update_danger_estimate(danger_data){
 
     var confidence_max = 0;
     var sensor_user;
@@ -368,44 +459,106 @@ function update_danger_estimate(label_string, danger_data){
     var color;
     if(danger == 1){
 	    color = 'blue';
+	    txt_danger = 'benign';
     }
     else{
 	    color = 'red';
+	    txt_danger = 'dangerous';
     }
 
-    label_string +=  '<p style="color:' + color + '">' + removeTags(String((sensor_user.confidence*100).toFixed(2)))+"% </p>" //" <div style=\"color:" + color + "\">&#9632;</div> "+ String((sensor_user.confidence*100).toFixed(2))+"%";
+    var label_string =  ' <p style="color:' + color + ';margin:0;"> Status Danger: ' + txt_danger + ',  Prob. Correct: ' + removeTags(String((sensor_user.confidence*100).toFixed(1)))+"% </p>"; //" <div style=\"color:" + color + "\">&#9632;</div> "+ String((sensor_user.confidence*100).toFixed(2))+"%";
     
     return label_string;
 
 }
 
+const divmod = (x, y) => [Math.floor(x / y), x % y];
+
+function pad(num,size) {
+    var s = "00000" + num;
+    return s.substr(s.length-size);
+}
+
+
 function update_objects_info(object_key, timer, danger_data, position, weight, convert_coordinates){
 
 	var known_object = false;
 	
- 	var object_info_div = document.getElementById("collapsible_object_information");
+ 	var object_info_div = document.getElementById("object_entries");
 
-    var collapsible_tag = document.getElementById("collapsible_object_tag");
+        var collapsible_tag = document.getElementById("collapsible_object_tag");
 	
 	if(convert_coordinates){
 		position = convert_to_real_coordinates(position);
 	}
 	
+	var danger_changed = false;
+	
 	for(ob_idx = 0; ob_idx < object_list_store.length; ob_idx++){
  		if(object_key == object_list_store[ob_idx][0]){ 
  			if(Object.keys(danger_data).length > 0){
  			    object_list_store[ob_idx][2] = Object.assign({}, danger_data, object_list_store[ob_idx][2]); //TODO update estimation in ui
- 			    var label_string = removeTags(String(object_list_store[ob_idx][0]) + " (weight: " + String(object_list_store[ob_idx][1]) + ")");
- 			    label_string = update_danger_estimate(label_string, object_list_store[ob_idx][2]);
+ 			    danger_changed = true;
+ 			    /*
+ 			    const tbl = document.createElement('table');
+ 			    const tr1 = tbl.insertRow();
+ 			    const td1 = tr1.insertCell();
+ 			    td1.innerHTML = removeTags(String(object_list_store[ob_idx][0]) + " (weight: " + String(object_list_store[ob_idx][1]) + ")");
+ 			    const tr2 = tbl.insertRow();
+ 			    const td2 = tr2.insertCell();
+ 			    td2.innerHTML = update_danger_estimate(object_list_store[ob_idx][2]);
  			    //label_element = document.getElementById("label_" + String(object_list_store[ob_idx][0]));
  			    label_element = object_html_store[object_key].children[1]
- 			    label_element.innerHTML = label_string;
+ 			    label_element.appendChild(tbl);
+ 			    */
  			}
  			
- 			if(object_list_store[ob_idx][5]	< timer){
- 			    object_list_store[ob_idx][3] = position[0]
- 			    object_list_store[ob_idx][4] = position[1]
- 			    object_list_store[ob_idx][5] = timer
+ 			if(object_list_store[ob_idx][5]	< timer || danger_changed){
+ 			
+ 			    if(object_list_store[ob_idx][5] < timer){
+	 			    object_list_store[ob_idx][3] = position[0]
+	 			    object_list_store[ob_idx][4] = position[1]
+	 			    object_list_store[ob_idx][5] = timer
+	 			    
+	 			    //object_html_store[object_key].style.color = "red" ;
+	 			    object_html_store[object_key].style.borderWidth = "thick";
+ 			    }
+ 			    
+ 			    
+ 			    var label_element = object_html_store[object_key].children[1]
+ 			    
+ 			    danger_changed = false;
+ 			    
+                const x = Math.pow(position[0],2);
+                const y = Math.pow(position[1],2);
+            
+                var distance = Math.sqrt(x+y);
+ 			    
+ 			    label_element.children[0].rows[0].cells[0].textContent = "";
+ 			    
+ 			    if(distance < parseFloat(map_config["goal_radius"])){
+ 			        label_element.children[0].rows[0].cells[0].textContent = "*";
+ 			    }
+ 			    
+ 			    label_element.children[0].rows[0].cells[0].textContent += "Object " + removeTags(String(object_list_store[ob_idx][0]) + " (weight: " + String(object_list_store[ob_idx][1]) + ")");
+ 			    const divmod_results = divmod(object_list_store[ob_idx][5], 60);
+	            const divmod_results2 = divmod(divmod_results[1],1);
+
+ 			    label_element.children[0].rows[1].cells[0].textContent = removeTags("Last seen in (" + String(object_list_store[ob_idx][3].toFixed(1)) + "," + String(object_list_store[ob_idx][4].toFixed(1)) + ") at " + removeTags(pad(String(divmod_results[0]),2) + ":" + pad(String(divmod_results2[0]),2)));
+ 			    
+ 			    if(Object.keys(object_list_store[ob_idx][2]).length > 0){
+	 			    label_element.children[0].rows[2].cells[0].innerHTML = update_danger_estimate(object_list_store[ob_idx][2]);
+ 			    }
+	                    
+	                    
+	                    
+	                    
+ 			    
+ 			    //label_element.appendChild(tbl);
+ 			    
+ 			    
+ 			    //var label_string = object_html_store[object_key].children[1].innerHTML;
+ 			    //label_string += label_string;
  			}
  			
  			known_object = true;
@@ -430,21 +583,50 @@ function update_objects_info(object_key, timer, danger_data, position, weight, c
 	    label_element.setAttribute("for", String(object_key));
 	    label_element.setAttribute("id", "label_" + String(object_key));
 	    
-	    var label_string = removeTags(String(object_key) + " (weight: " + String(weight) + ")");
 	    
-	    if(Object.keys(danger_data).length > 0){ 
+	    const tbl = document.createElement('table');
+	    const tr1 = tbl.insertRow();
+	    const td1 = tr1.insertCell();
+ 			    
+ 			    
+	    const x = Math.pow(position[0],2);
+        const y = Math.pow(position[1],2);
+    
+        var distance = Math.sqrt(x+y);
+        
+        td1.innerHTML = "";
+        
+        if(distance < parseFloat(map_config["goal_radius"])){
+	        td1.innerHTML = "*";
+	    }
+                
+	    td1.innerHTML += "Object " + removeTags(String(object_key) + " (weight: " + String(weight) + ")");
 	    
-	        label_string = update_danger_estimate(label_string, danger_data);
+
+	    
+	    const divmod_results = divmod(object_list_store[ob_idx][5], 60);
+        const divmod_results2 = divmod(divmod_results[1],1);
+            
+        const tr3 = tbl.insertRow();
+	    const td3 = tr3.insertCell();
+	    
+	    td3.innerHTML = removeTags("Last seen in (" + String(object_list_store[ob_idx][3].toFixed(1)) + "," + String(object_list_store[ob_idx][4].toFixed(1)) + ") at " + removeTags(pad(String(divmod_results[0]),2) + ":" + pad(String(divmod_results2[0]),2)));
+	    
+	    const tr2 = tbl.insertRow();
+        const td2 = tr2.insertCell();
+    	if(Object.keys(danger_data).length > 0){ 
+	    	
+	        td2.innerHTML = update_danger_estimate(danger_data);
 	    }
 	    
-	    label_element.innerHTML = label_string;
+	    label_element.appendChild(tbl);
 	    
 	    
 	    div_element.appendChild(input_element);	
 	    div_element.appendChild(label_element);
 	    
 	    object_html_store[object_key] = div_element;
-	    
+	    object_html_store[object_key].style.borderWidth = "thick" ;
 	    
 
 
@@ -457,10 +639,11 @@ function update_objects_info(object_key, timer, danger_data, position, weight, c
     fill_info();
 }
 
+var previous_visible = [];
 
 function fill_info(){
 
-    var object_info_div = document.getElementById("collapsible_object_information");
+    var object_info_div = document.getElementById("object_entries");
 
 	const original_length = object_info_div.childNodes.length;
 
@@ -468,9 +651,27 @@ function fill_info(){
 		object_info_div.removeChild(object_info_div.childNodes[i]);
 	}
     
-    Object.keys(object_html_store).forEach(function(object_key) {
+    var make_visible = true;
+    
+    var current_visible = [];
+    
+    Object.keys(object_html_store).sort((a,b)=>parseInt(a)-parseInt(b)).forEach(function(object_key) {
+    
+    
+    
+
         object_info_div.appendChild(object_html_store[object_key]);
+        
+    	if(object_html_store[object_key].style.borderWidth == 'thick'){
+    	    current_visible.push(object_key);
+    	    if(make_visible && (! previous_visible.includes(object_key))) {
+        		make_visible = false;
+        		object_html_store[object_key].scrollIntoView({block: "nearest", inline: "nearest"});
+    		}
+    	}
     });
+    
+    previous_visible = current_visible;
 
 }
 
@@ -550,10 +751,19 @@ function update_neighbors_info(agent_key, timer, position, convert_coordinates){
 
 function findCheckedRadio(radio_elements,final_string,pattern){
 
-	var command_string;
+	var command_string, extra_info;
 	for(i = 0; i < radio_elements.length; i++) {
 		if(radio_elements[i].checked){
 			command_string = radio_elements[i].value;
+			if(pattern == '[object]'){
+				command_string = "Object " + command_string + " " + document.getElementById('label_' + object_list_store[i][0]).children[0].rows[1].cells[0].textContent; 
+			} else {
+				if(i > 0){
+					 command_string = "Agent " + command_string + " " + document.getElementById(neighbors_list_store[i-1][0] + '_entry').children[0].rows[1].cells[0].textContent;
+				}
+			}
+			
+
 			break;
 		}
 	}
@@ -615,18 +825,13 @@ function addPrompt(info_type){
 var help_requests = {};
 
 //Set Command based on templates
-function setCommand (){
+function setCommand (num){
 
 	var final_string = "";
 
 	var ele = document.getElementsByName('command');
-              
-	for(i = 0; i < ele.length; i++) {
-		if(ele[i].checked){
-			final_string = ele[i].value;
-			break;
-		}
-	}
+    final_string = ele[num].innerText;
+    
 	if(final_string.includes('[agent]')){
 		var agents = document.getElementsByName('neighbors');
 		final_string = findCheckedRadio(agents,final_string,'[agent]');
@@ -751,6 +956,9 @@ function get_corrected_neighbors_info(target_id){
     return corrected_neighbors_info;
 }
 
+function disableRobot(){
+    socket.emit("disable");
+}
 
-togglePopup();
+
 

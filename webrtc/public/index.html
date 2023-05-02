@@ -35,62 +35,60 @@
 		  
 			<input type="text" id="command_text">
 			<button class="send" onclick="sendCommand()">Send</button>
-			<button class="send" onclick="setCommand()">Set Command</button>
 		  
 		</div>
-		<button class="collapsible">Commands</button>
-		<div class="collapsible_content">
+		<h1 class="collapsible">Commands</h1>
+		<div class="entry">
 			<div class='wrapper' >
-				<input type="radio" id="help_accept" name="command" value="I will help [agent]">
-				<label for="help_accept">I will help [agent]</label><br>
+				<button name="command" onclick="setCommand(0)">I will help [agent]</button><br>
 			</div>
 			<div class='wrapper' >
-				<input type="radio" id="help_request_sensing" name="command" value="I need help with sensing [object]">
-				<label for="help_request_sensing">I need help with sensing [object]</label><br>
+				<button name="command" onclick="setCommand(1)">I need help with sensing [object]</button><br>
 			</div>
 			<div class='wrapper' >
-				<input type="radio" id="help_request_lifting" name="command" value="I need help with lifting [object]">
-				<label for="help_request_lifting">I need help with lifting [object]</label><br>
+				<button name="command" onclick="setCommand(2)">I need help with lifting [object]</button><br>
 			</div>
 			<div class='wrapper' >
-				<input type="radio" id="reject_request" name="command" value="I cannot help you right now [agent]">
-				<label for="reject_request">I cannot help you right now [agent]</label><br>
+				<button name="command" onclick="setCommand(3)">I cannot help you right now [agent]</button><br>
 			</div>
 			<div class='wrapper' >
-				<input type="radio" id="cancel_request" name="command" value="No more need for help">
-				<label for="cancel_request">No more need to help</label><br>
+				<button name="command" onclick="setCommand(4)">No more need to help</button><br>
 			</div>
 			<div class='wrapper' >
-				<input type="radio" id="exchange_item_request" name="command" value="Ask for object information to [agent]">
-				<label for="exchange_item_request">Ask for object information to [agent]</label><br>
+				<button name="command" onclick="setCommand(5)">Ask for object information to [agent]</button><br>
 			</div>
 			<div class='wrapper' >
-				<input type="radio" id="exchange_agent_request" name="command" value="Ask for agent information to [agent]">
-				<label for="exchange_agent_request">Ask for agent information to [agent]</label><br>
+				<button name="command" onclick="setCommand(6)">Ask for agent information to [agent]</button><br>
 			</div>
 			
 			
 		</div>
-		<button class="collapsible" id="collapsible_nearby_team_members_tag">Team Members (0)</button>
-		<div class="collapsible_content" id="collapsible_nearby_team_members">
-
-		</div>
-		<button class="collapsible" onclick="fill_info()" id="collapsible_object_tag">Object Information (0)</button>
-		<div class="collapsible_content" id="collapsible_object_information">
-
-		</div>
+		
 		
 		
 	        
-		
+		<button id="leave_button" class="end" onclick="disableRobot()">End control</button>
 	
+	</div>
+	
+
+	<div class="leftbar">
+	<h1 class="collapsible" id="collapsible_nearby_team_members_tag">Team Members (0)</h1>
+	<div class="entry" id="collapsible_nearby_team_members">
+	
+	</div>
+	<h1 class="collapsible" onclick="fill_info()" id="collapsible_object_tag">Object Information (0)</h1>
+	<div  id="collapsible_object_information">
+	<input id="search_input" type="text" placeholder="Search...">
+	<div class="entry_object" id="object_entries"></div>
+	</div>
 	</div>
 	<div class="popup" id="popup-1">
 	        	<div class="overlay"></div>
 	        	<div class="content">
 	        		<div class="close-btn" onclick="togglePopup()">&times;</div>
 	        		<h1> Instructions </h1> <br>
-	        		Sense objects and bring the dangerous objects into the middle of the room. When you sense an object you will see whether the object is dangerous or benign according to the color of the object ID, and in your sidebar you will be able to consult the object, as well as the confidence in the prediction. Objects have a weight associated with them, and you will only be able to carry those that match your strength level. Strength level is modified by the amount of robots that are close to you and you may only be able to carry a heavy object when you have a given quantity of robots near you. A dangerous object can only be carried if there are other robots nearby, if not, the game will end if you carry one. You need to compare estimates of danger level in order to be sure you are not carrying a dangerous object alone. You can talk with your fellow robots through the sidebar chat. <br>
+	        		Sense objects and bring the dangerous objects into the middle of the room. When you sense an object you will see whether the object is dangerous or benign according to the color of the object ID, and in your sidebar you will be able to consult the object, as well as the accuracy of the prediction. Objects have a weight associated with them, and you will only be able to carry those that match your strength level. Strength level is modified by the amount of robots that are close to you and you may only be able to carry a heavy object when you have a given quantity of robots near you. The game will end if you try to carry a dangerous object without the required strength. You need to compare estimates of danger level in order to get the correct dangerous objects. You can talk with your fellow robots through the sidebar chat. <br>
 	        		<h1> Controls </h1> <br>
 				    Arrow Keys to advance <br>
 				    Z to grab/drop object with left arm <br>
@@ -108,11 +106,27 @@
 	    			    You can send messages by putting the text and then pressing Enter <br>
 	    			    To search for an object, input the pattern and then press Enter
 	    			    
-	    			  
+	    			<h1>Sensor Measurements</h1><br>
+	    			Each object has a true danger status (either benign or dangerous). When a robot senses an object for the first time, it first samples a probability of being correct from a uniform distribution, and then applies that probability to a weighted choice between reporting the true danger status value and reporting a false value. This probability of being corrected is shown for each object, as well as the final result of the choice.
+	    			
+	    			
 	        		</div>
 		</div>
+		
+	<div class="popup" id="popup-pass">
+				<div class="overlay"></div>
+	        	<div class="content">
+	        	<h1>Password</h1><br>
+	        	<p id="pass-result" style="color:red;"></p>
+	        	<input type="text" id="pass-text" style="border-style: solid; border-width: 1px;">
+	        	<button onclick="submitCode()">Submit</button>
+	        	
+	        	</div>
+	
+	</div>
 
-	<div id="play_area" >
+	<div id="play_area" style="outline-width: 0;" tabindex="0">
+	<p style="text-align: center; font-size: 2.5em;" id="active_text"></p>
     <video playsinline autoplay muted></video>
     <video playsinline autoplay muted></video>
 	</div>
