@@ -122,6 +122,14 @@ function reset(){
     object_html_store = {};
     own_neighbors_info_entry = [client_id, 0, 0, 0, -1];
     
+    document.getElementById("popup-stats").classList.remove("active");
+    document.getElementById("popup-stats-content").innerHTML = ""; //"<h1>Stats</h1><br>";
+    document.getElementById("command_text").disabled = false;
+    document.getElementById("send_command_button").disabled = false;
+    
+    //document.getElementById("reset_button").disabled = false;
+    //document.getElementById("reset_button").innerText = "Reset Game";
+    
     var neighbor_info_div = document.getElementById("collapsible_nearby_team_members");
     
     neighbor_info_div.innerHTML = '';
@@ -243,6 +251,117 @@ socket.on("agent_reset", () => {
 });
 
 
+socket.on("stats", (stats_dict) => {
+    document.getElementById("popup-stats").classList.toggle("active");
+    
+    
+    const popup_content = document.getElementById("popup-stats-content");
+    
+    const title = document.createElement('h1');
+    
+    title.textContent = "Game Finished: ";
+    
+    if(stats_dict["failed"]){
+        title.textContent += "Picked Up/Dropped Heavy Dangerous Object";
+    } else {
+        title.textContent += "User Ended Control";
+    }
+    
+    popup_content.appendChild(title);
+    
+    const tbl = document.createElement('table');
+    
+    const key_to_text = {"distance_traveled": "Distance traveled (m):",
+        "grabbed_objects": "Number of grabbed objects:",
+        "grab_attempts":"Number of grab attempts:", 
+        "forced_dropped_objects": "Number of times forced to drop object:",
+        "objects_sensed":"Number of objects sensed:",
+        "objects_in_goal":"Number of objects brought to goal area:",
+        "dangerous_objects_in_goal":"Truly dangerous objects brought to goal area:",
+        "num_messages_sent":"Number of messages sent:",
+        "average_message_length":"Average length of messages sent:",
+        "failed": "Picked Up/Dropped Heavy Dangerous Object:",
+        "time_with_teammates":"Time passed next to teammates:",
+        "end_time":"End time:",
+        "sensor_activation":"Number of times sensor was used:"};
+    
+    Object.keys(stats_dict).forEach(function(key) {
+        
+        const tr1 = tbl.insertRow();
+        var td1 = tr1.insertCell();
+        
+        td1.appendChild(document.createTextNode(key_to_text[key]));
+        
+        var td1 = tr1.insertCell();
+        
+        if(key == "objects_in_goal"){
+            
+            td1.appendChild(document.createTextNode(String(stats_dict[key].length)));
+        } else if(key == "dangerous_objects_in_goal") {
+            var final_string = "";
+        
+            /*
+            for(ob_idx = 0; ob_idx < stats_dict[key].length; ob_idx++){
+            
+                if(ob_idx > 0){
+                    final_string += ",";
+                }
+                final_string += String(stats_dict[key][ob_idx]);
+            }
+            */
+            final_string = stats_dict[key].toString();
+            td1.appendChild(document.createTextNode(final_string));
+        } else if(key == "failed"){
+            
+            td1.appendChild(document.createTextNode(Boolean(stats_dict[key]).toString()));
+        } else if(key == "time_with_teammates"){
+            var final_string = "";
+            
+            Object.keys(stats_dict[key]).forEach(function(key2) {
+            
+                if(final_string){
+                    final_string += ",";
+                }
+                
+                const divmod_results = divmod(stats_dict[key][key2], 60);
+                const divmod_results2 = divmod(divmod_results[1],1);
+                
+                final_string += String(key2) + ' -> ' + pad(String(divmod_results[0]),2) + ":" + pad(String(divmod_results2[0]),2);
+            });
+            
+            //final_string = JSON.stringify(stats_dict[key]);
+            td1.appendChild(document.createTextNode(final_string));
+            
+        } else if(key == "end_time"){
+        
+            var final_string = "";
+            
+            const divmod_results = divmod(stats_dict[key], 60);
+            const divmod_results2 = divmod(divmod_results[1],1);
+            
+            final_string = pad(String(divmod_results[0]),2) + ":" + pad(String(divmod_results2[0]),2);
+            td1.appendChild(document.createTextNode(final_string));
+        } else if(key == "distance_traveled"){
+            td1.appendChild(document.createTextNode(String(stats_dict[key].toFixed(1))));
+        } else{
+            
+            td1.appendChild(document.createTextNode(String(stats_dict[key])));
+        }
+    });
+    
+    popup_content.appendChild(tbl);
+    
+    
+    const bt = document.createElement('button');
+    bt.setAttribute("id", "reset_button");
+    bt.textContent = "Reset Game";
+    bt.onclick = resetGame;
+    popup_content.appendChild(bt);
+    
+
+});
+
+
 var map_config = {};
 
 socket.on("watcher", (robot_id_r, config_options) => {
@@ -253,7 +372,7 @@ socket.on("watcher", (robot_id_r, config_options) => {
     client_id = robot_id_r;
     map_config = config_options;
     
-
+    document.getElementById("agent_name").innerText = "Agent " + client_id;
     for(ob_idx = 0; ob_idx < map_config['all_robots'].length; ob_idx++){ //Remove self
         if(map_config['all_robots'][ob_idx][0] === client_id){
             map_config['all_robots'].splice(ob_idx,1);
@@ -283,6 +402,7 @@ socket.on("human_output", (location, item_info, neighbors_info, timer, disable) 
 
     if(disable){
         document.getElementById("command_text").disabled = true;
+        document.getElementById("send_command_button").disabled = true;
     }
 
     
@@ -318,12 +438,12 @@ socket.on("human_output", (location, item_info, neighbors_info, timer, disable) 
         //if(n_idx > -1){
         if(Object.keys(neighbors_info).includes(neighbors_list_store[ob_idx][0])){
  
-            /*
+            
             const x = Math.pow(neighbors_info[neighbors_list_store[ob_idx][0]][1][0] - location[0],2);
             const y = Math.pow(neighbors_info[neighbors_list_store[ob_idx][0]][1][1] - location[2],2);
             
             var distance = Math.sqrt(x+y);
-            */
+            
             
             const disabled = neighbors_info[neighbors_list_store[ob_idx][0]][3];
             
@@ -338,7 +458,7 @@ socket.on("human_output", (location, item_info, neighbors_info, timer, disable) 
                 const divmod_results = divmod(neighbors_list_store[ob_idx][4], 60);
                 const divmod_results2 = divmod(divmod_results[1],1);
                 
-                text_node.children[0].rows[1].cells[0].textContent = "Last seen in location (" + removeTags(String(neighbors_info[neighbors_list_store[ob_idx][0]][1][0].toFixed(1))) + "," + removeTags(String(neighbors_info[neighbors_list_store[ob_idx][0]][1][1].toFixed(1))) + ") at time " + removeTags(pad(String(divmod_results[0]),2) + ":" + pad(String(divmod_results2[0]),2));
+                text_node.children[0].rows[1].cells[0].textContent = "Last seen in location (" + removeTags(String(neighbors_info[neighbors_list_store[ob_idx][0]][1][0].toFixed(1))) + "," + removeTags(String(neighbors_info[neighbors_list_store[ob_idx][0]][1][1].toFixed(1))) + ") (Distance: "+ String(distance.toFixed(1)) +" m) at time " + removeTags(pad(String(divmod_results[0]),2) + ":" + pad(String(divmod_results2[0]),2));
             }
             
             
@@ -497,7 +617,7 @@ function update_objects_info(object_key, timer, danger_data, position, weight, c
 	for(ob_idx = 0; ob_idx < object_list_store.length; ob_idx++){
  		if(object_key == object_list_store[ob_idx][0]){ 
  			if(Object.keys(danger_data).length > 0){
- 			    object_list_store[ob_idx][2] = Object.assign({}, danger_data, object_list_store[ob_idx][2]); //TODO update estimation in ui
+ 			    object_list_store[ob_idx][2] = Object.assign({}, object_list_store[ob_idx][2], danger_data); //TODO update estimation in ui
  			    danger_changed = true;
  			    /*
  			    const tbl = document.createElement('table');
@@ -756,7 +876,11 @@ function findCheckedRadio(radio_elements,final_string,pattern){
 		if(radio_elements[i].checked){
 			command_string = radio_elements[i].value;
 			if(pattern == '[object]'){
-				command_string = "Object " + command_string + " " + document.getElementById('label_' + object_list_store[i][0]).children[0].rows[1].cells[0].textContent; 
+			    const child_table = document.getElementById("object_entries").children[i].children[1].children[0];
+			    command_string = "";
+			    for(j = 0; j < child_table.rows.length; j++) {
+				    command_string += child_table.rows[j].cells[0].textContent + " ";
+				}
 			} else {
 				if(i > 0){
 					 command_string = "Agent " + command_string + " " + document.getElementById(neighbors_list_store[i-1][0] + '_entry').children[0].rows[1].cells[0].textContent;
@@ -852,73 +976,79 @@ function setCommand (num){
 	
 }
 
+
 function sendCommand() {
 
 	final_string = document.getElementById('command_text').value;
 	document.getElementById('command_text').value = "";
-	newMessage(final_string, client_id);
+	
+	if(final_string){
+	
+	
+	    newMessage(final_string, client_id);
 
-	if(final_string.includes("I will help ")){
-		console.log(help_requests)
-		console.log(help_requests[final_string.substring(12)])
-		selector = document.getElementById('select_channel');
-		option_element = document.createElement("option");
-		option_element.setAttribute("value",help_requests[final_string.substring(12)]);
-		option_element.appendChild(document.createTextNode(help_requests[final_string.substring(12)]));
-		selector.appendChild(option_element);
-		
-		//socket.emit("set_goal", help_requests[final_string.substring(12)]);
-	}
-	
-	var agents = document.getElementsByName('neighbors');
-	var command_string;
-	for(i = 0; i < agents.length; i++) {
-		if(agents[i].checked){
-			command_string = agents[i].value;
-			break;
-		}
-	}
-	
-	neighbors_dict = {}
-	
-	if(command_string === "All"){
-		for(nl_idx in neighbors_list_store){
-		    if(neighbors_list_store[nl_idx][5]){ //If it's closeby
-		        var human_or_robot = 0;
-		        if(! neighbors_list_store[nl_idx][1]){
-		            human_or_robot = "human";
-		        } else{
-		            human_or_robot = "ai";
-		        }
-		        neighbors_dict[neighbors_list_store[nl_idx][0]] = human_or_robot;
-		    }
-		}
-	} else{
-	
-	    var robot_id = command_string.split(" ")[0];
-
+	    if(final_string.includes("I will help ")){
+		    console.log(help_requests)
+		    console.log(help_requests[final_string.substring(12)])
+		    selector = document.getElementById('select_channel');
+		    option_element = document.createElement("option");
+		    option_element.setAttribute("value",help_requests[final_string.substring(12)]);
+		    option_element.appendChild(document.createTextNode(help_requests[final_string.substring(12)]));
+		    selector.appendChild(option_element);
+		    
+		    //socket.emit("set_goal", help_requests[final_string.substring(12)]);
+	    }
 	    
-	    for(nl_idx in neighbors_list_store){
-	        if(neighbors_list_store[nl_idx][0] === robot_id && neighbors_list_store[nl_idx][5]){
-	            	    
-        	    if(! neighbors_list_store[nl_idx][1]){
-	                human_or_robot = "human";
-	            } else{
-	                human_or_robot = "ai";
+	    var agents = document.getElementsByName('neighbors');
+	    var command_string;
+	    for(i = 0; i < agents.length; i++) {
+		    if(agents[i].checked){
+			    command_string = agents[i].value;
+			    break;
+		    }
+	    }
+	    
+	    neighbors_dict = {}
+	    
+	    if(command_string === "All"){
+		    for(nl_idx in neighbors_list_store){
+		        if(neighbors_list_store[nl_idx][5]){ //If it's closeby
+		            var human_or_robot = 0;
+		            if(! neighbors_list_store[nl_idx][1]){
+		                human_or_robot = "human";
+		            } else{
+		                human_or_robot = "ai";
+		            }
+		            neighbors_dict[neighbors_list_store[nl_idx][0]] = human_or_robot;
+		        }
+		    }
+	    } else{
+	    
+	        var robot_id = command_string.split(" ")[0];
+
+	        
+	        for(nl_idx in neighbors_list_store){
+	            if(neighbors_list_store[nl_idx][0] === robot_id && neighbors_list_store[nl_idx][5]){
+	                	    
+            	    if(! neighbors_list_store[nl_idx][1]){
+	                    human_or_robot = "human";
+	                } else{
+	                    human_or_robot = "ai";
+	                }
+	                
+	                break;
 	            }
-	            
-	            break;
 	        }
+	        
+	        
+
+	        
+	        neighbors_dict[robot_id] = human_or_robot;
 	    }
 	    
 	    
-
-	    
-	    neighbors_dict[robot_id] = human_or_robot;
+	    socket.emit("message", final_string, simulator_timer, neighbors_dict);
 	}
-	
-	
-	socket.emit("message", final_string, simulator_timer, neighbors_dict);
 }
 
 
@@ -960,5 +1090,9 @@ function disableRobot(){
     socket.emit("disable");
 }
 
-
+function resetGame(){
+    document.getElementById("reset_button").disabled = true;
+    document.getElementById("reset_button").textContent = "Waiting for other players...";
+    socket.emit("reset");
+}
 

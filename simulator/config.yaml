@@ -1,4 +1,4 @@
-num_humans: 3 #number of human controlled robots
+num_humans: 4 #number of human controlled robots
 num_ais: 0 #number of ai controlled robots
 width: 360 #width of camera view
 height: 240 #height of camera view

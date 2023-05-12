@@ -34,11 +34,18 @@
 
 		  
 			<input type="text" id="command_text">
-			<button class="send" onclick="sendCommand()">Send</button>
+			<button class="send" id="send_command_button"  onclick="sendCommand()">Send</button>
 		  
 		</div>
-		<h1 class="collapsible">Commands</h1>
+		<h1 class="collapsible">Pattern Substitution</h1>
 		<div class="entry">
+			<div class='wrapper' >
+				<button name="command" style="width:100%;" onclick="setCommand(0)">[agent]</button><br>
+			</div>
+			<div class='wrapper' >
+				<button name="command" style="width:100%;" onclick="setCommand(1)">[object]</button><br>
+			</div>
+			<!--
 			<div class='wrapper' >
 				<button name="command" onclick="setCommand(0)">I will help [agent]</button><br>
 			</div>
@@ -60,7 +67,7 @@
 			<div class='wrapper' >
 				<button name="command" onclick="setCommand(6)">Ask for agent information to [agent]</button><br>
 			</div>
-			
+			-->
 			
 		</div>
 		
@@ -73,6 +80,9 @@
 	
 
 	<div class="leftbar">
+	<header>
+		<h1 class="chat_title" id="agent_name"></h1><br>
+	</header>
 	<h1 class="collapsible" id="collapsible_nearby_team_members_tag">Team Members (0)</h1>
 	<div class="entry" id="collapsible_nearby_team_members">
 	
@@ -122,6 +132,16 @@
 	        	<button onclick="submitCode()">Submit</button>
 	        	
 	        	</div>
+	
+	</div>
+	
+	<div class="popup" id="popup-stats">
+				<div class="overlay"></div>
+	        	<div class="content" id="popup-stats-content">
+
+	        	
+	        	</div>
+	        	
 	
 	</div>
 

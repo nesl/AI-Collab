@@ -32,7 +32,7 @@ if (!fs.existsSync(dir)){
 var today = new Date();
 var date = today.getFullYear()+'_'+(today.getMonth()+1)+'_'+today.getDate();
 var time = today.getHours() + "_" + today.getMinutes() + "_" + today.getSeconds();
-var dateTime = date+'_'+time;
+var dateTime; // = date+'_'+time;
 
 // Creating object of key and certificate
 // for SSL
@@ -58,12 +58,15 @@ const { exec } = require("child_process");
 var window_name = '';
 
 var char_replacement = [{'Up':'Up','Down':'Down','Left':'Left','Right':'Right'},{'Up':'W','Down':'S','Left':'A','Right':'D'}];
-var clients_ids = [], user_ids_list = [], ai_ids_list = [], ai_ids = [], all_ids = [], all_ids_list = [];
+var clients_ids = [], user_ids_list = [], ai_ids_list = [], ai_ids = [], all_ids = [], all_ids_list = [], stats = {};
 var init_xdotool = false;
 var video_idx_broadcaster = 0;
 var past_timer = 0, past_timer2 = 0;
 var message_sent = false;
 const disable_list = [];
+
+var reset_count = 0;
+
 
 const passcode = Math.random().toString(36).substring(2,7);
 
@@ -163,7 +166,7 @@ io.sockets.on("connection", socket => { //When a client connects
     }
   });
 
-  socket.on("simulator", (user_ids, ai_agents_ids, video_idx, config) => { //When simulator connects
+  socket.on("simulator", (user_ids, ai_agents_ids, video_idx, config, log_file_name) => { //When simulator connects
     simulator = socket.id;
     user_ids_list = user_ids;
     ai_ids_list = ai_agents_ids;
@@ -171,13 +174,33 @@ io.sockets.on("connection", socket => { //When a client connects
     clients_ids = Array.apply(null, Array(user_ids_list.length));
     ai_ids = Array.apply(null, Array(ai_ids.length));
     all_ids = Array.apply(null, Array(ai_ids.length+user_ids_list.length));
+    
+    dateTime = log_file_name;
+    
+    for (let id_idx = 0; id_idx < all_ids_list.length; id_idx++) {
+    	stats[all_ids_list[id_idx]] = {'average_message_length':0,'num_messages_sent':0, 'voted':false};
+    }
+    
     video_idx_broadcaster = video_idx;
     map_config = config;
 
   });
   
+  
   socket.on("reset", () => {
-    socket.to(simulator).emit("reset"); //, socket_to_simulator_id(socket.id));
+  	
+   if(all_ids.includes(socket.id)){
+		var sim_id = socket_to_simulator_id(socket.id);
+		if(! stats[sim_id]['voted']){
+			stats[sim_id]['voted'] = true;
+			reset_count += 1;
+		}
+	}
+  	
+  	if(socket.id == broadcaster || reset_count == all_ids.length){
+  		
+    	socket.to(simulator).emit("reset"); //, socket_to_simulator_id(socket.id));
+	} 
   })
 
   //WEBRTC connection setup
@@ -222,6 +245,12 @@ io.sockets.on("connection", socket => { //When a client connects
     if(command_line_options.log && (timer - past_timer > 1 || Object.keys(item_info).length > 0)){
         past_timer = timer;
         fs.appendFile(dir + dateTime + '.txt', String(timer.toFixed(2)) +',' + '3' + ',' + socket_to_simulator_id(all_ids[idx]) + ',' + JSON.stringify(item_info) + ',' + JSON.stringify(neighbors_info) + '\n', err => {});
+
+		/*
+        if(disable){
+        	fs.appendFile(dir + dateTime + '.txt', String(timer.toFixed(2)) + ',5,' + socket_to_simulator_id(all_ids[idx]) + '\n', err => {});
+        }
+        */
     }
     
     if((! disable_list.includes(all_ids_list[idx])) && disable){
@@ -241,6 +270,8 @@ io.sockets.on("connection", socket => { //When a client connects
   
   socket.on("agent_reset", (magnebot_id, timer, object_names_translate) => {
   
+  	reset_count = 0;
+  	
     if(disable_list.includes(magnebot_id)){
 
 		const disable_index = disable_list.indexOf(magnebot_id);
@@ -248,6 +279,12 @@ io.sockets.on("connection", socket => { //When a client connects
     }
 
     socket.to(simulator_id_to_socket(magnebot_id)).emit("agent_reset");
+    
+    
+
+	stats[magnebot_id] = {'average_message_length':0,'num_messages_sent':0, 'voted':false};
+    
+    
     if(command_line_options.log){
     	fs.appendFile(dir + dateTime + '.txt', String(timer.toFixed(2)) + ',4,' + magnebot_id + '\n', err => {});
     }
@@ -273,6 +310,12 @@ io.sockets.on("connection", socket => { //When a client connects
     if(! disable_list.includes(sim_id)){
 		message_sent = true;
 		
+		if(stats[sim_id]["average_message_length"] > 0){
+			stats[sim_id]["average_message_length"] = (stats[sim_id]["average_message_length"] + message.length)/2;
+		} else{
+			stats[sim_id]["average_message_length"] = message.length;
+		}
+		stats[sim_id]["num_messages_sent"] += 1;
 		if(all_ids.indexOf(socket.id) >= 0 && neighbors_list){
 		    let source_id = socket_to_simulator_id(socket.id)
 		    console.log(source_id)
@@ -359,6 +402,18 @@ io.sockets.on("connection", socket => { //When a client connects
   
   socket.on("disable", () => {
   	socket.to(simulator).emit("disable", socket_to_simulator_id(socket.id));
+  	
+
+  });
+  
+  socket.on("stats", (magnebot_id, stats_dict, timer) => {
+  	stats_dict["average_message_length"] = stats[magnebot_id]["average_message_length"].toFixed(1);
+  	stats_dict["num_messages_sent"] = stats[magnebot_id]["num_messages_sent"];
+  	socket.to(simulator_id_to_socket(magnebot_id)).emit("stats", stats_dict);
+  	
+  	if(command_line_options.log){
+    	fs.appendFile(dir + dateTime + '.txt', String(timer.toFixed(2)) + ',5,' + magnebot_id + ',' + JSON.stringify(stats_dict) + '\n', err => {});
+    }
   });
   
 });
