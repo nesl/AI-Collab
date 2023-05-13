@@ -196,7 +196,7 @@ class AICollabEnv(gym.Env):
 
         @self.sio.event
         def ai_output(object_type_coords_map, object_attributes_id, objects_held,
-                      sensing_results, ai_status, extra_status, strength, timer):
+                      sensing_results, ai_status, extra_status, strength, timer, disable):
 
             self.map = json_numpy.loads(object_type_coords_map)
 
@@ -507,7 +507,7 @@ class AICollabEnv(gym.Env):
         self.robot_key_to_index = {self.neighbors_info[i][0]:i for i in range(len(self.neighbors_info))}
         self.own_neighbors_info_entry = [self.robot_id, 1, 0, 0, -1]
 
-        self.sio.emit("reset")
+        self.sio.emit("reset_ai")
         print("Reseting agent")
         while not self.agent_reset:
             continue

@@ -50,6 +50,7 @@ Change to the **ai_controller** directory and install the gym environment by usi
 1. Run the server using `node server --address "address" --port "port"`. The simulator assumes the virtual devices to be used are the ones starting at /dev/video0, but if you already have some real webcams, you need to specify the parameter `--video-index <number>` and include the index number of your first simulated webcam corresponding to the ones created for the simulator.
 2. Run the simulator using `python simulation.py --address "https://address:port"`
 3. Using your web browser, go to **https://address:port/broadcast.html**. This will present a view with all the camera views being streamed.
+4. When you run the first command, there will be an output indicating a code that you need to use as password when connecting through the browser.
 
 ### User Control of a Robot 
 

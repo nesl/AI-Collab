@@ -1,2 +1,2 @@
 #!/bin/bash
-python ai_controller.py  --address "https://172.17.15.70:50000"  --use-occupancy --view-radius 50
+python ai_controller.py  --address "https://172.17.40.64:5683"  --use-occupancy --view-radius 50

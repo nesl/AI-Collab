@@ -201,7 +201,12 @@ io.sockets.on("connection", socket => { //When a client connects
   		
     	socket.to(simulator).emit("reset"); //, socket_to_simulator_id(socket.id));
 	} 
-  })
+  });
+  
+   socket.on("reset_ai", () => {
+
+   	socket.to(simulator).emit("reset"); //, socket_to_simulator_id(socket.id));
+  });
 
   //WEBRTC connection setup
   socket.on("offer", (id, message) => {

@@ -43,6 +43,8 @@ global_refresh_sensor = 0
 address = ''
 dateTime = datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
 
+extra_commands = []
+duration = []
 
 class Stats():
     
@@ -147,7 +149,7 @@ class Simulation(Controller):
         self.robot_names_translate = {}
         self.object_names_translate = {}
         self.object_dropping = []
-        self.dropping_timer = 0
+
         
         self.scenario = self.options.scenario
         
@@ -394,7 +396,7 @@ class Simulation(Controller):
 
         #Initializing communication with server
         
-        
+
 
         self.sio = None
 
@@ -410,7 +412,7 @@ class Simulation(Controller):
                 extra_config = {}
         
 
-                extra_config['edge_coordinate'] = float(self.static_occupancy_map.positions[0,0,0]) #self.static_occupancy_map.get_occupancy_position(0,0)
+                extra_config['edge_coordinate'] = [float(self.static_occupancy_map.positions[0,0,0]),float(self.static_occupancy_map.positions[0,0,1])] #self.static_occupancy_map.get_occupancy_position(0,0)
                 extra_config['cell_size'] = self.cfg['cell_size']
                 #print(self.static_occupancy_map.occupancy_map.shape)
                 extra_config['num_cells'] = self.static_occupancy_map.occupancy_map.shape
@@ -484,11 +486,15 @@ class Simulation(Controller):
                         ai_agent.reach_for(object_id, Arm(int(actions[2])))
                     elif actions[0] == 'grasp':
                         object_id = list(self.object_names_translate.keys())[list(self.object_names_translate.values()).index(actions[1])]
+                        extra_commands.append({"$type": "set_mass", "mass": 1, "id": object_id})
+                        duration.append(1)
                         ai_agent.grasp(object_id, Arm(int(actions[2])))
                         ai_agent.stats.grab_attempts += 1
                     elif actions[0] == 'drop':
                         object_id = list(self.object_names_translate.keys())[list(self.object_names_translate.values()).index(actions[1])]
-                        ai_agent.drop(object_id, Arm(int(actions[2])))
+                        arm = Arm(int(actions[2]))
+                        ai_agent.drop(object_id, arm)
+                        self.object_dropping.append([int(ai_agent.dynamic.held[arm][0]),time.time(),ai_agent,arm])
                     elif actions[0] == 'reset_arm':
                         ai_agent.reset_arm(Arm(int(actions[1])))
                     elif actions[0] == 'rotate_camera':
@@ -1158,7 +1164,6 @@ class Simulation(Controller):
                     
                     print("dropping", self.user_magnebots[idx].dynamic.held[arm], arm, self.required_strength[self.user_magnebots[idx].dynamic.held[arm][0]], self.danger_level[self.user_magnebots[idx].dynamic.held[arm][0]])
                     
-                    self.dropping_timer = time.time()
                     self.object_dropping.append([int(self.user_magnebots[idx].dynamic.held[arm][0]),time.time(),self.user_magnebots[idx],arm])
                    
 
@@ -1642,8 +1647,8 @@ class Simulation(Controller):
         commands = []
         key = ""
         messages = []
-        extra_commands = []
-        duration = []
+        
+        
         estimated_fps = 0
         past_time = time.time()
         self.frame_num = 0
