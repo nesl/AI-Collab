@@ -61,6 +61,8 @@ socket.on("candidate", (id, candidate) => {
 });
 
 
+
+
 function submitCode(){
 
  var code = document.getElementById("pass-text").value;
@@ -102,6 +104,16 @@ chat_input_text.addEventListener("keydown", (event) => {
 
 });
 
+
+let pass_input_text = document.getElementById("pass-text");
+
+pass_input_text.addEventListener("keydown", (event) => {
+
+	if( event.key.includes("Enter")){
+		submitCode();
+	}
+
+});
 
 function removeTags(str) {
     if ((str===null) || (str===''))
@@ -250,12 +262,22 @@ socket.on("agent_reset", () => {
     reset();
 });
 
+socket.on("sim_crash", () => {
+    document.getElementById("popup-warning").classList.add("active");
+    reset();
+});
 
-socket.on("stats", (stats_dict) => {
-    document.getElementById("popup-stats").classList.toggle("active");
+
+socket.on("stats", (stats_dict, final) => {
+
+
+    document.getElementById("popup-stats").classList.add("active");
+
     
     
     const popup_content = document.getElementById("popup-stats-content");
+    
+    popup_content.innerHTML = "";
     
     const title = document.createElement('h1');
     
@@ -269,6 +291,13 @@ socket.on("stats", (stats_dict) => {
     
     popup_content.appendChild(title);
     
+        
+    const subtitle1 = document.createElement('h1');
+    
+    subtitle1.textContent = "Individual Statistics";
+    
+    popup_content.appendChild(subtitle1);
+    
     const tbl = document.createElement('table');
     
     const key_to_text = {"distance_traveled": "Distance traveled (m):",
@@ -277,9 +306,9 @@ socket.on("stats", (stats_dict) => {
         "forced_dropped_objects": "Number of times forced to drop object:",
         "objects_sensed":"Number of objects sensed:",
         "objects_in_goal":"Number of objects brought to goal area:",
-        "dangerous_objects_in_goal":"Truly dangerous objects brought to goal area:",
+        "dangerous_objects_in_goal":"Truly dangerous objects brought to goal area (list of object IDs):",
         "num_messages_sent":"Number of messages sent:",
-        "average_message_length":"Average length of messages sent:",
+        "average_message_length":"Average length of messages sent (characters):",
         "failed": "Picked Up/Dropped Heavy Dangerous Object:",
         "time_with_teammates":"Time passed next to teammates:",
         "end_time":"End time:",
@@ -290,14 +319,20 @@ socket.on("stats", (stats_dict) => {
         const tr1 = tbl.insertRow();
         var td1 = tr1.insertCell();
         
-        td1.appendChild(document.createTextNode(key_to_text[key]));
         
-        var td1 = tr1.insertCell();
         
         if(key == "objects_in_goal"){
+        
+            td1.appendChild(document.createTextNode(key_to_text[key]));
+            var td1 = tr1.insertCell();
             
             td1.appendChild(document.createTextNode(String(stats_dict[key].length)));
         } else if(key == "dangerous_objects_in_goal") {
+        
+            td1.appendChild(document.createTextNode(key_to_text[key]));
+            var td1 = tr1.insertCell();
+        
+        
             var final_string = "";
         
             /*
@@ -312,9 +347,14 @@ socket.on("stats", (stats_dict) => {
             final_string = stats_dict[key].toString();
             td1.appendChild(document.createTextNode(final_string));
         } else if(key == "failed"){
+            td1.appendChild(document.createTextNode(key_to_text[key]));
+            var td1 = tr1.insertCell();
             
             td1.appendChild(document.createTextNode(Boolean(stats_dict[key]).toString()));
         } else if(key == "time_with_teammates"){
+            td1.appendChild(document.createTextNode(key_to_text[key]));
+            var td1 = tr1.insertCell();
+        
             var final_string = "";
             
             Object.keys(stats_dict[key]).forEach(function(key2) {
@@ -334,6 +374,9 @@ socket.on("stats", (stats_dict) => {
             
         } else if(key == "end_time"){
         
+            td1.appendChild(document.createTextNode(key_to_text[key]));
+            var td1 = tr1.insertCell();
+        
             var final_string = "";
             
             const divmod_results = divmod(stats_dict[key], 60);
@@ -342,21 +385,108 @@ socket.on("stats", (stats_dict) => {
             final_string = pad(String(divmod_results[0]),2) + ":" + pad(String(divmod_results2[0]),2);
             td1.appendChild(document.createTextNode(final_string));
         } else if(key == "distance_traveled"){
+            td1.appendChild(document.createTextNode(key_to_text[key]));
+            var td1 = tr1.insertCell();
             td1.appendChild(document.createTextNode(String(stats_dict[key].toFixed(1))));
-        } else{
-            
+        } else if(Object.keys(key_to_text).includes(key)){
+            td1.appendChild(document.createTextNode(key_to_text[key]));
+            var td1 = tr1.insertCell();
             td1.appendChild(document.createTextNode(String(stats_dict[key])));
         }
     });
     
     popup_content.appendChild(tbl);
     
+
+    if(final){
     
-    const bt = document.createElement('button');
-    bt.setAttribute("id", "reset_button");
-    bt.textContent = "Reset Game";
-    bt.onclick = resetGame;
-    popup_content.appendChild(bt);
+        const subtitle2 = document.createElement('h1');
+        
+        
+        subtitle2.textContent = "Team Statistics";
+        
+        popup_content.appendChild(subtitle2);
+        
+        const tbl_team = document.createElement('table');
+        
+        const key_to_text_team = {"team_objects_in_goal":"Number of objects brought to goal area: ",
+        "team_end_time": "End Time: ",
+        "team_failure_reasons": "Final Team Status: "
+        };
+        
+        Object.keys(stats_dict).forEach(function(key) {
+            
+            const tr1 = tbl_team.insertRow();
+            var td1 = tr1.insertCell();
+            
+            
+            
+            if(key == "team_objects_in_goal"){
+            
+                td1.appendChild(document.createTextNode(key_to_text_team[key]));
+                var td1 = tr1.insertCell();
+                
+                td1.appendChild(document.createTextNode(String(stats_dict[key])));
+            
+            } else if(key == "team_failure_reasons"){
+                td1.appendChild(document.createTextNode(key_to_text_team[key]));
+                var td1 = tr1.insertCell();
+            
+                var final_string = "";
+                
+                Object.keys(stats_dict[key]).forEach(function(key2) {
+                
+                    if(final_string){
+                        final_string += ",";
+                    }
+                    
+                    var motive = "";
+                    
+                    if(stats_dict[key][key2] == 0){
+                        motive = "Control Ended";
+                    } else{
+                        motive = "Dropped/Picked Up Dangerous Heavy Object";
+                    }
+                    
+                    final_string += String(key2) + ' -> ' + motive;
+                });
+                
+                //final_string = JSON.stringify(stats_dict[key]);
+                td1.appendChild(document.createTextNode(final_string));
+                
+            } else if(key == "team_end_time"){
+            
+                td1.appendChild(document.createTextNode(key_to_text_team[key]));
+                var td1 = tr1.insertCell();
+            
+                var final_string = "";
+                
+                const divmod_results = divmod(stats_dict[key], 60);
+                const divmod_results2 = divmod(divmod_results[1],1);
+                
+                final_string = pad(String(divmod_results[0]),2) + ":" + pad(String(divmod_results2[0]),2);
+                td1.appendChild(document.createTextNode(final_string));
+            } else if (key == "total_dangerous_objects"){
+                var final_string = "";
+            } else if(Object.keys(key_to_text_team).includes(key)){
+                td1.appendChild(document.createTextNode(key_to_text_team[key]));
+                var td1 = tr1.insertCell();
+                td1.appendChild(document.createTextNode(String(stats_dict[key])));
+            }
+        });
+        
+        
+        popup_content.appendChild(tbl_team);
+        const bt = document.createElement('button');
+        bt.setAttribute("id", "reset_button");
+        bt.textContent = "Reset Game";
+        bt.onclick = resetGame;
+        popup_content.appendChild(bt);
+    } else{
+        const p_waiting = document.createElement('p');
+        p_waiting.textContent = "Waiting for other players...";
+        popup_content.appendChild(p_waiting);
+    }
     
 
 });
@@ -367,7 +497,7 @@ var map_config = {};
 socket.on("watcher", (robot_id_r, config_options) => {
 
     document.getElementById("popup-pass").classList.toggle("active");
-    togglePopup();
+    togglePopup("popup-1");
 
     client_id = robot_id_r;
     map_config = config_options;
@@ -548,8 +678,8 @@ play_area.addEventListener('focusout', function() {
 
 
 
-function togglePopup(){
-	document.getElementById("popup-1").classList.toggle("active");
+function togglePopup(element){
+	document.getElementById(element).classList.toggle("active");
 }
 
 

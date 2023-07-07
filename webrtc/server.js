@@ -133,7 +133,7 @@ io.sockets.on("connection", socket => { //When a client connects
     }
     */
   });
-  socket.on("watcher_ai", (client_number, use_occupancy, server_address, view_radius, centered) => { //When an ai client connects
+  socket.on("watcher_ai", (client_number, use_occupancy, server_address, view_radius, centered, skip_frames) => { //When an ai client connects
     console.log("watcher_ai")
     
     if(client_number != 0){
@@ -142,7 +142,7 @@ io.sockets.on("connection", socket => { //When a client connects
             client_number_adapted = client_number + user_ids_list.length;
             socket.to(broadcaster).emit("watcher_ai", socket.id, client_number_adapted, server_address, ai_ids_list[client_number-1]);
         } else {
-            socket.to(simulator).emit("watcher_ai", ai_ids_list[client_number-1], view_radius, centered)
+            socket.to(simulator).emit("watcher_ai", ai_ids_list[client_number-1], view_radius, centered, skip_frames)
         }
         ai_ids[client_number-1] = socket.id;
         all_ids[client_number-1+user_ids_list.length] = socket.id;
@@ -411,14 +411,27 @@ io.sockets.on("connection", socket => { //When a client connects
 
   });
   
-  socket.on("stats", (magnebot_id, stats_dict, timer) => {
+  socket.on("stats", (magnebot_id, stats_dict, timer, final) => {
   	stats_dict["average_message_length"] = stats[magnebot_id]["average_message_length"].toFixed(1);
   	stats_dict["num_messages_sent"] = stats[magnebot_id]["num_messages_sent"];
-  	socket.to(simulator_id_to_socket(magnebot_id)).emit("stats", stats_dict);
+  	socket.to(simulator_id_to_socket(magnebot_id)).emit("stats", stats_dict, final);
   	
   	if(command_line_options.log){
     	fs.appendFile(dir + dateTime + '.txt', String(timer.toFixed(2)) + ',5,' + magnebot_id + ',' + JSON.stringify(stats_dict) + '\n', err => {});
     }
+  });
+  
+  socket.on("sim_crash", (timer) => {
+  	//socket.to(simulator).emit("disable", socket_to_simulator_id(socket.id));
+  	for (let id_idx = 0; id_idx < all_ids.length; id_idx++) {
+  		stats[all_ids_list[id_idx]] = {'average_message_length':0,'num_messages_sent':0, 'voted':false};
+  		socket.to(all_ids[id_idx]).emit("sim_crash");
+	}
+	
+	if(command_line_options.log){
+    	fs.appendFile(dir + dateTime + '.txt', String(timer.toFixed(2)) + ',6\n', err => {});
+    }
+
   });
   
 });

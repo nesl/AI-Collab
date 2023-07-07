@@ -15,7 +15,7 @@
 			<h1 style='float:left' class="chat_title">Chat</h1>
 
 
-			<button style='float:right' class='help_question' onclick="togglePopup()">?</h1>
+			<button style='float:right' class='help_question' onclick="togglePopup('popup-1')">?</h1>
 			
 	
 		</header>
@@ -76,6 +76,7 @@
 	        
 		<button id="leave_button" class="end" onclick="disableRobot()">End control</button>
 	
+		<p style="color:white;"> <b>Controls</b><br><b>Arrow Keys</b> to advance<br><b>A</b> to grab/drop object with left arm<br><b>D</b> to grab/drop object with right arm<br><b>S</b> to rotate camera downwards<br><b>W</b> to rotate camera upwards<br><b>Q</b> to take sensing action<br><b>E</b> to focus in object (you need this to then grab an object)</p>
 	</div>
 	
 
@@ -96,17 +97,17 @@
 	<div class="popup" id="popup-1">
 	        	<div class="overlay"></div>
 	        	<div class="content">
-	        		<div class="close-btn" onclick="togglePopup()">&times;</div>
+	        		<div class="close-btn" onclick="togglePopup('popup-1')">&times;</div>
 	        		<h1> Instructions </h1> <br>
 	        		Sense objects and bring the dangerous objects into the middle of the room. When you sense an object you will see whether the object is dangerous or benign according to the color of the object ID, and in your sidebar you will be able to consult the object, as well as the accuracy of the prediction. Objects have a weight associated with them, and you will only be able to carry those that match your strength level. Strength level is modified by the amount of robots that are close to you and you may only be able to carry a heavy object when you have a given quantity of robots near you. The game will end if you try to carry a dangerous object without the required strength. You need to compare estimates of danger level in order to get the correct dangerous objects. You can talk with your fellow robots through the sidebar chat. <br>
 	        		<h1> Controls </h1> <br>
 				    Arrow Keys to advance <br>
-				    Z to grab/drop object with left arm <br>
-				    X to grab/drop object with right arm <br>
-				    C to rotate camera downwards <br>
-				    V to rotate camera upwards <br>
-				    B to take sensing action <br>
-				    N to focus in object (you need this to then grab an object)<br>
+				    A to grab/drop object with left arm <br>
+				    D to grab/drop object with right arm <br>
+				    S to rotate camera downwards <br>
+				    W to rotate camera upwards <br>
+				    Q to take sensing action <br>
+				    E to focus in object (you need this to then grab an object)<br>
 				    <p id=distance_text>Maximum distance for carrying objects: </p>
 				    <p id=comms_text>Maximum distance for communication (-1 is out of range): </p>
 				    
@@ -144,11 +145,24 @@
 	        	
 	
 	</div>
+	
+	<div class="popup" id="popup-warning">
+				<div class="overlay"></div>
+	        	<div class="content">
+	        	<div class="close-btn" onclick="togglePopup('popup-warning')">&times;</div>
+				<h1>Simulator Crashed! Wait for 1 minute until simulator is restarted!</h1>
+	        	
+	        	</div>
+	        	
+	
+	</div>
 
 	<div id="play_area" style="outline-width: 0;" tabindex="0">
 	<p style="text-align: center; font-size: 2.5em;" id="active_text"></p>
     <video playsinline autoplay muted></video>
     <video playsinline autoplay muted></video>
+    
+
 	</div>
 
     

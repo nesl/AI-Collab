@@ -205,6 +205,11 @@ async function gotDevices(deviceInfos) {
     */
 
     for (let i = first_video_idx; i < deviceInfos.length; i++) {
+    
+    		if(!(deviceInfos[i]["kind"] === "videoinput")){
+    			continue;
+    		}
+    
 		let videoElement = document.createElement('video')
 		videoElement.setAttribute("playsinline",true);
 		videoElement.setAttribute("autoplay",true);
