@@ -47,6 +47,75 @@ dateTime = datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
 extra_commands = []
 duration = []
 
+# Given three collinear points p, q, r, the function checks if 
+# point q lies on line segment 'pr' 
+def onSegment(p, q, r):
+    if ( (q[0] <= max(p[0], r[0])) and (q[0] >= min(p[0], r[0])) and 
+           (q[1] <= max(p[1], r[1])) and (q[1] >= min(p[1], r[1]))):
+        return True
+    return False
+  
+def orientation(p, q, r):
+    # to find the orientation of an ordered triplet (p,q,r)
+    # function returns the following values:
+    # 0 : Collinear points
+    # 1 : Clockwise points
+    # 2 : Counterclockwise
+      
+    # See https://www.geeksforgeeks.org/orientation-3-ordered-points/amp/ 
+    # for details of below formula. 
+      
+    val = (float(q[1] - p[1]) * (r[0] - q[0])) - (float(q[0] - p[0]) * (r[1] - q[1]))
+    if (val > 0):
+          
+        # Clockwise orientation
+        return 1
+    elif (val < 0):
+          
+        # Counterclockwise orientation
+        return 2
+    else:
+          
+        # Collinear orientation
+        return 0
+  
+# The main function that returns true if 
+# the line segment 'p1q1' and 'p2q2' intersect.
+def doIntersect(p1,q1,p2,q2):
+      
+    # Find the 4 orientations required for 
+    # the general and special cases
+    o1 = orientation(p1, q1, p2)
+    o2 = orientation(p1, q1, q2)
+    o3 = orientation(p2, q2, p1)
+    o4 = orientation(p2, q2, q1)
+  
+    # General case
+    if ((o1 != o2) and (o3 != o4)):
+        return True
+  
+    # Special Cases
+  
+    # p1 , q1 and p2 are collinear and p2 lies on segment p1q1
+    if ((o1 == 0) and onSegment(p1, p2, q1)):
+        return True
+  
+    # p1 , q1 and q2 are collinear and q2 lies on segment p1q1
+    if ((o2 == 0) and onSegment(p1, q2, q1)):
+        return True
+  
+    # p2 , q2 and p1 are collinear and p1 lies on segment p2q2
+    if ((o3 == 0) and onSegment(p2, p1, q2)):
+        return True
+  
+    # p2 , q2 and q1 are collinear and q1 lies on segment p2q2
+    if ((o4 == 0) and onSegment(p2, q1, q2)):
+        return True
+  
+    # If none of the cases
+    return False
+    
+
 class Stats():
     
     def __init__(self):
@@ -158,6 +227,7 @@ class Simulation(Controller):
         self.robot_names_translate = {}
         self.object_names_translate = {}
         self.object_dropping = []
+        self.walls = []
 
         
         self.scenario = self.options.scenario
@@ -227,163 +297,11 @@ class Simulation(Controller):
         self.user_spawn_positions = [{"x": 0, "y": 0, "z": 1.1},{"x": 0, "y": 0, "z": 2.1}, {"x": 0, "y": 0, "z": 3.1}, {"x": 1, "y": 0, "z": 0.1}, {"x": 0, "y": 0, "z": 0.1},{"x": 0, "y": 0, "z": -1.1}, {"x": 0, "y": 0, "z": -2.1},{"x": 0, "y": 0, "z": -3.1},{"x": 1, "y": 0, "z": -3.1},{"x": 1, "y": 0, "z": -2.1}]
         self.uis = []
 
-        #Create ai magnebots
-        for ai_idx in range(num_ais):  
-            robot_id = self.get_unique_id()                                 
-            self.ai_magnebots.append(Enhanced_Magnebot(robot_id=robot_id, position=self.ai_spawn_positions[ai_idx],image_frequency=ImageFrequency.always, controlled_by='ai'))
-            self.robot_names_translate[str(robot_id)] = chr(ord('A') + ai_idx)
-        
-        #Create user magnebots
-        for us_idx in range(num_users):
-            robot_id = self.get_unique_id()
-            self.user_magnebots.append(Enhanced_Magnebot(robot_id=robot_id, position=self.user_spawn_positions[us_idx], image_frequency=ImageFrequency.always, pass_masks=['_img'],key_set=self.proposed_key_sets[us_idx], controlled_by='human'))
-            self.robot_names_translate[str(robot_id)] = chr(ord('A') + us_idx + num_ais)
-
-
-        reticule_size = 9
-        # Create a reticule.
-        arr = np.zeros(shape=(reticule_size, reticule_size), dtype=np.uint8)
-        x = np.arange(0, arr.shape[0])
-        y = np.arange(0, arr.shape[1])
-        # Define a circle on the array.
-        r = reticule_size // 2
-        mask = ((x[np.newaxis, :] - r) ** 2 + (y[:, np.newaxis] - r) ** 2 < r ** 2)
-        # Set the color of the reticule.
-        arr[mask] = 200
-        arr = np.stack((arr,) * 4, axis=-1)
-        # Add pointer in the middle
-
-        Image.fromarray(arr).save('pointer.png', "PNG")
-
-
-        image = "white.png"
-        # Set the dimensions of the progress bar.
-        self.progress_bar_position = {"x": 16, "y": -16}
-        self.progress_bar_size = {"x": 16, "y": 16}
-        self.progress_bar_scale = {"x": 10, "y": 2}
-        self.progress_bar_anchor = {"x": 0, "y": 1}
-        self.progress_bar_pivot = {"x": 0, "y": 1}
-
-            
-        #Initializing user interface objects
-        for um_idx,um in enumerate(self.user_magnebots):
-            um.collision_detection.objects = True
-            um.collision_detection.walls = True
-            ui = UI(canvas_id=um_idx)
-            ui.attach_canvas_to_avatar(avatar_id=str(um.robot_id))
-            
-            #Create a global key_set
-            if um_idx == 0:
-                self.keys_set = [[um.key_set[0]],[um.key_set[1]],[um.key_set[2]],[um.key_set[3]],[um.key_set[4]],[um.key_set[5]],[um.key_set[6]],[um.key_set[7]],[um.key_set[8]], [um.key_set[9]], [um.key_set[10]], [um.key_set[11]]]
-            else:
-                for kidx in range(len(self.keys_set)):
-                    self.keys_set[kidx].append(um.key_set[kidx])
-
-            # Add the background sprite.
-            ui.add_image(image=image,
-                                 position=self.progress_bar_position,
-                                 size=self.progress_bar_size,
-                                 anchor=self.progress_bar_anchor,
-                                 pivot=self.progress_bar_pivot,
-                                 color={"r": 0, "g": 0, "b": 0, "a": 1},
-                                 scale_factor=self.progress_bar_scale,
-                                 rgba=False)
-            
-            bar_id = ui.add_image(image=image,
-                                  position=self.progress_bar_position,
-                                  size=self.progress_bar_size,
-                                  anchor=self.progress_bar_anchor,
-                                  pivot=self.progress_bar_pivot,
-                                  color={"r": 0, "g": 0, "b": 1, "a": 1},
-                                  scale_factor={"x": 0, "y": self.progress_bar_scale["y"]},
-                                  rgba=False)
-            # Add some text.
-            text_id = ui.add_text(text="My Strength: 1",
-                                  position=self.progress_bar_position,
-                                  anchor=self.progress_bar_anchor,
-                                  pivot=self.progress_bar_pivot,
-                                  font_size=18)
-
-            
-            status_text_id = ui.add_text(text="Action Status: ",
-            				position={"x": 80, "y": 10},
-                                  	anchor={"x": 0, "y": 0},
-                                  	font_size=18,
-                                  	color={"r": 1, "g": 0, "b": 0, "a": 1})
-                                  	
-            goal_status_text = ui.add_text(text="Targets in goal: ",
-                                    position={"x": -70, "y": 10},
-          	                        anchor={"x": 1, "y": 0},
-                                    font_size=18,
-                                    color={"r": 1, "g": 0, "b": 0, "a": 1})
-                                    
-            ui.add_text(text="My Location",
-                                    position={"x": -50, "y": -100},
-          	                        anchor={"x": 1, "y": 1},
-                                    font_size=18,
-                                    color={"r": 1, "g": 0, "b": 0, "a": 1})
-                                    
-            position_text = ui.add_text(text="",
-                                    position={"x": -50, "y": -120},
-          	                        anchor={"x": 1, "y": 1},
-                                    font_size=18,
-                                    color={"r": 1, "g": 0, "b": 0, "a": 1})
-                      
-            ui.add_text(text="Carried object",
-                                    position={"x": -60, "y": -150},
-          	                        anchor={"x": 1, "y": 1},
-                                    font_size=18,
-                                    color={"r": 1, "g": 0, "b": 0, "a": 1})   
-                                               
-            arm_text = ui.add_text(text="L: R: ",
-                                    position={"x": -50, "y": -160},
-          	                        anchor={"x": 1, "y": 1},
-                                    font_size=18,
-                                    color={"r": 1, "g": 0, "b": 0, "a": 1})
-            """                        
-            in_goal_text = ui.add_text(text="In goal area",
-                                    position={"x": -70, "y": -80},
-          	                        anchor={"x": 1, "y": 1},
-                                    font_size=18,
-                                    color={"r": 1, "g": 0, "b": 0, "a": 1})
-            """
-            
-            ui.add_image(image='pointer.png',
-                        size={"x": reticule_size, "y": reticule_size},
-                        rgba=True,
-                        position={"x": 0, "y": 0})
-
-            # Add some text.
-            if self.timer_limit:
-                #mins, remainder = divmod(self.timer_limit-self.timer, 60)
-                mins, remainder = divmod(self.timer, 60)
-                secs,millisecs = divmod(remainder,1)
-            else:
-                mins = 0
-                secs = 0
-
-            #Add timer
-            timer_text_id = ui.add_text(text='{:02d}:{:02d}'.format(int(mins), int(secs)),
-                                  position= {"x": -60, "y": -30},
-                                  anchor = {"x": 1, "y": 1},
-                                  font_size=35,
-                                  color={"r": 1, "g": 0, "b": 0, "a": 1})
-            
-            self.uis.append(ui)
-            um.ui = ui
-            um.ui_elements = ((bar_id,text_id,timer_text_id, status_text_id, goal_status_text, position_text, arm_text))
-
-
-        #Needed to get objects positions
+                
+        self.create_agents()
+        print("Created agents")
         self.object_manager: ObjectManager = ObjectManager()
-
-        self.add_ons.extend([*self.ai_magnebots,  *self.user_magnebots, self.object_manager, *self.uis])
-
-        self.user_magnebots_ids = [str(um.robot_id) for um in self.user_magnebots]
-        self.ai_magnebots_ids = [str(um.robot_id) for um in self.ai_magnebots]
-        
-        
-        
+        self.add_ons.append(self.object_manager)
         
         commands = self.populate_world()
         
@@ -407,6 +325,7 @@ class Simulation(Controller):
 
         #Initializing communication with server
         
+        self.just_started = False
 
         if not restart:
 
@@ -626,6 +545,165 @@ class Simulation(Controller):
                 self.sio.connect(address)
 
 
+    def create_agents(self):
+    
+        self.robot_names_translate = {}
+    
+        #Create ai magnebots
+        for ai_idx in range(num_ais):  
+            robot_id = self.get_unique_id()                                 
+            self.ai_magnebots.append(Enhanced_Magnebot(robot_id=robot_id, position=self.ai_spawn_positions[ai_idx],image_frequency=ImageFrequency.always, controlled_by='ai'))
+            self.robot_names_translate[str(robot_id)] = chr(ord('A') + ai_idx)
+        
+        #Create user magnebots
+        for us_idx in range(num_users):
+            robot_id = self.get_unique_id()
+            self.user_magnebots.append(Enhanced_Magnebot(robot_id=robot_id, position=self.user_spawn_positions[us_idx], image_frequency=ImageFrequency.always, pass_masks=['_img'],key_set=self.proposed_key_sets[us_idx], controlled_by='human'))
+            self.robot_names_translate[str(robot_id)] = chr(ord('A') + us_idx + num_ais)
+
+
+        reticule_size = 9
+        # Create a reticule.
+        arr = np.zeros(shape=(reticule_size, reticule_size), dtype=np.uint8)
+        x = np.arange(0, arr.shape[0])
+        y = np.arange(0, arr.shape[1])
+        # Define a circle on the array.
+        r = reticule_size // 2
+        mask = ((x[np.newaxis, :] - r) ** 2 + (y[:, np.newaxis] - r) ** 2 < r ** 2)
+        # Set the color of the reticule.
+        arr[mask] = 200
+        arr = np.stack((arr,) * 4, axis=-1)
+        # Add pointer in the middle
+
+        Image.fromarray(arr).save('pointer.png', "PNG")
+
+
+        image = "white.png"
+        # Set the dimensions of the progress bar.
+        self.progress_bar_position = {"x": 16, "y": -16}
+        self.progress_bar_size = {"x": 16, "y": 16}
+        self.progress_bar_scale = {"x": 10, "y": 2}
+        self.progress_bar_anchor = {"x": 0, "y": 1}
+        self.progress_bar_pivot = {"x": 0, "y": 1}
+
+            
+        #Initializing user interface objects
+        for um_idx,um in enumerate(self.user_magnebots):
+            um.collision_detection.objects = True
+            um.collision_detection.walls = True
+            ui = UI(canvas_id=um_idx)
+            ui.attach_canvas_to_avatar(avatar_id=str(um.robot_id))
+            
+            #Create a global key_set
+            if um_idx == 0:
+                self.keys_set = [[um.key_set[0]],[um.key_set[1]],[um.key_set[2]],[um.key_set[3]],[um.key_set[4]],[um.key_set[5]],[um.key_set[6]],[um.key_set[7]],[um.key_set[8]], [um.key_set[9]], [um.key_set[10]], [um.key_set[11]]]
+            else:
+                for kidx in range(len(self.keys_set)):
+                    self.keys_set[kidx].append(um.key_set[kidx])
+
+            # Add the background sprite.
+            ui.add_image(image=image,
+                                 position=self.progress_bar_position,
+                                 size=self.progress_bar_size,
+                                 anchor=self.progress_bar_anchor,
+                                 pivot=self.progress_bar_pivot,
+                                 color={"r": 0, "g": 0, "b": 0, "a": 1},
+                                 scale_factor=self.progress_bar_scale,
+                                 rgba=False)
+            
+            bar_id = ui.add_image(image=image,
+                                  position=self.progress_bar_position,
+                                  size=self.progress_bar_size,
+                                  anchor=self.progress_bar_anchor,
+                                  pivot=self.progress_bar_pivot,
+                                  color={"r": 0, "g": 0, "b": 1, "a": 1},
+                                  scale_factor={"x": 0, "y": self.progress_bar_scale["y"]},
+                                  rgba=False)
+            # Add some text.
+            text_id = ui.add_text(text="My Strength: 1",
+                                  position=self.progress_bar_position,
+                                  anchor=self.progress_bar_anchor,
+                                  pivot=self.progress_bar_pivot,
+                                  font_size=18)
+
+            
+            status_text_id = ui.add_text(text="Action Status: ",
+            				position={"x": 80, "y": 10},
+                                  	anchor={"x": 0, "y": 0},
+                                  	font_size=18,
+                                  	color={"r": 1, "g": 0, "b": 0, "a": 1})
+                                  	
+            goal_status_text = ui.add_text(text="Targets in goal: ",
+                                    position={"x": -70, "y": 10},
+          	                        anchor={"x": 1, "y": 0},
+                                    font_size=18,
+                                    color={"r": 1, "g": 0, "b": 0, "a": 1})
+                                    
+            ui.add_text(text="My Location",
+                                    position={"x": -50, "y": -100},
+          	                        anchor={"x": 1, "y": 1},
+                                    font_size=18,
+                                    color={"r": 1, "g": 0, "b": 0, "a": 1})
+                                    
+            position_text = ui.add_text(text="",
+                                    position={"x": -50, "y": -120},
+          	                        anchor={"x": 1, "y": 1},
+                                    font_size=18,
+                                    color={"r": 1, "g": 0, "b": 0, "a": 1})
+                      
+            ui.add_text(text="Carried object",
+                                    position={"x": -60, "y": -150},
+          	                        anchor={"x": 1, "y": 1},
+                                    font_size=18,
+                                    color={"r": 1, "g": 0, "b": 0, "a": 1})   
+                                               
+            arm_text = ui.add_text(text="L: R: ",
+                                    position={"x": -50, "y": -160},
+          	                        anchor={"x": 1, "y": 1},
+                                    font_size=18,
+                                    color={"r": 1, "g": 0, "b": 0, "a": 1})
+            """                        
+            in_goal_text = ui.add_text(text="In goal area",
+                                    position={"x": -70, "y": -80},
+          	                        anchor={"x": 1, "y": 1},
+                                    font_size=18,
+                                    color={"r": 1, "g": 0, "b": 0, "a": 1})
+            """
+            
+            ui.add_image(image='pointer.png',
+                        size={"x": reticule_size, "y": reticule_size},
+                        rgba=True,
+                        position={"x": 0, "y": 0})
+
+            # Add some text.
+            if self.timer_limit:
+                #mins, remainder = divmod(self.timer_limit-self.timer, 60)
+                mins, remainder = divmod(self.timer, 60)
+                secs,millisecs = divmod(remainder,1)
+            else:
+                mins = 0
+                secs = 0
+
+            #Add timer
+            timer_text_id = ui.add_text(text='{:02d}:{:02d}'.format(int(mins), int(secs)),
+                                  position= {"x": -60, "y": -30},
+                                  anchor = {"x": 1, "y": 1},
+                                  font_size=35,
+                                  color={"r": 1, "g": 0, "b": 0, "a": 1})
+            
+            self.uis.append(ui)
+            um.ui = ui
+            um.ui_elements = ((bar_id,text_id,timer_text_id, status_text_id, goal_status_text, position_text, arm_text))
+
+
+
+
+        self.add_ons.extend([*self.ai_magnebots,  *self.user_magnebots, *self.uis])
+
+        self.user_magnebots_ids = [str(um.robot_id) for um in self.user_magnebots]
+        self.ai_magnebots_ids = [str(um.robot_id) for um in self.ai_magnebots]
+        
+
     #Create the scene environment
     def create_scene(self):
     
@@ -662,20 +740,22 @@ class Simulation(Controller):
             self.scenario_size = 20
             self.wall_length = 6
             cell_size = self.cfg['cell_size']
+            wall_width = 0.5
             
             
-            wall1 = [{"x": self.wall_length, "y": idx+1} for idx in range(self.wall_length-2)]
-            wall1.extend([{"x": idx+1, "y": self.wall_length} for idx in range(self.wall_length-2)])
+            wall1_1 = [{"x": self.wall_length, "y": idx+1} for idx in range(self.wall_length-2)]
+            wall1_2 = [{"x": idx+1, "y": self.wall_length} for idx in range(self.wall_length-2)]
             
-            wall2 = [{"x": self.scenario_size-(self.wall_length), "y": idx+1} for idx in range(self.wall_length-2)]
-            wall2.extend([{"x": self.scenario_size-(idx+1), "y": self.wall_length} for idx in range(self.wall_length-2)])
+            wall2_1 = [{"x": self.scenario_size-(self.wall_length), "y": idx+1} for idx in range(self.wall_length-2)]
+            wall2_2 = [{"x": self.scenario_size-(idx+1), "y": self.wall_length} for idx in range(self.wall_length-2)]
             
-            wall3 = [{"x": self.wall_length, "y": self.scenario_size-(idx+1)} for idx in range(self.wall_length-2)]
-            wall3.extend([{"x": idx+1, "y": self.scenario_size-(self.wall_length)} for idx in range(self.wall_length-2)])
+            wall3_1 = [{"x": self.wall_length, "y": self.scenario_size-(idx+1)} for idx in range(self.wall_length-2)]
+            wall3_2 = [{"x": idx+1, "y": self.scenario_size-(self.wall_length)} for idx in range(self.wall_length-2)]
             
-            wall4 = [{"x": self.scenario_size-(self.wall_length), "y": self.scenario_size-(idx+1)} for idx in range(self.wall_length-2)]
-            wall4.extend([{"x": self.scenario_size-(idx+1), "y": self.scenario_size-(self.wall_length)} for idx in range(self.wall_length-2)])
+            wall4_1 = [{"x": self.scenario_size-(self.wall_length), "y": self.scenario_size-(idx+1)} for idx in range(self.wall_length-2)]
+            wall4_2 = [{"x": self.scenario_size-(idx+1), "y": self.scenario_size-(self.wall_length)} for idx in range(self.wall_length-2)]
             
+            self.walls = [[[wall[0]['x']+wall_width-self.scenario_size/2,wall[0]['y']+wall_width-self.scenario_size/2],[wall[-1]['x']+wall_width-self.scenario_size/2,wall[-1]['y']+wall_width-self.scenario_size/2]] for wall in [wall1_1,wall1_2,wall2_1,wall2_2,wall3_1,wall3_2,wall4_1,wall4_2]]
 
             
             commands = [#{'$type': 'add_scene','name': 'building_site','url': 'https://tdw-public.s3.amazonaws.com/scenes/linux/2019.1/building_site'}, 
@@ -689,10 +769,10 @@ class Simulation(Controller):
                         {"$type": "rotate_directional_light_by",
                          "angle": 30,
                          "axis": "pitch"},
-                         {"$type": "create_interior_walls", "walls": wall1},
-                         {"$type": "create_interior_walls", "walls": wall2},
-                         {"$type": "create_interior_walls", "walls": wall3},
-                         {"$type": "create_interior_walls", "walls": wall4},
+                         {"$type": "create_interior_walls", "walls": [*wall1_1,*wall1_2]},
+                         {"$type": "create_interior_walls", "walls": [*wall2_1,*wall2_2]},
+                         {"$type": "create_interior_walls", "walls": [*wall3_1,*wall3_2]},
+                         {"$type": "create_interior_walls", "walls": [*wall4_1,*wall4_2]},
                         #{"$type": "create_interior_walls", "walls": [{"x": 6, "y": 1}, {"x": 6, "y": 2},{"x": 6, "y": 3},{"x": 6, "y": 4},{"x": 1, "y": 6},{"x": 2, "y": 6},{"x": 3, "y": 6},{"x": 4, "y": 6}]},
                         #{"$type": "create_interior_walls", "walls": [{"x": 14, "y": 1}, {"x": 14, "y": 2},{"x": 14, "y": 3},{"x": 14, "y": 4},{"x": 19, "y": 6},{"x": 18, "y": 6},{"x": 17, "y": 6},{"x": 16, "y": 6}]},   
                         #{"$type": "create_interior_walls", "walls": [{"x": 6, "y": 19}, {"x": 6, "y": 18},{"x": 6, "y": 17},{"x": 6, "y": 16},{"x": 1, "y": 14},{"x": 2, "y": 14},{"x": 3, "y": 14},{"x": 4, "y": 14}]},
@@ -826,7 +906,7 @@ class Simulation(Controller):
         
             cell_size = self.cfg['cell_size']
             
-            max_coord = int(self.scenario_size/2)-2
+            max_coord = int(self.scenario_size/2)-1
             object_models = {'iron_box':5, 'duffle_bag':1} #,'4ft_shelf_metal':1,'trunck':1,'lg_table_marble_green':1,'b04_backpack':1,'36_in_wall_cabinet_wood_beach_honey':1}
 
 
@@ -838,6 +918,8 @@ class Simulation(Controller):
             
 
             modifications = [[1.0,1.0],[-1.0,1.0],[1.0,-1.0],[-1.0,-1.0]]
+            
+            danger_prob = 1.0 #0.3
 
             final_coords = {objm: [] for objm in object_models.keys()}
 
@@ -872,7 +954,7 @@ class Simulation(Controller):
                         weight = 1
                     else:
                         weight = int(np.random.choice(possible_weights,1,p=weights_probs)[0])
-                    danger_level = np.random.choice([1,2],1,p=[0.7,0.3])[0]
+                    danger_level = np.random.choice([1,2],1,p=[1-danger_prob,danger_prob])[0]
                     
                     
                     #weight = 1
@@ -899,6 +981,8 @@ class Simulation(Controller):
             
             self.env_objects.append(self.get_unique_id())
             
+            
+            
             commands.extend(self.get_add_physics_object(model_name="satiro_sculpture",
                                              object_id=self.env_objects[-1],
                                              position={"x": 0, "y": 0, "z": 0},
@@ -909,9 +993,12 @@ class Simulation(Controller):
                                              
             self.env_objects.append(self.get_unique_id())
             
+
+            
+            
             commands.extend(self.get_add_physics_object(model_name="zenblocks",
                                              object_id=self.env_objects[-1],
-                                             position={"x": max_coord-4, "y": 0, "z": max_coord-1},
+                                             position={"x": max_coord-self.wall_length+cell_size/2, "y": 0, "z": max_coord-cell_size*1.5},
                                              default_physics_values=False,
                                              mass=1000,
                                              scale_mass=False,
@@ -922,7 +1009,7 @@ class Simulation(Controller):
             
             commands.extend(self.get_add_physics_object(model_name="amphora_jar_vase",
                                              object_id=self.env_objects[-1],
-                                             position={"x": 2-max_coord, "y": 0, "z": 5-max_coord},
+                                             position={"x": 2.5*cell_size-max_coord, "y": 0, "z": self.wall_length-max_coord+cell_size/2},
                                              default_physics_values=False,
                                              mass=1000,
                                              scale_mass=False,
@@ -932,7 +1019,7 @@ class Simulation(Controller):
             
             commands.extend(self.get_add_physics_object(model_name="linen_dining_chair",
                                              object_id=self.env_objects[-1],
-                                             position={"x": 2-max_coord, "y": 0, "z": max_coord-4},
+                                             position={"x": 2.5*cell_size-max_coord, "y": 0, "z": max_coord-self.wall_length+cell_size/2},
                                              default_physics_values=False,
                                              mass=1000,
                                              scale_mass=False,
@@ -942,7 +1029,7 @@ class Simulation(Controller):
             
             commands.extend(self.get_add_physics_object(model_name="cgaxis_models_50_12_vray",
                                              object_id=self.env_objects[-1],
-                                             position={"x": max_coord-4, "y": 0, "z": 2-max_coord},
+                                             position={"x": max_coord-self.wall_length+cell_size/2, "y": 0, "z": 2.5*cell_size-max_coord},
                                              default_physics_values=False,
                                              mass=1000,
                                              scale_mass=False,
@@ -980,6 +1067,7 @@ class Simulation(Controller):
         commands.append({"$type": "add_compass_rose"})
         
         return commands
+
 
     
     def get_segmentation_colors(self):
@@ -1161,7 +1249,7 @@ class Simulation(Controller):
     #Process keyboard presses
     def keyboard_output(self, key_pressed, key_hold, extra_commands, duration, keys_time_unheld, all_ids, messages, fps):
     
-        max_time_unheld = 5 #3
+        max_time_unheld = 10#5 #3
         
 
         #print(keys_time_unheld, key_pressed)
@@ -1250,7 +1338,9 @@ class Simulation(Controller):
                     
                 idx = self.keys_set[key_idx].index(key_pressed[j])
                 
-                if self.user_magnebots[idx].dynamic.held[arm].size > 0: #Press once to pick up, twice to drop
+                #print(self.user_magnebots[idx].resetting_arm)
+                
+                if self.user_magnebots[idx].dynamic.held[arm].size > 0 and not self.user_magnebots[idx].resetting_arm: #Press once to pick up, twice to drop
                     self.user_magnebots[idx].drop(target=self.user_magnebots[idx].dynamic.held[arm][0], arm=arm, wait_for_object=False)
                     self.user_magnebots[idx].grasping = False
                     
@@ -1287,7 +1377,7 @@ class Simulation(Controller):
                     grasp_object = self.user_magnebots[idx].focus_object
 
                     
-                    if grasp_object and all(grasp_object not in um.dynamic.held[arm] for um in self.user_magnebots for arm in [Arm.left,Arm.right]): #grasp_object not in self.user_magnebots[idx].dynamic.held[arm2] and grasp_object not in grabbed_objects_list:
+                    if grasp_object and all(grasp_object not in um.dynamic.held[arm] for um in self.user_magnebots for arm in [Arm.left,Arm.right]) and not self.user_magnebots[idx].resetting_arm: #grasp_object not in self.user_magnebots[idx].dynamic.held[arm2] and grasp_object not in grabbed_objects_list:
                         print("grasping", grasp_object, arm, idx)
                         self.user_magnebots[idx].stats.grab_attempts += 1
                         
@@ -1525,7 +1615,12 @@ class Simulation(Controller):
             
             for o_idx,o in enumerate(self.graspable_objects): #Sensor only actuates over objects that are in a certain radius
                 if np.linalg.norm(self.object_manager.transforms[o].position -
-                        ego_magnebot.dynamic.transform.position) < int(self.cfg['sensing_radius']):
+                        ego_magnebot.dynamic.transform.position) < int(self.cfg['sensing_radius']) and not any(doIntersect([self.object_manager.transforms[o].position[0],self.object_manager.transforms[o].position[2]],[ego_magnebot.dynamic.transform.position[0],ego_magnebot.dynamic.transform.position[2]],[self.walls[w_idx][0][0],self.walls[w_idx][0][1]],[self.walls[w_idx][-1][0],self.walls[w_idx][-1][1]]) for w_idx in range(len(self.walls))):
+                        
+                    #print([doIntersect([self.object_manager.transforms[o].position[0],self.object_manager.transforms[o].position[2]],[ego_magnebot.dynamic.transform.position[0],ego_magnebot.dynamic.transform.position[2]],[self.walls[w_idx][0][0],self.walls[w_idx][0][1]],[self.walls[w_idx][-1][0],self.walls[w_idx][-1][1]]) for w_idx in range(len(self.walls))])
+                    
+                    #pdb.set_trace()
+                        
                     near_items_idx.append(len(all_ids)+o_idx)
                     near_items_pos.append(TDWUtils.array_to_vector3(self.object_manager.transforms[o].position))
                     actual_danger_level = self.danger_level[o]
@@ -1688,13 +1783,13 @@ class Simulation(Controller):
             
             #self.sio.emit('occupancy_map', (all_idx, json_numpy.dumps(limited_map), reduced_metadata, objects_held))
             
-        else:
+        else: #If only location of robot
             limited_map = np.ones_like(self.object_type_coords_map)*(-2)
             limited_map[x,y] = 5
             reduced_metadata = {}
             
             #objects_locations = np.where(self.object_type_coords_map[x-1:x+2:y-1:y+2] == 2) #Object metadata only for surrounding objects
-            objects_locations = np.where(self.object_type_coords_map == 2)
+            objects_locations = np.where(self.object_type_coords_map > 1)
             for ol in range(len(objects_locations[0])):
                 rkey = str(objects_locations[0][ol])+'_'+str(objects_locations[1][ol])
                 reduced_metadata[rkey] = self.object_attributes_id[rkey]
@@ -1742,6 +1837,10 @@ class Simulation(Controller):
             if all_magnebots[all_idx].dynamic.held[arm].size > 0:
                 object_id = all_magnebots[all_idx].dynamic.held[arm][0]
                 object_id_translated = self.object_names_translate[object_id]
+                
+                if object_id_translated not in all_magnebots[all_idx].item_info:
+                    all_magnebots[all_idx].item_info[object_id_translated] = {}
+                
                 all_magnebots[all_idx].item_info[object_id_translated]["time"] = self.timer
                 all_magnebots[all_idx].item_info[object_id_translated]["location"] = self.object_manager.transforms[object_id].position.tolist()
 
@@ -1884,7 +1983,7 @@ class Simulation(Controller):
                 
                 self.sio.emit("log_output", (json.dumps({'metadata':object_metadata}),past_timer))
             
-
+            
             #Set a visual target whenever the user wants to help
             if self.target:
                 temp_all_ids = all_ids + self.graspable_objects
@@ -2121,12 +2220,13 @@ class Simulation(Controller):
                         all_magnebots[idx].resetting_arm = False
                         all_magnebots[idx].reset_arm(arm)
                         
-                        txt = all_magnebots[idx].ui.add_text(text="Cannot grasp this way!",
-                                         position={"x": 0, "y": 0},
-                                         color={"r": 0, "g": 0, "b": 0, "a": 1},
-                                         font_size=20
-                                         )
-                        messages.append([idx,txt,0])
+                        if all_magnebots[idx].ui_elements:
+                            txt = all_magnebots[idx].ui.add_text(text="Cannot grasp this way!",
+                                             position={"x": 0, "y": 0},
+                                             color={"r": 0, "g": 0, "b": 0, "a": 1},
+                                             font_size=20
+                                             )
+                            messages.append([idx,txt,0])
                 
                     if all_magnebots[idx].dynamic.held[arm].size > 0:
                         
@@ -2153,12 +2253,13 @@ class Simulation(Controller):
                             
                             if grasped_object in self.dangerous_objects:
                                 
-                                txt = all_magnebots[idx].ui.add_text(text="Failure! Dangerous object dropped!",
-                                 position={"x": 0, "y": 0},
-                                 color={"r": 1, "g": 0, "b": 0, "a": 1},
-                                 font_size=20
-                                 )
-                                messages.append([idx,txt,0])
+                                if all_magnebots[idx].ui_elements:
+                                    txt = all_magnebots[idx].ui.add_text(text="Failure! Dangerous object dropped!",
+                                     position={"x": 0, "y": 0},
+                                     color={"r": 1, "g": 0, "b": 0, "a": 1},
+                                     font_size=20
+                                     )
+                                    messages.append([idx,txt,0])
                                 
                                 #self.reset_message = True
                                 
@@ -2697,7 +2798,14 @@ if __name__ == "__main__":
     parser.add_argument('--log-state', action='store_true', help='Log occupancy maps')
     parser.add_argument('--create-video', action='store_true', help='Create videos for all views')
     parser.add_argument('--scenario', type=int, default=1, help='Choose scenario')
+    parser.add_argument('--log', action='store_true', help="Log occupancy maps + create videos")
+    
     args = parser.parse_args()
+    
+    if args.log:
+        args.log_state = True
+        args.create_video = True
+    
 
     print("Simulator starting")
     

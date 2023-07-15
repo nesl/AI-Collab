@@ -6,6 +6,7 @@ import torch
 import os
 import re
 import json
+import pdb
 
 class LLMControl:
 
@@ -186,7 +187,7 @@ class LLMControl:
                 return []
             print("changed destination to",endNode)
         '''
-        
+
         openSet = [startNode]
         closedSet = []
         
@@ -206,8 +207,8 @@ class LLMControl:
         
         
         
-        next_nodes = np.array([[-1,0],[1,0],[0,1],[0,-1]]) #np.array([[1,1],[-1,1],[1,-1],[-1,-1],[-1,0],[1,0],[0,1],[0,-1]])
-        
+        next_nodes = np.array([[1,1],[-1,1],[1,-1],[-1,-1],[-1,0],[1,0],[0,1],[0,-1]]) #np.array([[-1,0],[1,0],[0,1],[0,-1]]) #np.array([[1,1],[-1,1],[1,-1],[-1,-1],[-1,0],[1,0],[0,1],[0,-1]])
+
         while openSet:
         
             currentNode = openSet.pop(0)
@@ -218,12 +219,13 @@ class LLMControl:
             for nx in next_nodes:
                 neighborNode = currentNode + nx
                 
-                if min(neighborNode) == -1 or any(neighborNode >= occMap.shape) or occMap[neighborNode[0],neighborNode[1]] != 0 or tuple(neighborNode) in closedSet:
-                    continue
-            
                 if neighborNode[0] == endNode[0] and neighborNode[1] == endNode[1]:
                     node_details[neighborNode[0]][neighborNode[1]]["parent"] = currentNode
                     return LLMControl.tracePath(node_details, endNode)
+                
+                if min(neighborNode) == -1 or any(neighborNode >= occMap.shape) or occMap[neighborNode[0],neighborNode[1]] != 0 or tuple(neighborNode) in closedSet:
+                    continue
+
             
                 gNew = node_details[currentNode[0]][currentNode[1]]["g"] + 1
                 hNew = LLMControl.calculateHValue(neighborNode,endNode)
@@ -238,7 +240,7 @@ class LLMControl:
                     node_details[neighborNode[0]][neighborNode[1]]["parent"] = currentNode
                     
 
-        return
+        return [] #No path
         
     @staticmethod
     def position_to_action(current_pos,dest,pickup):
