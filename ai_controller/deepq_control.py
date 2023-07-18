@@ -7,6 +7,7 @@ import torch.nn.functional as F
 import math
 from collections import namedtuple, deque
 from gym_collab.envs.action import Action
+import json
 import pdb
 
 Transition = namedtuple('Transition',
@@ -26,6 +27,31 @@ class ReplayMemory(object):
 
     def __len__(self):
         return len(self.memory)
+        
+    def save_to_disk(self,file_name):
+        out_dict = {"memory":[]}
+        open_file = open(file_name,"w")
+        for d_idx in range(len(self.memory)):
+            memory_element = self.memory[d_idx]._asdict()
+            memory_element["state"] = memory_element["state"].tolist()
+            memory_element["next_state"] = memory_element["next_state"].tolist()
+            out_dict["memory"].append(memory_element)
+        json.dump(out_dict,open_file)
+        open_file.close()
+        
+    def load_from_disk(self,file_name,device):
+        open_file = open(file_name,"r")
+        in_dict = json.load(open_file)
+        open_file.close()
+        
+        for element in in_dict["memory"]:
+            if element["action"] == 18:
+                continue
+            element["state"] = torch.tensor(element["state"], dtype=torch.float32, device=device)
+            element["next_state"] = torch.tensor(element["next_state"], dtype=torch.float32, device=device)
+            element["reward"] = torch.tensor([element["reward"]], device=device)
+            self.memory.append(Transition(element["state"],element["action"],element["next_state"],element["reward"]))
+        
 
 class DQN(nn.Module):
 
@@ -67,6 +93,8 @@ class DeepQControl:
         self.memory_replay = ReplayMemory(10000)
         self.device = device
         self.num_steps = num_steps
+        
+        self.memory_replay.load_from_disk("memory.json", device)
 
         
         
@@ -186,8 +214,10 @@ class DeepQControl:
         # to Transition of batch-arrays.
         batch = Transition(*zip(*transitions))
 
+
         # Compute a mask of non-final states and concatenate the batch elements
         # (a final state would've been the one after which simulation ended)
+
         non_final_mask = torch.tensor(tuple(map(lambda s: s is not None,
                                               batch.next_state)), device=self.device, dtype=torch.bool)
         non_final_next_states = torch.cat([s for s in batch.next_state
@@ -198,8 +228,12 @@ class DeepQControl:
         for action in batch.action:
             batch_action.append(torch.tensor([[action]], device=self.device, dtype=torch.long))
         
+        
+        
         action_batch = torch.cat(batch_action)
         reward_batch = torch.cat(batch.reward)
+
+
 
         # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
         # columns of actions taken. These are the actions which would've been taken

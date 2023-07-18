@@ -162,7 +162,7 @@ class LLMControl:
         return path
             
     @staticmethod
-    def findPath(startNode,endNode,occMap):
+    def findPath(startNode,endNode,occMap,ignore=[]):
 
 
         if min(endNode) == -1 or any(endNode >= occMap.shape) or (endNode[0] == startNode[0] and endNode[1] == startNode[1]):
@@ -205,6 +205,8 @@ class LLMControl:
         
 
         
+        for ig in ignore: #Remove ignore nodes
+            closedSet.append(tuple(ig))
         
         
         next_nodes = np.array([[1,1],[-1,1],[1,-1],[-1,-1],[-1,0],[1,0],[0,1],[0,-1]]) #np.array([[-1,0],[1,0],[0,1],[0,-1]]) #np.array([[1,1],[-1,1],[1,-1],[-1,-1],[-1,0],[1,0],[0,1],[0,-1]])
@@ -290,7 +292,8 @@ class LLMControl:
             else:
                 action = Action.move_up_right.value
         else:
-            pdb.set_trace()
+            #pdb.set_trace()
+            pass
             
 
         

@@ -409,9 +409,10 @@ socket.on("stats", (stats_dict, final) => {
         
         const tbl_team = document.createElement('table');
         
-        const key_to_text_team = {"team_objects_in_goal":"Number of objects brought to goal area: ",
+        const key_to_text_team = {"team_objects_in_goal":"Number of dangerous objects brought to goal area: ",
         "team_end_time": "End Time: ",
-        "team_failure_reasons": "Final Team Status: "
+        "team_failure_reasons": "Final Team Status: ",
+        "total_dangerous_objects": "Total number of dangerous objects: "
         };
         
         Object.keys(stats_dict).forEach(function(key) {
@@ -467,7 +468,10 @@ socket.on("stats", (stats_dict, final) => {
                 final_string = pad(String(divmod_results[0]),2) + ":" + pad(String(divmod_results2[0]),2);
                 td1.appendChild(document.createTextNode(final_string));
             } else if (key == "total_dangerous_objects"){
-                var final_string = "";
+            	td1.appendChild(document.createTextNode(key_to_text_team[key]));
+                var td1 = tr1.insertCell();
+                
+                td1.appendChild(document.createTextNode(String(stats_dict[key])));
             } else if(Object.keys(key_to_text_team).includes(key)){
                 td1.appendChild(document.createTextNode(key_to_text_team[key]));
                 var td1 = tr1.insertCell();

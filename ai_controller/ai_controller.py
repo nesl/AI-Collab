@@ -32,8 +32,9 @@ parser.add_argument("--use-occupancy", action='store_true', help="Use occupancy 
 parser.add_argument("--address", default='https://172.17.15.69:4000', help="Address where our simulation is running")
 parser.add_argument("--robot-number", default=1, help="Robot number to control")
 parser.add_argument("--view-radius", default=0, help="When using occupancy maps, the view radius")
-parser.add_argument("--openai", action='store_true', help="Use openai.")
-parser.add_argument("--llm", action='store_true', help="Use LLM.")
+parser.add_argument("--control", default="heuristic", type=str, help="Type of control to apply: heuristic,llm,openai,deepq,q")
+#parser.add_argument("--openai", action='store_true', help="Use openai.")
+#parser.add_argument("--llm", action='store_true', help="Use LLM.")
 
 args = parser.parse_args()
 
@@ -186,9 +187,11 @@ process_last_action = action["action"]
 reward_machine_state = 0
 '''
 
-num_steps = 600
+num_steps = 600 #200#600
 
 num_episodes = 600
+
+process_reward = 0
 
 # Get number of actions from gym action space
 
@@ -196,9 +199,10 @@ num_episodes = 600
 observation, info = env.reset()
 
 
-if not args.llm:
-    #deepq_control = DeepQControl(observation,device,num_steps)
-    h_control = HeuristicControl(env.goal_coords)
+if args.control == 'heuristic':
+    h_control = HeuristicControl(env.goal_coords, num_steps)
+elif args.control == 'deepq':
+    deepq_control = DeepQControl(observation,device,num_steps)
 
 
 
@@ -229,16 +233,16 @@ while True:
     
     
 
-    if args.llm:
+    if args.control == 'llm' or args.control == 'openai':
         obs_sample = env.observation_space.sample()
 
         room_size = str(obs_sample['frame'].shape[0])
 
-        llm_control = LLMControl(args.openai,room_size, env.action_space.sample(), device)
-    else:
-        pass
-        #action["action"] = h_control.planner(robotState)
-        #action["action"] = deepq_control.start(observation)
+        llm_control = LLMControl(args.control == 'openai',room_size, env.action_space.sample(), device)
+    elif args.control == 'heuristic':
+        h_control.start()
+    elif args.control == 'deepq':
+        action["action"] = deepq_control.start(observation)
 
     last_high_action = action["action"]
 
@@ -361,19 +365,30 @@ while True:
                     step_count += 1
                     
                     #print("Messages", messages)
-                    if args.llm:
+                    if args.control == 'llm' or args.control == 'openai':
                         action_function = llm_control.control(messages, robotState, action_function, function_output)
                         high_level_action_finished = False
-                    else:
-                        action["action"] = h_control.planner(robotState)
-                        """
-                        last_high_action = action["action"]
-                        action["action"] = deepq_control.control(reward, terminated, truncated, robotState, action, step_count, ego_location)
+                    elif args.control == 'heuristic':
+                        #action["action"] = h_control.planner(robotState, process_reward, step_count, terminated or truncated)
+                        
+
+                        action["action"],action["item"],action["message"] = h_control.planner_sensing(robotState, process_reward, step_count, terminated or truncated, next_observation, info)
+
+                        process_reward = 0
+                        
+                        print("STEP", step_count, action["action"])
                         
                         if action["action"] < 0:
                             break
-                        """
+                        
+                    elif args.control == 'deepq':
                     
+                        last_high_action = action["action"]
+                        action["action"] = deepq_control.control(reward, terminated, truncated, robotState, action, step_count, ego_location)
+                        process_reward = 0
+                        if action["action"] < 0:
+                            break
+                            
                     messages = []
 
                     
@@ -397,7 +412,7 @@ while True:
             if not high_level_action_finished:
             
                 
-                if args.llm:
+                if args.control == 'llm' or args.control == 'openai':
                     action, high_level_action_finished,function_output = eval(action_function) #go_to_location(x,y, action_sequence, robotState, next_observation)
                 
                 #print(function_output, high_level_action_finished)

@@ -1094,7 +1094,7 @@ class AICollabEnv(gym.Env):
 
                             
                             self.last_sensed.append(object_key)
-                            
+
                             self.update_objects_info(
                                 object_key,
                                 danger_sensing_data[object_key]['time'],
@@ -1104,6 +1104,7 @@ class AICollabEnv(gym.Env):
                                     danger_sensing_data[object_key]['location'][2]],
                                 danger_sensing_data[object_key]['weight'],
                                 True)
+                                
                             '''
                             for ob_idx, ob in enumerate(self.object_info):
                                 if ob[0] == object_key:
@@ -1173,6 +1174,7 @@ class AICollabEnv(gym.Env):
             return_confidence = np.array([estimates[key]['confidence']])
         else:
             return_value = 0
+            return_confidence = np.array([])
 
         return return_value,return_confidence
 
@@ -1195,7 +1197,7 @@ class AICollabEnv(gym.Env):
                     self.object_info[ob_idx][3] = float(position[0])
                     self.object_info[ob_idx][4] = float(position[1])
                     self.object_info[ob_idx][5] = float(timer)
-                    known_object = True
+                known_object = True
                 break
         if not known_object:
 

@@ -549,6 +549,10 @@ class Simulation(Controller):
     
         self.robot_names_translate = {}
     
+        random.shuffle(self.ai_spawn_positions)
+        random.shuffle(self.user_spawn_positions)
+
+    
         #Create ai magnebots
         for ai_idx in range(num_ais):  
             robot_id = self.get_unique_id()                                 
@@ -907,7 +911,7 @@ class Simulation(Controller):
             cell_size = self.cfg['cell_size']
             
             max_coord = int(self.scenario_size/2)-1
-            object_models = {'iron_box':5, 'duffle_bag':1} #,'4ft_shelf_metal':1,'trunck':1,'lg_table_marble_green':1,'b04_backpack':1,'36_in_wall_cabinet_wood_beach_honey':1}
+            object_models = {'iron_box':5} #, 'duffle_bag':1} #,'4ft_shelf_metal':1,'trunck':1,'lg_table_marble_green':1,'b04_backpack':1,'36_in_wall_cabinet_wood_beach_honey':1}
 
 
             #possible_ranges = [np.arange(max_coord-3,max_coord+0.5,0.5),np.arange(max_coord-3,max_coord+0.5,0.5)]
@@ -919,7 +923,7 @@ class Simulation(Controller):
 
             modifications = [[1.0,1.0],[-1.0,1.0],[1.0,-1.0],[-1.0,-1.0]]
             
-            danger_prob = 1.0 #0.3
+            danger_prob = 0.3 #1.0 #0.3
 
             final_coords = {objm: [] for objm in object_models.keys()}
 
@@ -939,7 +943,7 @@ class Simulation(Controller):
             for fc in final_coords.keys():
                 for c in final_coords[fc]:
                     
-                    possible_weights = list(range(1,num_users+num_ais+1))
+                    possible_weights = list(range(1,num_users+num_ais+1)) #[1] #list(range(1,num_users+num_ais+1))
                     weights_probs = [1]*len(possible_weights)
                     
                     for p_idx in range(len(possible_weights)):
@@ -978,7 +982,7 @@ class Simulation(Controller):
             #Create environment objects
             
             
-            
+            '''
             self.env_objects.append(self.get_unique_id())
             
             
@@ -990,6 +994,7 @@ class Simulation(Controller):
                                              mass=1000,
                                              scale_mass=False,
                                              rotation={"x": 0, "y": 0, "z": 0}))
+            '''
                                              
             self.env_objects.append(self.get_unique_id())
             
@@ -2243,8 +2248,11 @@ class Simulation(Controller):
                             
                         #Drop object if strength decreases
                         if self.required_strength[all_magnebots[idx].dynamic.held[arm][0]] > all_magnebots[idx].strength:
-                        
-                            self.object_dropping.append([int(self.user_magnebots[idx].dynamic.held[arm][0]),time.time(),all_magnebots[idx], arm])
+                            
+                            try:
+                                self.object_dropping.append([int(self.user_magnebots[idx].dynamic.held[arm][0]),time.time(),all_magnebots[idx], arm])
+                            except:
+                                pdb.set_trace()
                             grasped_object = all_magnebots[idx].dynamic.held[arm][0]
                             all_magnebots[idx].drop(target=grasped_object, arm=arm)
                             all_magnebots[idx].grasping = False
@@ -2739,6 +2747,9 @@ class Simulation(Controller):
         self.communicate(commands)
         
         commands = []
+        
+        random.shuffle(self.ai_spawn_positions)
+        random.shuffle(self.user_spawn_positions)
         
         for u_idx in range(len(self.user_magnebots)):
             self.user_magnebots[u_idx].reset(position=self.user_spawn_positions[u_idx])
