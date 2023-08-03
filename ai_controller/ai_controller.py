@@ -152,6 +152,8 @@ def print_map(occupancy_map): #Occupancy maps require special printing so that t
     print(new_new_occupancy_map)
 
 
+                        
+
 device = "cuda"
 
 env = gym.make('gym_collab/AICollabWorld-v0', use_occupancy=args.use_occupancy, view_radius=args.view_radius, skip_frames=10, client_number=int(args.robot_number), host=args.host, port=args.port, address=args.address, cert_file=args.cert_file, key_file=args.key_file)
@@ -173,9 +175,22 @@ class RobotState:
         self.latest_map = latest_map
         self.object_held = object_held
         self.items = []
-        self.robots = [{}]*num_robots
+        self.robots = [{} for n in range(num_robots)]
         self.strength = 1
         self.map_metadata = {}
+        
+    def update_items(self,item_output, item_idx): #Updates items
+
+        print(item_output)
+        if not self.items[item_idx]["item_danger_level"] or  (item_output["item_danger_level"] and round(self.items[item_idx]["item_danger_confidence"][0],3) == round(item_output["item_danger_confidence"][0],3) and self.items[item_idx]["item_time"][0] < item_output["item_time"][0]) or (item_output["item_danger_level"] and self.items[item_idx]["item_danger_confidence"][0] < item_output["item_danger_confidence"][0]):
+            
+            self.items[item_idx] = item_output
+            
+        elif self.items[item_idx]["item_time"][0] < item_output["item_time"][0]:
+        
+            self.items[item_idx]["item_location"] = item_output["item_location"]
+            self.items[item_idx]["item_time"] = item_output["item_time"]
+            
         
         
 '''
@@ -200,7 +215,7 @@ observation, info = env.reset()
 
 
 if args.control == 'heuristic':
-    h_control = HeuristicControl(env.goal_coords, num_steps)
+    h_control = HeuristicControl(env.goal_coords, num_steps, env.robot_id, env)
 elif args.control == 'deepq':
     deepq_control = DeepQControl(observation,device,num_steps)
 
@@ -281,7 +296,7 @@ while True:
             
         if next_observation["num_items"] > len(robotState.items):
             diff_len = next_observation["num_items"] - len(robotState.items)
-            robotState.items.extend([{'item_weight': 0, 'item_danger_level': 0, 'item_danger_confidence': np.array([0.]), 'item_location': np.array([-1, -1], dtype=np.int16), 'item_time': np.array([0], dtype=np.int16)}]*diff_len)
+            robotState.items.extend([{'item_weight': 0, 'item_danger_level': 0, 'item_danger_confidence': np.array([0.]), 'item_location': np.array([-1, -1], dtype=np.int16), 'item_time': np.array([0], dtype=np.int16)} for d in range(diff_len)])
             
         robotState.strength = next_observation["strength"]
             
@@ -323,7 +338,7 @@ while True:
 
                                 
                             elif map_object not in info['map_metadata'][str(ego_location[0][0])+'_'+str(ego_location[1][0])]: #Robot information
-                                info['map_metadata'][str(ego_location[0][0])+'_'+str(ego_location[1][0])]
+                                
                                 ob_key = info["robot_key_to_index"][map_object]
                                 robotState.robots[ob_key]["neighbor_location"] = [int(m_key_xy[0]), int(m_key_xy[1])]
 
@@ -335,10 +350,18 @@ while True:
                     robotState.object_held = next_observation['objects_held']
             
                 elif Action(last_action[1]) == Action.check_item:
-                    robotState.items[last_action_arguments[0]] = next_observation["item_output"]
+                
+                    #robotState.items[last_action_arguments[0]] = next_observation["item_output"]
+                    robotState.update_items(next_observation["item_output"],last_action_arguments[0])
                     
-                elif Action(last_action[1]) == Action.check_robot:
-                    robotState.robots[last_action_arguments[1]-1] = next_observation["neighbors_output"]
+                elif Action(last_action[1]) == Action.check_robot: #Make sure to update estimates and take the one with the highest confidence
+                
+                    item_idx = last_action_arguments[1]-1
+                    robotState.robots[item_idx] = next_observation["neighbors_output"]
+                        
+
+                        
+
                     
                 elif Action(last_action[1]) == Action.get_messages:
                     #print("Message arrived", info['messages'])
@@ -361,6 +384,9 @@ while True:
             if high_level_action_finished: #When a high level action finishes, we sense the environment
                 if last_action[1] == Action.get_messages.value: #Action.get_occupancy_map.value:
                 
+                    print_map(robotState.latest_map)
+                    print("Held:",robotState.object_held)
+                
                     last_action[1] = 0 #Reset last sensing action
                     step_count += 1
                     
@@ -372,7 +398,7 @@ while True:
                         #action["action"] = h_control.planner(robotState, process_reward, step_count, terminated or truncated)
                         
 
-                        action["action"],action["item"],action["message"] = h_control.planner_sensing(robotState, process_reward, step_count, terminated or truncated, next_observation, info)
+                        action["action"],action["item"],action["message"],action["robot"] = h_control.planner_sensing(robotState, process_reward, step_count, terminated or truncated, next_observation, info, messages)
 
                         process_reward = 0
                         
@@ -418,8 +444,8 @@ while True:
                 #print(function_output, high_level_action_finished)
                 
             
-            print_map(robotState.latest_map)
-            print(robotState.object_held)
+            #print_map(robotState.latest_map)
+            #print("Held:",robotState.object_held)
             
          
             #print(next_observation['item_output'], next_observation['objects_held'], next_observation['neighbors_output'], next_observation['strength'], next_observation['num_messages'], next_observation['num_items'], next_observation['action_status'], last_action)

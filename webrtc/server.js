@@ -52,7 +52,8 @@ const server = https.createServer(options, app)
 const io = require("socket.io")(server);
 app.use(express.static(__dirname + "/public"));
 
-
+var Filter = require('bad-words'),
+    filter = new Filter();
 
 const { exec } = require("child_process");
 var window_name = '';
@@ -172,9 +173,9 @@ io.sockets.on("connection", socket => { //When a client connects
     ai_ids_list = ai_agents_ids;
     all_ids_list = user_ids.concat(ai_agents_ids);
     clients_ids = Array.apply(null, Array(user_ids_list.length));
-    ai_ids = Array.apply(null, Array(ai_ids.length));
-    all_ids = Array.apply(null, Array(ai_ids.length+user_ids_list.length));
-    
+    ai_ids = Array.apply(null, Array(ai_ids_list.length));
+    all_ids = Array.apply(null, Array(ai_ids_list.length+user_ids_list.length));
+
     dateTime = log_file_name;
     
     for (let id_idx = 0; id_idx < all_ids_list.length; id_idx++) {
@@ -198,7 +199,7 @@ io.sockets.on("connection", socket => { //When a client connects
 	}
   	
   	if(socket.id == broadcaster || reset_count == all_ids.length){
-  		
+
     	socket.to(simulator).emit("reset"); //, socket_to_simulator_id(socket.id));
 	} 
   });
@@ -247,9 +248,9 @@ io.sockets.on("connection", socket => { //When a client connects
   socket.on("human_output", (idx, location, item_info, neighbors_info, timer, disable) => {
     socket.to(all_ids[idx]).emit("human_output", location, item_info, neighbors_info, timer, disable);
     
-    if(command_line_options.log && (timer - past_timer > 1 || Object.keys(item_info).length > 0)){
+    if(command_line_options.log && Object.keys(item_info).length > 0){ //(timer - past_timer > 1 || Object.keys(item_info).length > 0)){
         past_timer = timer;
-        fs.appendFile(dir + dateTime + '.txt', String(timer.toFixed(2)) +',' + '3' + ',' + socket_to_simulator_id(all_ids[idx]) + ',' + JSON.stringify(item_info) + ',' + JSON.stringify(neighbors_info) + '\n', err => {});
+        fs.appendFile(dir + dateTime + '.txt', String(timer.toFixed(2)) +',' + '3' + ',' + socket_to_simulator_id(all_ids[idx]) + ',' + JSON.stringify(item_info) + '\n', err => {}); //+ ',' + JSON.stringify(neighbors_info) + '\n', err => {});
 
 		/*
         if(disable){
@@ -311,7 +312,11 @@ io.sockets.on("connection", socket => { //When a client connects
     
     
     var sim_id = socket_to_simulator_id(socket.id);
-  	
+    message = filter.clean(message); //censor
+    
+    console.log(timestamp,sim_id,message);
+    
+    
     if(! disable_list.includes(sim_id)){
 		message_sent = true;
 		
@@ -323,21 +328,21 @@ io.sockets.on("connection", socket => { //When a client connects
 		stats[sim_id]["num_messages_sent"] += 1;
 		if(all_ids.indexOf(socket.id) >= 0 && neighbors_list){
 		    let source_id = socket_to_simulator_id(socket.id)
-		    console.log(source_id)
-		    console.log(neighbors_list)
+		    //console.log(source_id)
+		    //console.log(neighbors_list)
 		    
 		    var keys_neighbors = '"';
 		    
 		    for (const [key, value] of Object.entries(neighbors_list)) {
-		        console.log(key)
-		        console.log(value)
+		        //console.log(key)
+		        //console.log(value)
 		        
 		        if(! disable_list.includes(key)){
 				    keys_neighbors += key + ',';
 				    if(value === 'human'){
 				        let c = clients_ids[user_ids_list.indexOf(key)]; 
 				        
-					    console.log(c)
+					    //console.log(c)
 					    socket.to(c).emit("message", message, timestamp, source_id);
 				        
 				    } else if(value === 'ai'){
@@ -364,7 +369,7 @@ io.sockets.on("connection", socket => { //When a client connects
   	var sim_id = socket_to_simulator_id(socket.id);
   	
     if(! disable_list.includes(sim_id)){
-		console.log(sim_id, socket.id, all_ids);
+		//console.log(sim_id, socket.id, all_ids);
 		socket.to(simulator).emit("key", key, sim_id);
 		if(command_line_options.log){
 		    fs.appendFile(dir + dateTime + '.txt', String(timestamp.toFixed(2)) +',' + '1' + ',' + sim_id + ',' + key +'\n', err => {});

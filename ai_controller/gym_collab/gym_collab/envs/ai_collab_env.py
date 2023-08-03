@@ -229,6 +229,11 @@ class AICollabEnv(gym.Env):
                 extra_status,
                 strength,
                 timer)
+                
+            self.truncated = disable
+            
+            if disable:
+                print("Robot disabled")
 
         # Receive status updates of our agent
         self.action_status = -1
@@ -388,6 +393,7 @@ class AICollabEnv(gym.Env):
         info['robot_key_to_index'] = self.robot_key_to_index
         info['object_key_to_index'] = self.object_key_to_index
         info['last_sensed'] = self.last_sensed
+        info['time'] = float(world_state[7])
         
         reward = 0
         
@@ -479,12 +485,14 @@ class AICollabEnv(gym.Env):
         '''
         
 
-        return observation, reward, terminated, False, info
+        return observation, reward, terminated, self.truncated, info
 
     def reset(self, seed=None, options=None):
 
         super().reset(seed=seed)
         map_size = self.map_config['num_cells'][0]
+        
+        self.truncated = False
 
         observation = {
 
@@ -551,7 +559,7 @@ class AICollabEnv(gym.Env):
         self.own_neighbors_info_entry = [self.robot_id, 1, 0, 0, -1]
         self.last_sensed = []
 
-        self.sio.emit("reset_ai")
+        self.sio.emit("reset") #self.sio.emit("reset_ai")
         print("Reseting agent")
         while not self.agent_reset:
             continue
@@ -811,7 +819,7 @@ class AICollabEnv(gym.Env):
                             "x": target_coordinates[0],
                             "y": 0,
                             "z": target_coordinates[1]}
-                        action_message.append(self.move_to(target=target,arrived_offset=0.3))#self.turn_to(object_id))
+                        action_message.append(self.move_to(target=target,arrived_offset=0.5))#self.turn_to(object_id))
                        
                         state = self.State.waiting_ongoing
                         data["next_state"] = self.State.grasping_object
@@ -919,7 +927,7 @@ class AICollabEnv(gym.Env):
                     sensing_output["item_output"]["item_danger_level"],sensing_output["item_output"]["item_danger_confidence"] = self.combine_danger_info(
                         self.object_info[complete_action["item"]][2])
                     sensing_output["item_output"]["item_location"] = np.array(self.object_info[complete_action["item"]][3:5])
-                    sensing_output["item_output"]["item_time"] = np.array([self.object_info[complete_action["item"]][1]])
+                    sensing_output["item_output"]["item_time"] = np.array([self.object_info[complete_action["item"]][5]])
                     terminated[1] = True
 
             elif action == Action.check_robot:
@@ -942,14 +950,23 @@ class AICollabEnv(gym.Env):
                     truncated[1] = True
 
             elif action == Action.send_message:
+            
+                neighbors_dict = {}
+                
                 if complete_action["robot"] > 0:
 
                     robot_data = self.neighbors_info[complete_action["robot"] - 1]
-                    neighbors_dict = {
-                        robot_data[0]: "human" if not robot_data[1] else "ai"}
+                    if np.linalg.norm((np.array([robot_data[2],robot_data[3]]) - np.array(ego_location))*self.map_config['cell_size']) < self.map_config['communication_distance_limit']:
+                        neighbors_dict = {
+                            robot_data[0]: "human" if not robot_data[1] else "ai"}
                 else:
-                    neighbors_dict = {
-                        robot_data[0]: "human" if not robot_data[1] else "ai" for robot_data in self.neighbors_info}
+                    for robot_data in self.neighbors_info:
+                        if np.linalg.norm((np.array([robot_data[2],robot_data[3]]) - np.array(ego_location))*self.map_config['cell_size']) < self.map_config['communication_distance_limit']:
+                            if not robot_data[1]:
+                                robot_type = "human"
+                            else:
+                                robot_type = "ai"
+                            neighbors_dict[robot_data[0]] = robot_type
 
                 self.sio.emit(
                     "message", (complete_action["message"], timer, neighbors_dict))
@@ -1229,6 +1246,17 @@ class AICollabEnv(gym.Env):
 
         return pos_new
 
+    #Convert from grid coordinates to real
+    def convert_to_real_coordinates(self, position):
+
+        min_pos = self.map_config['edge_coordinate']
+        multiple = self.map_config['cell_size']
+        pos_new = [position[0]*multiple - abs(min_pos[0]), position[1]*multiple - abs(min_pos[1])]
+
+    
+        return pos_new
+    
+    
     # Check movement limits
 
     def check_bounds(self, action_index, location, occupancy_map, num_cells):
