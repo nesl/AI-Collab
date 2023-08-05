@@ -267,7 +267,7 @@ io.sockets.on("connection", socket => { //When a client connects
   
   socket.on("log_output", (location_map, timer) => {
 
-	if(command_line_options.log && (timer - past_timer2 > 1 || message_sent)){
+	if(command_line_options.log && (timer - past_timer2 > 0.25 || message_sent)){
 		past_timer2 = timer;
 		message_sent = false;
   		fs.appendFile(dir + dateTime + '.txt', String(timer.toFixed(2)) +',' + '0' + ',' + JSON.stringify(location_map) + '\n', err => {});

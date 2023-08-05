@@ -317,7 +317,7 @@ class Simulation(Controller):
                 robot_id = self.robot_names_translate[str(magn.robot_id)]
                 robots_type.append([robot_id,magn.controlled_by])
             
-            scenario_dict = {"scenario_size": self.scenario_size, "wall_length": self.wall_length, "wals": self.walls, "env_objects": env_objects_data, "robots_type": robots_type}
+            scenario_dict = {"scenario_size": self.scenario_size, "wall_length": self.wall_length, "walls": self.walls, "env_objects": env_objects_data, "robots_type": robots_type}
 
 
             self.log_state_f = open(log_dir + dateTime + '_state.txt', "w")
@@ -2052,7 +2052,7 @@ class Simulation(Controller):
                     if magn.dynamic.held[Arm.right].size > 0:
                         arms_held[1] = self.object_names_translate[magn.dynamic.held[Arm.right][0]]
                         
-                    object_metadata.append([1,self.robot_names_translate[str(magn.robot_id)],round(float(pos[0]),2),round(float(pos[2]),2),magn.disabled,arms_held[0],arms_held[1]])
+                    object_metadata.append([1,self.robot_names_translate[str(magn.robot_id)],round(float(pos[0]),2),round(float(pos[2]),2),magn.disabled,arms_held[0],arms_held[1],magn.strength])
                 
                 
                 self.sio.emit("log_output", (json.dumps({'metadata':object_metadata}),past_timer))
@@ -2413,7 +2413,7 @@ class Simulation(Controller):
             
             
             if num_users >= 5:
-                commands.append({"$type": "step_physics", "frames": 2})
+                commands.append({"$type": "step_physics", "frames": 1})
             
             try:
                 

@@ -341,7 +341,7 @@ class AICollabEnv(gym.Env):
 
                 "item_output": spaces.Dict(
                     {
-                        "item_weight": spaces.Discrete(10),
+                        "item_weight": spaces.Discrete(len(self.map_config['all_robots'])+1),
                         "item_danger_level": spaces.Discrete(3),
                         "item_danger_confidence": spaces.Box(low=0, high=1, shape=(1,), dtype=float),
                         "item_location": spaces.Box(low=-np.infty, high=np.infty, shape=(2,), dtype=np.int16),

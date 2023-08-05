@@ -916,7 +916,7 @@ function fill_info(){
 
         object_info_div.appendChild(object_html_store[object_key]);
         
-    	if(object_html_store[object_key].style.borderWidth == 'thick'){
+    	if(object_html_store[object_key].style.borderWidth == 'thick'){ //Put into view the objects just sensed
     	    current_visible.push(object_key);
     	    if(make_visible && (! previous_visible.includes(object_key))) {
         		make_visible = false;
