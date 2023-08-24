@@ -14,6 +14,8 @@ Use `git clone --recurse-submodules https://github.com/nesl/AI-Collab.git` to cl
 
 3. Change to the **magnebot** directory and run `pip install .`
 
+4. Patch the controller TDW source file by issuing the next command `pip show tdw`, copying the directory shown in **Location**, appending to it the next line **/tdw/controller.py**, and then copying the **controller.py** file that is in this repository to that location.
+
 After this, you will be able to run the simulation by going into the **simulator** directory and using `python simulation.py --local --no_virtual_cameras`. This will display a simulator window with the third person view camera, as well as an opencv window with a first person view of one of the robots. You can control this robot by focusing on the simulator window and using the arrows in the keyboard. Check the file **keysets.csv** for all the keys one can use for each robot.
 
 ### Virtual Video Devices
@@ -48,7 +50,7 @@ Change to the **ai_controller** directory and install the gym environment by usi
 ## Operation
 
 1. Run the server using `node server --address "address" --port "port"`. The simulator assumes the virtual devices to be used are the ones starting at /dev/video0, but if you already have some real webcams, you need to specify the parameter `--video-index <number>` and include the index number of your first simulated webcam corresponding to the ones created for the simulator.
-2. Run the simulator using `python simulation.py --address "https://address:port"`
+2. Run the simulator using `python simulation.py --address "https://address:port"`. A window will appear. Wait until a view of the scene appears in it.
 3. Using your web browser, go to **https://address:port/broadcast.html**. This will present a view with all the camera views being streamed.
 4. When you run the first command, there will be an output indicating a code that you need to use as password when connecting through the browser.
 
