@@ -423,6 +423,10 @@ class Simulation(Controller):
 
                             if ai_agent.strength < self.required_strength[object_id]:
                             
+                                pass
+                                
+                                """
+                            
                                 if object_id in self.dangerous_objects:
 
                                         
@@ -433,6 +437,7 @@ class Simulation(Controller):
                                     
                                 else:
                                     pass
+                                """
                             
                             else:
                                 if all(object_id not in um.dynamic.held[arm] for um in [*self.user_magnebots,*self.ai_magnebots] for arm in [Arm.left,Arm.right]):
@@ -952,7 +957,7 @@ class Simulation(Controller):
 
             modifications = [[1.0,1.0],[-1.0,1.0],[1.0,-1.0],[-1.0,-1.0]]
             
-            danger_prob = 0.3 #1.0 #0.3
+            danger_prob = self.cfg['danger_prob'] #0.3 #1.0 #0.3
 
             final_coords = {objm: [] for objm in object_models.keys()}
 
@@ -1129,6 +1134,11 @@ class Simulation(Controller):
                
     #Function to instantiate objects
     def instantiate_object(self, model_name, position, rotation, mass, danger_level, required_strength, object_index):
+
+        if self.options.single_weight:
+            required_strength = 1
+        if self.options.single_danger:
+            danger_level = 2
 
         object_id = self.get_unique_id()
         self.graspable_objects.append(object_id)
@@ -1435,6 +1445,9 @@ class Simulation(Controller):
                         
                             if grasp_object in self.dangerous_objects:
 
+                                pass
+
+                                """
                                 txt = self.user_magnebots[idx].ui.add_text(text="Failure! Dangerous object picked up!",
                                  position={"x": 0, "y": 0},
                                  color={"r": 1, "g": 0, "b": 0, "a": 1},
@@ -1446,7 +1459,7 @@ class Simulation(Controller):
                                 self.user_magnebots[idx].disabled = True
                                 self.user_magnebots[idx].stats.end_time = self.timer
                                 self.user_magnebots[idx].stats.failed = 1
-
+                                """
                                 
                                 #self.reset_message = True
                             else:
@@ -2334,6 +2347,7 @@ class Simulation(Controller):
                             
                             all_magnebots[idx].stats.forced_dropped_objects += 1
                             
+                            """
                             if grasped_object in self.dangerous_objects:
                                 
                                 if all_magnebots[idx].ui_elements:
@@ -2351,6 +2365,7 @@ class Simulation(Controller):
                                 all_magnebots[idx].stats.end_time = self.timer
                                 
                                 all_magnebots[idx].stats.failed = 2
+                            """
                         #Terminate game if dangerous object held alone
                         '''
                         if all_magnebots[idx].dynamic.held[arm][0] in self.dangerous_objects:
@@ -2677,7 +2692,7 @@ class Simulation(Controller):
 
 
             #For top down view
-            if cams:
+            if cams and not self.no_debug_camera:
                 img_image = magnebot_images["a"]
                 cams[0].send(img_image)
                 if self.options.create_video:
@@ -2851,7 +2866,8 @@ class Simulation(Controller):
         for env_obj in self.env_objects:
             commands.append({"$type": "destroy_object", "id": env_obj})
             
-        commands.append({"$type": "destroy_avatar", "avatar_id": 'a'})   
+        if not self.no_debug_camera:
+            commands.append({"$type": "destroy_avatar", "avatar_id": 'a'})   
         self.communicate(commands)
         
         commands = []
@@ -2919,6 +2935,8 @@ if __name__ == "__main__":
     parser.add_argument('--scenario', type=int, default=1, help='Choose scenario')
     parser.add_argument('--log', action='store_true', help="Log occupancy maps + create videos")
     parser.add_argument('--showall', action='store_true', help="Show everything in the top view")
+    parser.add_argument('--single-weight', action='store_true', help="Make all objects weight 1")
+    parser.add_argument('--single-danger', action='store_true', help="Make all objects dangerous")
     
     args = parser.parse_args()
     

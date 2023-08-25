@@ -1,5 +1,5 @@
 num_humans: 0 #number of human controlled robots
-num_ais: 2 #number of ai controlled robots
+num_ais: 5 #number of ai controlled robots
 width: 360 #128 #360 #width of camera view
 height: 240  #96  #240 #height of camera view
 timer: 0 #play time in seconds, 0 if infinite play time
@@ -11,3 +11,4 @@ strength_distance_limit: 3 #Maximum separation between robots to influence stren
 communication_distance_limit: 5 #Maximum separation at which a robot can be to be able to communicate with another
 goal_radius: 3 #Goal radius, starting from the center of the scenario
 sensing_radius: 2 #Robot will be able to sense objects within this radius
+danger_prob: 0.3 #When instantiating the objects in the scene, this is the probability an object gets assigned a dangerous level, instead of a benign one

@@ -229,7 +229,8 @@ async function gotDevices(deviceInfos) {
 		.getUserMedia(constraints)
 		.then(function(result){return gotStream(result, v)})
 		.catch(handleError);
-		document.body.insertBefore(videoElement, currentDiv);
+		//document.body.insertBefore(videoElement, currentDiv);
+		currentDiv.appendChild(videoElement);
 		v += 1;
 
 	}

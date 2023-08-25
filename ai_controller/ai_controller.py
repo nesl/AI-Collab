@@ -309,7 +309,7 @@ while True:
             ego_location = np.where(next_observation['frame'] == 5)
             previous_ego_location = np.where(robotState.latest_map == 5)
             robotState.latest_map[previous_ego_location[0][0],previous_ego_location[1][0]] = 0
-            robotState.latest_map[ego_location[0][0],ego_location[1][0]] = 5
+            
 
             
             if next_observation['action_status'][2]: #If sensing action was succesful
@@ -380,6 +380,8 @@ while True:
 
             #action["action"] = int(input("Next action > "))
             
+            
+            robotState.latest_map[ego_location[0][0],ego_location[1][0]] = 5 #Set ego robot in map
             
             if high_level_action_finished: #When a high level action finishes, we sense the environment
                 if last_action[1] == Action.get_messages.value: #Action.get_occupancy_map.value:
