@@ -14,7 +14,7 @@ Use `git clone --recurse-submodules https://github.com/nesl/AI-Collab.git` to cl
 
 3. Change to the **magnebot** directory and run `pip install .`
 
-4. Patch the controller TDW source file by issuing the next command `pip show tdw`, copying the directory shown in **Location**, appending to it the next line **/tdw/controller.py**, and then copying the **controller.py** file that is in this repository to that location.
+4. Patch the controller TDW source file by issuing the next command `pip show tdw`, copying the directory shown in **Location**, appending to it the line "**/tdw/controller.py**", and then copying the **controller.py** file that is in this repository to that location.
 
 After this, you will be able to run the simulation by going into the **simulator** directory and using `python simulation.py --local --no_virtual_cameras`. This will display a simulator window with the third person view camera, as well as an opencv window with a first person view of one of the robots. You can control this robot by focusing on the simulator window and using the arrows in the keyboard. Check the file **keysets.csv** for all the keys one can use for each robot.
 
@@ -61,6 +61,7 @@ Change to the **ai_controller** directory and install the gym environment by usi
 ### AI Control of a Robot
 
 1. Change to the **ai_controller** directory and run the **server_command** script. You have to also create a new certificate + key as this script executes an HTTPS server to setup the WebRTC parameters. Inside the **server_command**, specify the certificate, key and host address associated with this server, as well as the address to connect to.
+2. Alternatively, if you want to run many agents at the same time, you can use the **ai_controller/multiple_robot_instantiation.sh** using as the command-line argument the number of agents you want to instantiate. This will open a terminal with each tab representing each of the robots. This script just runs whatever you put in **server_command** and changes the **--robot-number** argument accordingly.
 
 #### Note
 
