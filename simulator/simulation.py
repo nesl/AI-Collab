@@ -28,6 +28,7 @@ import datetime
 import json
 import os
 import random
+import sys
 
 
 #Dimension of our camera view
@@ -167,8 +168,8 @@ class Enhanced_Magnebot(Magnebot):
         self.last_position = np.array([])
         self.stats = Stats()
         self.skip_frames = 0
-        self.p11 = float(np.random.uniform(0.5, 1)) #Binary channel
-        self.p22 = float(np.random.uniform(0.5, 1))
+        self.p11 = float(random.uniform(0.5, 1)) #Binary channel
+        self.p22 = float(random.uniform(0.5, 1))
         
         
     def reset(self,position):
@@ -185,8 +186,8 @@ class Enhanced_Magnebot(Magnebot):
         self.last_output = False
         self.stats = Stats()
         self.last_position = np.array([])
-        self.p11 = float(np.random.uniform(0.5, 1)) #Binary channel
-        self.p22 = float(np.random.uniform(0.5, 1))
+        self.p11 = float(random.uniform(0.5, 1)) #Binary channel
+        self.p22 = float(random.uniform(0.5, 1))
 
 #Main class
 class Simulation(Controller):
@@ -236,7 +237,13 @@ class Simulation(Controller):
         
         self.scenario = self.options.scenario
         
-        
+        if self.options.seed > -1:
+            seed_value = self.options.seed
+        else:
+            seed_value = random.randrange(sys.maxsize)
+            
+        random.seed(seed_value)
+        print("SEED:", seed_value)
         
 
         #Functionality of keys according to order of appearance: [Advance, Back, Right, Left, Grab with left arm, Grab with right arm, Camera down, Camera up, Activate sensor, Focus on object]
@@ -915,7 +922,7 @@ class Simulation(Controller):
             for fc in final_coords.keys():
                 for c in final_coords[fc]:
 
-                    weight = int(np.random.choice([1,2,3],1)[0])
+                    weight = int(random.choice([1,2,3],1)[0])
                     danger_level = np.random.choice([1,2],1,p=[0.9,0.1])[0]
                     #commands.extend(self.instantiate_object(fc,{"x": c[0], "y": 0, "z": c[1]},{"x": 0, "y": 0, "z": 0},10,danger_level,weight))
                     commands.extend(self.instantiate_object(fc,{"x": c[0], "y": 0, "z": c[1]},{"x": 0, "y": 0, "z": 0},10,2,1, object_index)) #Danger level 2 and weight 1
@@ -957,7 +964,7 @@ class Simulation(Controller):
 
             modifications = [[1.0,1.0],[-1.0,1.0],[1.0,-1.0],[-1.0,-1.0]]
             
-            danger_prob = self.cfg['danger_prob'] #0.3 #1.0 #0.3
+            danger_prob = self.cfg['danger_prob']*100 #0.3 #1.0 #0.3
 
             final_coords = {objm: [] for objm in object_models.keys()}
 
@@ -978,7 +985,7 @@ class Simulation(Controller):
                 for c in final_coords[fc]:
                     
                     possible_weights = list(range(1,num_users+num_ais+1)) #[1] #list(range(1,num_users+num_ais+1))
-                    weights_probs = [1]*len(possible_weights)
+                    weights_probs = [100]*len(possible_weights)
                     
                     for p_idx in range(len(possible_weights)):
                         if not p_idx:
@@ -991,8 +998,8 @@ class Simulation(Controller):
                     if len(possible_weights) == 1:
                         weight = 1
                     else:
-                        weight = int(np.random.choice(possible_weights,1,p=weights_probs)[0])
-                    danger_level = np.random.choice([1,2],1,p=[1-danger_prob,danger_prob])[0]
+                        weight = int(random.choices(possible_weights,weights=weights_probs)[0])
+                    danger_level = random.choices([1,2],weights=[100-danger_prob,danger_prob])[0]
                     
                     
                     #weight = 1
@@ -1713,7 +1720,7 @@ class Simulation(Controller):
                             estimate_accuracy = ego_magnebot.p22
                         #estimate_accuracy = float(np.random.uniform(0.5, 1))
                     
-                        danger_estimate = np.random.choice([actual_danger_level,*possible_danger_levels_tmp],1,p=[estimate_accuracy,1-estimate_accuracy])
+                        danger_estimate = random.choices([actual_danger_level,*possible_danger_levels_tmp],weights=[estimate_accuracy*100,(1-estimate_accuracy)*100])
                         danger_estimates[o_translated] = danger_estimate[0]
                         
                         ego_magnebot.item_info[o_translated]['sensor'][robot_id_translated] = {}
@@ -2858,6 +2865,13 @@ class Simulation(Controller):
 
     def reset_world(self):
         
+        if self.options.seed > -1:
+            seed_value = self.options.seed
+        else:
+            seed_value = random.randrange(sys.maxsize)
+        random.seed(seed_value)
+        print("SEED:", seed_value)
+        
         commands = []
         
         for go in self.graspable_objects:
@@ -2937,6 +2951,7 @@ if __name__ == "__main__":
     parser.add_argument('--showall', action='store_true', help="Show everything in the top view")
     parser.add_argument('--single-weight', action='store_true', help="Make all objects weight 1")
     parser.add_argument('--single-danger', action='store_true', help="Make all objects dangerous")
+    parser.add_argument('--seed', type=int, default=-1, help="Input seed value")
     
     args = parser.parse_args()
     
