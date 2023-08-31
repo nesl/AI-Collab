@@ -8,7 +8,7 @@ do
    if [[ $i -eq 1 ]]; then
    	COMMAND="gnome-terminal --title robot1 -- bash -ic \""
    else
-   	COMMAND+="gnome-terminal --tab --title robot$i -- bash -ic './server_command --robot-number $i;'; sleep 2; "
+   	COMMAND+="gnome-terminal --tab --title robot$i -- bash -ic './server_command --robot-number $i;'; sleep 3; "
    fi
 done
 

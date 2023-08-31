@@ -133,17 +133,20 @@ class LLMControl:
         return action_function
 
     @staticmethod
-    def calculateHValue(current,dest):
+    def calculateHValue(current,dest,all_movements):
 
         dx = abs(current[0] - dest[0])
         dy = abs(current[1] - dest[1])
-        
-        D = 1
-        D2 = np.sqrt(2)
      
-        h = D * (dx + dy) + (D2 - 2 * D) * min(dx, dy)
         
-        #h = dx + dy
+        if all_movements:   
+            D = 1
+            D2 = np.sqrt(2)
+     
+            h = D * (dx + dy) + (D2 - 2 * D) * min(dx, dy)
+    
+        else:    
+            h = dx + dy #For only four movements
 
         return h
 
@@ -162,8 +165,9 @@ class LLMControl:
         return path
             
     @staticmethod
-    def findPath(startNode,endNode,occMap,ignore=[]):
+    def findPath(startNode,endNode,occMap,ignore=[],all_movements=True):
 
+        all_movements = False
 
         if min(endNode) == -1 or any(endNode >= occMap.shape) or (endNode[0] == startNode[0] and endNode[1] == startNode[1]):
             return []
@@ -208,8 +212,10 @@ class LLMControl:
         for ig in ignore: #Remove ignore nodes
             closedSet.append(tuple(ig))
         
-        
-        next_nodes = np.array([[1,1],[-1,1],[1,-1],[-1,-1],[-1,0],[1,0],[0,1],[0,-1]]) #np.array([[-1,0],[1,0],[0,1],[0,-1]]) #np.array([[1,1],[-1,1],[1,-1],[-1,-1],[-1,0],[1,0],[0,1],[0,-1]])
+        if all_movements:
+            next_nodes = np.array([[1,1],[-1,1],[1,-1],[-1,-1],[-1,0],[1,0],[0,1],[0,-1]]) #np.array([[-1,0],[1,0],[0,1],[0,-1]]) #np.array([[1,1],[-1,1],[1,-1],[-1,-1],[-1,0],[1,0],[0,1],[0,-1]])
+        else:
+            next_nodes = np.array([[-1,0],[1,0],[0,1],[0,-1]])
 
         while openSet:
         
@@ -225,12 +231,12 @@ class LLMControl:
                     node_details[neighborNode[0]][neighborNode[1]]["parent"] = currentNode
                     return LLMControl.tracePath(node_details, endNode)
                 
-                if min(neighborNode) == -1 or any(neighborNode >= occMap.shape) or occMap[neighborNode[0],neighborNode[1]] != 0 or tuple(neighborNode) in closedSet:
+                if min(neighborNode) == -1 or any(neighborNode >= occMap.shape) or not (occMap[neighborNode[0],neighborNode[1]] == 0 or occMap[neighborNode[0],neighborNode[1]] == 3) or tuple(neighborNode) in closedSet: #modified to allow a robot to step into another robot's place
                     continue
 
             
                 gNew = node_details[currentNode[0]][currentNode[1]]["g"] + 1
-                hNew = LLMControl.calculateHValue(neighborNode,endNode)
+                hNew = LLMControl.calculateHValue(neighborNode,endNode,all_movements)
                 fNew = gNew + hNew
                 
                 if node_details[neighborNode[0]][neighborNode[1]]["f"] == highest_cost or node_details[neighborNode[0]][neighborNode[1]]["f"] > fNew:

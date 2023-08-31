@@ -32,7 +32,7 @@ parser.add_argument("--use-occupancy", action='store_true', help="Use occupancy 
 parser.add_argument("--address", default='https://172.17.15.69:4000', help="Address where our simulation is running")
 parser.add_argument("--robot-number", default=1, help="Robot number to control")
 parser.add_argument("--view-radius", default=0, help="When using occupancy maps, the view radius")
-parser.add_argument("--control", default="heuristic", type=str, help="Type of control to apply: heuristic,llm,openai,deepq,q")
+parser.add_argument("--control", default="heuristic", type=str, help="Type of control to apply: heuristic,llm,openai,deepq,q,manual")
 #parser.add_argument("--openai", action='store_true', help="Use openai.")
 #parser.add_argument("--llm", action='store_true', help="Use LLM.")
 
@@ -99,41 +99,47 @@ request_agent_info = 25
 wait = 26
 
 Action space
-    {
-        "action" : spaces.Discrete(len(self.Action)),
-        "item" : spaces.Discrete(self.map_config['num_objects']),
-        "robot" : spaces.Discrete(len(self.map_config['all_robots'])+1), #Allow for 0
-        "message" : spaces.Text(min_length=0,max_length=100)
-    }
+    
+                "action": spaces.Discrete(len(Action)),
+                "item": spaces.Discrete(self.map_config['num_objects']),
+                # Allow for 0
+                "robot": spaces.Discrete(len(self.map_config['all_robots']) + 1),
+                "message" : spaces.Text(min_length=0,max_length=100),
+                "num_cells_move": spaces.Discrete(map_size), #ignore
+            }
 
 
 
 
 Observation space
     {
-        "frame" : spaces.Box(low=0, high=5, shape=(map_size, map_size), dtype=int),
-        "objects_held" : spaces.Discrete(2),
-        "action_status" : spaces.MultiDiscrete([2]*4)
-        "item_output" : spaces.Dict(
-            {
-                "item_weight" : spaces.Discrete(10),
-                "item_danger_level" : spaces.Discrete(3),
-                "item_location" : spaces.MultiDiscrete([map_size, map_size])
+                "frame": spaces.Box(low=-2, high=5, shape=(map_size, map_size), dtype=np.int16),
+                "objects_held": spaces.Discrete(3, start=-1),
+                "action_status": spaces.MultiDiscrete(np.array([2] * 4), dtype=np.int16),
+
+                "item_output": spaces.Dict(
+                    {
+                        "item_weight": spaces.Discrete(len(self.map_config['all_robots'])+1),
+                        "item_danger_level": spaces.Discrete(3),
+                        "item_danger_confidence": spaces.Box(low=0, high=1, shape=(1,), dtype=float),
+                        "item_location": spaces.Box(low=-np.infty, high=np.infty, shape=(2,), dtype=np.int16),
+                        "item_time": spaces.Box(low=0, high=np.infty, shape=(1,), dtype=np.int16)
+                    }
+                ),
+                "num_items": spaces.Discrete(self.map_config['num_objects'] + 1),
+
+                "neighbors_output": spaces.Dict(
+                    {
+                        "neighbor_type": spaces.Discrete(3, start=-1),
+                        "neighbor_location": spaces.Box(low=-np.infty, high=np.infty, shape=(2,), dtype=np.int16)
+                    }
+
+                ),
+                # Strength starts from zero
+                "strength": spaces.Discrete(len(self.map_config['all_robots']) + 2),
+                "num_messages": spaces.Discrete(100)
+
             }
-        ),
-        "num_items" : spaces.Discrete(self.map_config['num_objects']),
-        "neighbors_output" : spaces.Dict(
-            {
-                "neighbor_type" : spaces.Discrete(2),
-                "neighbor_location" : spaces.MultiDiscrete([map_size, map_size])
-            }
-        
-        ),
-        "strength" : spaces.Discrete(len(self.map_config['all_robots'])+1), #Strength starts from zero
-        "num_messages" : spaces.Discrete(100)
-        
-        #"objects_danger_level" : spaces.Box(low=1,high=2,shape=(self.map_config['num_objects'],), dtype=int)
-    }
 
 '''
 
@@ -291,8 +297,9 @@ while True:
         
         if reward != 0:
             print('Reward', reward)
-            process_reward = reward
+            process_reward += reward
             
+        #print(next_observation["num_items"])
             
         if next_observation["num_items"] > len(robotState.items):
             diff_len = next_observation["num_items"] - len(robotState.items)
@@ -402,7 +409,6 @@ while True:
 
                         action["action"],action["item"],action["message"],action["robot"] = h_control.planner_sensing(robotState, process_reward, step_count, terminated or truncated, next_observation, info, messages)
 
-                        process_reward = 0
                         
                         print("STEP", step_count, action["action"])
                         
@@ -413,11 +419,17 @@ while True:
                     
                         last_high_action = action["action"]
                         action["action"] = deepq_control.control(reward, terminated, truncated, robotState, action, step_count, ego_location)
-                        process_reward = 0
+
                         if action["action"] < 0:
                             break
                             
+                    elif args.control == 'manual':
+                        print("Messages", messages)
+                        print("Total reward", process_reward)
+                        action["action"] = int(input(">> "))
+                        
                     messages = []
+                    process_reward = 0
 
                     
                     

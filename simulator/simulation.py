@@ -1143,7 +1143,7 @@ class Simulation(Controller):
     def instantiate_object(self, model_name, position, rotation, mass, danger_level, required_strength, object_index):
 
         if self.options.single_weight:
-            required_strength = 1
+            required_strength = self.options.single_weight
         if self.options.single_danger:
             danger_level = 2
 
@@ -1921,6 +1921,7 @@ class Simulation(Controller):
                 
                 all_magnebots[all_idx].item_info[object_id_translated]["time"] = self.timer
                 all_magnebots[all_idx].item_info[object_id_translated]["location"] = self.object_manager.transforms[object_id].position.tolist()
+                all_magnebots[all_idx].item_info[object_id_translated]["weight"] = int(self.required_strength[object_id])
 
                 if object_id not in all_magnebots[all_idx].stats.objects_in_goal and np.linalg.norm(self.object_manager.transforms[object_id].position[[0,2]]) < float(self.cfg["goal_radius"]):
                     if "sensor" not in all_magnebots[all_idx].item_info[object_id_translated]:
@@ -1934,7 +1935,7 @@ class Simulation(Controller):
                     all_magnebots[all_idx].item_info[object_id_translated]["sensor"][robot_id_translated]['value'] = int(self.danger_level[object_id])
                     all_magnebots[all_idx].item_info[object_id_translated]["sensor"][robot_id_translated]['confidence'] = 1
                         
-                    all_magnebots[all_idx].stats.objects_in_goal.append(int(object_id))
+                    all_magnebots[all_idx].stats.objects_in_goal.append(self.object_names_translate[object_id])
                     
                     if self.danger_level[object_id] == 2:
                         all_magnebots[all_idx].stats.dangerous_objects_in_goal.append(self.object_names_translate[object_id])
@@ -2030,7 +2031,7 @@ class Simulation(Controller):
 
                 if str(pos_new[0])+'_'+str(pos_new[1]) not in self.object_attributes_id:
                     self.object_attributes_id[str(pos_new[0])+'_'+str(pos_new[1])] = []
-                self.object_attributes_id[str(pos_new[0])+'_'+str(pos_new[1])].append((self.object_names_translate[o],self.required_strength[o]))
+                self.object_attributes_id[str(pos_new[0])+'_'+str(pos_new[1])].append((self.object_names_translate[o],self.required_strength[o],int(self.danger_level[o])))
             
             #Magnebots
             for o in [*self.user_magnebots,*self.ai_magnebots]:
@@ -2889,12 +2890,14 @@ class Simulation(Controller):
         random.shuffle(self.ai_spawn_positions)
         random.shuffle(self.user_spawn_positions)
         
+        for u_idx in range(len(self.ai_magnebots)):
+            self.ai_magnebots[u_idx].reset(position=self.ai_spawn_positions[u_idx])
+        
         for u_idx in range(len(self.user_magnebots)):
             self.user_magnebots[u_idx].reset(position=self.user_spawn_positions[u_idx])
             #self.user_magnebots[u_idx].ui.initialized = False
             
-        for u_idx in range(len(self.ai_magnebots)):
-            self.ai_magnebots[u_idx].reset(position=self.ai_spawn_positions[u_idx])
+        
         
         
         '''
@@ -2949,7 +2952,7 @@ if __name__ == "__main__":
     parser.add_argument('--scenario', type=int, default=1, help='Choose scenario')
     parser.add_argument('--log', action='store_true', help="Log occupancy maps + create videos")
     parser.add_argument('--showall', action='store_true', help="Show everything in the top view")
-    parser.add_argument('--single-weight', action='store_true', help="Make all objects weight 1")
+    parser.add_argument('--single-weight', type=int, default=0, help="Make all objects of the specified weight")
     parser.add_argument('--single-danger', action='store_true', help="Make all objects dangerous")
     parser.add_argument('--seed', type=int, default=-1, help="Input seed value")
     

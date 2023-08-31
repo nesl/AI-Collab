@@ -366,6 +366,54 @@ class AICollabEnv(gym.Env):
         )
 
         self.goal_count = 0
+        
+    def reward(self, world_state, sensing_output):
+ 
+        reward = 0
+        occupancy_map = world_state[0]
+        object_metadata = world_state[1]
+        objects_held = world_state[2]
+
+        if any(objects_held):
+            for oh in objects_held:
+                if oh:
+                    self.extra['carrying_object'] = oh          
+        elif 'carrying_object' in self.extra and self.extra['carrying_object']:
+            self.extra['dropped_object'] = self.extra['carrying_object']
+            self.extra['carrying_object'] = ""
+                    
+        #print(object_metadata, self.extra, objects_held)
+        #Give a reward whenever agent drops object in desired area
+        if 'dropped_object' in self.extra and self.extra['dropped_object'] and self.extra['dropped_object'] not in self.objects_in_goal: #Check that the agent just dropped object, and that this object has not been put in the goal area in the past
+            for xy in self.goal_coords:
+                key = str(xy[0]) + '_' + str(xy[1])
+                if key in object_metadata:
+                    for object_map in object_metadata[key]:
+                        if isinstance(object_map, list) and self.extra['dropped_object'] in object_map:
+                            
+                            print(object_map)
+                            
+                            if object_map[2] == 2:
+                                reward += 10 #Dangerous object dropped in safe area
+                            elif object_map[2] == 1:
+                                reward += -5 #Benign object dropped in safe area
+                                
+                            self.objects_in_goal.append(object_map[0])
+
+                        
+                       
+        self.extra['dropped_object'] = ''
+        
+        
+        ego_location = np.where(occupancy_map == 5)
+        old_ego_location = np.where(sensing_output['occupancy_map'] == 5)
+        
+        if ego_location[0][0] != old_ego_location[0][0] or ego_location[1][0] != old_ego_location[1][0]:
+            reward += -0.01
+       
+        
+        
+        return reward
 
     def step(self, action):
 
@@ -395,39 +443,19 @@ class AICollabEnv(gym.Env):
         info['last_sensed'] = self.last_sensed
         info['time'] = float(world_state[7])
         
-        reward = 0
-        
 
         
 
         #REWARD ESTIMATION
         
         
-        object_metadata = world_state[1]
-        objects_held = world_state[2]
         
-        if any(objects_held):
-            for oh in objects_held:
-                if oh:
-                    self.extra['carrying_object'] = oh          
-        elif 'carrying_object' in self.extra and self.extra['carrying_object']:
-            self.extra['dropped_object'] = self.extra['carrying_object']
-            self.extra['carrying_object'] = ""
-                    
-        #print(object_metadata, self.extra, objects_held)
-        #Give a reward whenever agent drops object in desired area
-        if 'dropped_object' in self.extra and self.extra['dropped_object'] and self.extra['dropped_object'] not in self.objects_in_goal: #Check that the agent just dropped object, and that this object has not been put in the goal area in the past
-            for xy in self.goal_coords:
-                key = str(xy[0]) + '_' + str(xy[1])
-                if key in object_metadata:
-                    for object_map in object_metadata[key]:
-                        if isinstance(object_map, list) and self.extra['dropped_object'] in object_map:
-                            reward += 1
-                            self.objects_in_goal.append(object_map[0])
-
-                        
-                       
-        self.extra['dropped_object'] = ''
+        
+        
+        reward = self.reward(world_state,sensing_output)
+        
+        
+        
         
         '''
         for xy in self.goal_coords:
@@ -1112,15 +1140,18 @@ class AICollabEnv(gym.Env):
                             
                             self.last_sensed.append(object_key)
 
-                            self.update_objects_info(
-                                object_key,
-                                danger_sensing_data[object_key]['time'],
-                                danger_sensing_data[object_key]['sensor'],
-                                [
-                                    danger_sensing_data[object_key]['location'][0],
-                                    danger_sensing_data[object_key]['location'][2]],
-                                danger_sensing_data[object_key]['weight'],
-                                True)
+                            try:
+                                self.update_objects_info(
+                                    object_key,
+                                    danger_sensing_data[object_key]['time'],
+                                    danger_sensing_data[object_key]['sensor'],
+                                    [
+                                        danger_sensing_data[object_key]['location'][0],
+                                        danger_sensing_data[object_key]['location'][2]],
+                                    danger_sensing_data[object_key]['weight'],
+                                    True)
+                            except:
+                                pdb.set_trace()
                                 
                             '''
                             for ob_idx, ob in enumerate(self.object_info):
