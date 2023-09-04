@@ -9,6 +9,7 @@ commander
   .option('--address <value>', 'IP address', '172.17.15.69')
   .option('--port <number>', 'Port', 4000)
   .option('--log', 'Log everything')
+  .option('--message-loop', 'Send back messages sent')
   .parse(process.argv);
 
 const command_line_options = commander.opts();
@@ -316,6 +317,7 @@ io.sockets.on("connection", socket => { //When a client connects
     
     console.log(timestamp,sim_id,message);
     
+
     
     if(! disable_list.includes(sim_id)){
 		message_sent = true;
@@ -332,6 +334,10 @@ io.sockets.on("connection", socket => { //When a client connects
 		    //console.log(neighbors_list)
 		    
 		    var keys_neighbors = '"';
+		    
+		    if (command_line_options.messageLoop){
+			    socket.emit("message", message, timestamp, source_id); //Emit message to itself
+		    }
 		    
 		    for (const [key, value] of Object.entries(neighbors_list)) {
 		        //console.log(key)

@@ -562,6 +562,7 @@ class AICollabEnv(gym.Env):
         
         self.goal_coords = [(x,y) for x,x_coord in enumerate(map_coordinates) for y,y_coord in enumerate(map_coordinates) if np.linalg.norm([x_coord,y_coord]) <= self.map_config['goal_radius']]
         
+
         
         """
         goal_radius = int(self.map_config['goal_radius']/self.map_config['cell_size'])-1 #Square against circle

@@ -33,6 +33,7 @@ parser.add_argument("--address", default='https://172.17.15.69:4000', help="Addr
 parser.add_argument("--robot-number", default=1, help="Robot number to control")
 parser.add_argument("--view-radius", default=0, help="When using occupancy maps, the view radius")
 parser.add_argument("--control", default="heuristic", type=str, help="Type of control to apply: heuristic,llm,openai,deepq,q,manual")
+parser.add_argument("--message-loop", action="store_true", help="Use to allow messages to be sent back to sender")
 #parser.add_argument("--openai", action='store_true', help="Use openai.")
 #parser.add_argument("--llm", action='store_true', help="Use LLM.")
 
@@ -231,7 +232,12 @@ while True:
 
     observation, info = env.reset()
     
-    robotState = RobotState(observation['frame'].copy(), 0, env.action_space["robot"].n-1)
+    if args.message_loop:
+        num_robots = env.action_space["robot"].n
+    else:
+        num_robots = env.action_space["robot"].n-1
+    
+    robotState = RobotState(observation['frame'].copy(), 0, num_robots)
     #observation, reward, terminated, truncated, info = env.step(17)
     done = False
 
@@ -293,7 +299,10 @@ while True:
         
         next_observation, reward, terminated, truncated, info = env.step(action)
 
-     
+
+        if args.message_loop:
+            info["robot_key_to_index"][env.robot_id] = len(robotState.robots)-1
+        
         
         if reward != 0:
             print('Reward', reward)
