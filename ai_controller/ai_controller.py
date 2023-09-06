@@ -209,7 +209,7 @@ process_last_action = action["action"]
 reward_machine_state = 0
 '''
 
-num_steps = 600 #200#600
+num_steps = 3000 #600 #200#600
 
 num_episodes = 600
 

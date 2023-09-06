@@ -907,6 +907,8 @@ class Simulation(Controller):
             #coords[object_models[5]] = [[max_coord-3,max_coord-3]]
 
             modifications = [[1.0,1.0],[-1.0,1.0],[1.0,-1.0],[-1.0,-1.0]]
+            
+            
 
             final_coords = {}
 
@@ -963,6 +965,7 @@ class Simulation(Controller):
             
 
             modifications = [[1.0,1.0],[-1.0,1.0],[1.0,-1.0],[-1.0,-1.0]]
+            #modifications = [[1.0,1.0]]
             
             danger_prob = self.cfg['danger_prob']*100 #0.3 #1.0 #0.3
 
