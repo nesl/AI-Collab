@@ -17,7 +17,8 @@ class HeuristicControl:
         
         self.extended_goal_coords = goal_coords.copy()
         
-        self.extended_goal_coords.extend([[g[0]+op[0],g[1]+op[1]] for g in self.goal_coords for op in [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,-1],[1,-1],[-1,1]] if [g[0]+op[0],g[1]+op[1]] not in self.goal_coords])
+
+        self.extended_goal_coords.extend([(g[0]+op[0],g[1]+op[1]) for g in self.goal_coords for op in [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,-1],[1,-1],[-1,1]] if [g[0]+op[0],g[1]+op[1]] not in self.goal_coords])
 
         self.memory_replay = ReplayMemory(10000)
         
@@ -26,9 +27,11 @@ class HeuristicControl:
         self.robot_id = robot_id
         
         self.env = env
-        self.help_time_limit = random.randrange(30)
-        self.wait_time_limit = 10
+        
+        self.wait_time_limit = 5
+        self.wait_free_limit = 10
         self.help_time_limit2 = 30
+        self.help_time_limit = random.randrange(self.wait_time_limit,30)
         
         self.ending_locations = [[x,y] for x in range(8,13) for y in range(15,19)] #ending locations
         
@@ -58,6 +61,8 @@ class HeuristicControl:
             self.next_location = []
             self.next_goal = []
             self.team = ""
+            self.carrying = False
+            self.items = {}
     
         
         
@@ -87,7 +92,7 @@ class HeuristicControl:
         def item(items,item_idx,object_id, convert_to_real_coordinates):
     
             """ Example
-            Object 1 (weight: 1) Last seen in (5.5,5.5) at 00:57 Status Danger: benign, Prob. Correct: 88.1%
+            Object 1 (weight: 1) Last seen in (5.5,5.5) at 00:57. Status Danger: benign, Prob. Correct: 88.1%
             """
         
             message_text = ""
@@ -128,7 +133,7 @@ class HeuristicControl:
             return "Object (\d+) \(weight: (\d+)\) Last seen in (\(-?\d+\.\d+,-?\d+\.\d+\)) at (\d+:\d+)"
         @staticmethod
         def item_regex_full():
-            return "Object (\d+) \(weight: (\d+)\) Last seen in (\(-?\d+\.\d+,-?\d+\.\d+\)) at (\d+:\d+)\. Status Danger: (\w+), Prob. Correct: (\d+\.\d+)%"
+            return "Object (\d+) \(weight: (\d+)\) Last seen in (\(-?\d+\.\d+,-?\d+\.\d+\)) at (\d+:\d+).( Status Danger: (\w+), Prob. Correct: (\d+\.\d+)%)?"
         
         @staticmethod
         def sensing_help(object_id):
@@ -314,7 +319,7 @@ class HeuristicControl:
         self.being_helped_locations = []
         self.being_helped_combinations = []
         self.helping = []
-        self.accepted_help = False
+        self.accepted_help = ""
         self.target_location = []
         self.chosen_heavy_object = -1
         self.stuck_retries = 0
@@ -331,6 +336,8 @@ class HeuristicControl:
         self.potential_occupied_locations = []
         self.stuck_too_much = 0
         self.stuck_moving = 0
+        self.too_stuck = 0
+        self.stuck_wait_moving = 0
         
         #self.other_agents = {n:Other_Agent() for n in agents_ids}
         
@@ -349,12 +356,13 @@ class HeuristicControl:
           
         return combination
         
-    def go_to_location(self,x,y,occMap,robotState,info,end=False):
+    def go_to_location(self, x, y, occMap, robotState, info, ego_location, end=False,checking=False):
     
         occMap_clean = np.copy(occMap)
         locations_to_test = [[1,0],[0,1],[1,1],[-1,0],[0,-1],[-1,-1],[-1,1],[1,-1]]
-        ego_location = np.where(occMap == 5)
+
         all_movements = not robotState.object_held
+        action = -1 #For checking
         
         try:
             path_to_follow = LLMControl.findPath(np.array([ego_location[0][0],ego_location[1][0]]),np.array([x,y]),occMap,ignore=self.ignore_go_location, all_movements=all_movements)
@@ -365,7 +373,8 @@ class HeuristicControl:
         
         if x == ego_location[0][0] and y == ego_location[1][0]: #In case we are already in the destination
             action = []
-            self.stuck_retries = 0
+            if not checking:
+                self.stuck_retries = 0
         elif not path_to_follow: #This means there is no feasible path, maybe because robots are blocking the path
         
 
@@ -390,18 +399,18 @@ class HeuristicControl:
                 
                 path_to_follow = LLMControl.findPath(np.array([ego_location[0][0],ego_location[1][0]]),np.array([x,y]),occMap_clean,ignore=self.ignore_go_location, all_movements=all_movements)
                 
-                if path_to_follow and occMap[path_to_follow[0][0],path_to_follow[0][1]] != 0: #Removing robots does work, make other robots move
-                    robot_combinations = self.get_combinations(nearby_robots)
+                if path_to_follow and occMap[path_to_follow[0][0],path_to_follow[0][1]] != 0 and not checking: #Removing robots does work, make other robots move
+                    robot_combinations = self.get_combinations(nearby_robots) 
                     allowed_robots_blocking = (-1,0)
-                    for rc_idx,rc in enumerate(robot_combinations):
+                    for rc_idx,rc in enumerate(robot_combinations): #Check all possible combinations for moving robots (maybe moving one is enough or two are needed)
                         t_occMap = np.copy(occMap_clean)
                         for robot_loc in rc:
-                            t_occMap[robot_loc[0],robot_loc[1]] = 1
+                            t_occMap[robot_loc[0],robot_loc[1]] = 1 #We create a mask with locations of robots
                             
                         temp_path_to_follow = LLMControl.findPath(np.array([ego_location[0][0],ego_location[1][0]]),np.array([x,y]),t_occMap,ignore=self.ignore_go_location, all_movements=all_movements)
                         
                         if temp_path_to_follow and len(rc) >= allowed_robots_blocking[1]:
-                            allowed_robots_blocking = (rc_idx,len(rc))
+                            allowed_robots_blocking = (rc_idx,len(rc)) #Save combination index, move the least number of robots.
                     
                     order_robots = []
                             
@@ -409,18 +418,19 @@ class HeuristicControl:
                     robot_index_to_key = list(info['robot_key_to_index'].keys())
                     for rb_idx in self.ignore_robots:
                         rb = robotState.robots[rb_idx]["neighbor_location"]
-                        if allowed_robots_blocking[0] > -1 and rb not in robot_combinations[allowed_robots_blocking[0]] and not (self.helping and rb == helping_robot_location):
+                        if (allowed_robots_blocking[0] == -1 or (allowed_robots_blocking[0] > -1 and rb not in robot_combinations[allowed_robots_blocking[0]])) and not (self.helping and rb == helping_robot_location): #If the robot is not in the combination, move it
                             #order_robots.append(rb)
                             for nrobot_idx in range(len(robotState.robots)):
                                 if robotState.robots[nrobot_idx]["neighbor_location"] == rb:
-                                    robot_id = robot_index_to_key[list(info['robot_key_to_index'].values()).index(nrobot_idx)]
+                                    robot_id = robot_index_to_key[list(info['robot_key_to_index'].values()).index(nrobot_idx)] #Get the id of the robot
                                     break
                                     
  
+                            
                             if self.helping and robot_id == self.helping[0]:
                                 pdb.set_trace()
                             self.message_text += self.MessagePattern.move_request(robot_id)
-                            if not self.action_index == self.State.wait_free.value:
+                            if not self.action_index == self.State.wait_free.value and not self.action_index == self.State.wait_random.value:
                                 self.last_action_index = self.action_index
                             self.action_index = self.State.wait_free.value
                             self.wait_locations.append(rb)
@@ -430,37 +440,53 @@ class HeuristicControl:
                     action = -1
                     print("Waiting: moving", x,y, path_to_follow)
                     
+                    self.stuck_wait_moving += 1
+                    
+                    if self.stuck_wait_moving == 100:
+                        pdb.set_trace()
+                        
+                    if not re.search(self.MessagePattern.move_request_regex(),self.message_text):
+                        pdb.set_trace()
+                    
+                    
                 elif path_to_follow and occMap[path_to_follow[0][0],path_to_follow[0][1]] == 0: #If the next step has no robot move until you are next to a blocking robot
                     action = LLMControl.position_to_action([ego_location[0][0],ego_location[1][0]],path_to_follow[0],False)
                     
+                    self.stuck_wait_moving = 0
                 else: #We need to wait
                     action = -1
-                    print("Waiting: Couldn't go to", x,y, path_to_follow)
+                    if not checking:
+                        print("Waiting: Couldn't go to", x,y, path_to_follow)
+                        self.ignore_go_location = []
                     
                     #self.stuck_retries += 1
                     #if not path_to_follow:
                     #    pdb.set_trace()
                     #pdb.set_trace()
-                
+                    self.stuck_wait_moving = 0
             else:
         
                 action = -1
-                print("Couldn't go to", x,y)
-            
-                self.stuck_retries += 1
-            
-                if self.stuck_retries >= random.randrange(5,20):
-                    self.ignore_go_location = []
-                    self.stuck_retries = 0
+                
+                if not checking:
+                    print("Couldn't go to", x,y)
+                
+                    self.stuck_retries += 1
+                
+                    if self.stuck_retries >= random.randrange(5,20):
+                        self.ignore_go_location = []
+                        self.stuck_retries = 0
                     
             
                 
         elif x == path_to_follow[0][0] and y == path_to_follow[0][1] and occMap[x,y] and not end: #Next location is our destination. Actually we never arrive to the destination if there is already something there, we just stay one cell before.
             action = []
-            self.stuck_retries = 0
+            if not checking:
+                self.stuck_retries = 0
         #elif self.helping and (x == path_to_follow[1][0] and y == path_to_follow[1][1] and occMap[x,y]):
         #    action = []
-        else:
+        elif not checking:
+            
             self.stuck_retries = 0
             current_location = [ego_location[0][0],ego_location[1][0]]
             
@@ -484,22 +510,22 @@ class HeuristicControl:
             if path_to_follow:
                 self.previous_go_location = [path_to_follow[0][0],path_to_follow[0][1]]
                 action = LLMControl.position_to_action(current_location,path_to_follow[0],False)
-                
-        print("Retreis:", self.go_retries)   
-        
-        if action == -1:
-            self.stuck_moving += 1
-        else:
-            self.stuck_moving = 0
+                       
+        if not checking:
+            print("Retreis:", self.go_retries)   
+            
+            if action == -1:
+                self.stuck_moving += 1
+            else:
+                self.stuck_moving = 0
             
         return action,path_to_follow
         
     def drop(self):
         return Action.drop_object.value
         
-    def pick_up(self, occMap, item_location):
+    def pick_up(self, occMap, item_location, ego_location):
         
-        ego_location = np.where(occMap == 5)
     
         action = LLMControl.position_to_action([ego_location[0][0],ego_location[1][0]],item_location,True)
         
@@ -615,7 +641,7 @@ class HeuristicControl:
         return []
                         
     
-    def wait_for_others_func(self,occMap, info, robotState, nearby_other_agents, next_locations):
+    def wait_for_others_func(self,occMap, info, robotState, nearby_other_agents, next_locations, ego_location):
     
         wait_for_others = False    
         combinations_found = True
@@ -645,7 +671,6 @@ class HeuristicControl:
             elif next_locations: #At the beginning choose the order of path assignment
             
                 #According to next step, we have all the possible cells helping robots may move into
-                ego_location = np.where(occMap == 5)
         
                 ego_location = [ego_location[0][0],ego_location[1][0]]
                 
@@ -716,6 +741,8 @@ class HeuristicControl:
 
                 else:
                     combinations_found = False
+                    self.message_text += self.MessagePattern.carry_help_finish()
+                    print("No possible combinations 1")
                 
             else: #To wait for others to get into communication range
                 agent_sum = 0
@@ -727,12 +754,58 @@ class HeuristicControl:
                             
                 if agent_sum != len(self.being_helped):
                     within_comms_range = False
+                    
+                
+                if within_comms_range: #Compute feasible paths
+                
+        
+                    ego_location = [ego_location[0][0],ego_location[1][0]]
+                    
+                    limited_occ_map = np.copy(occMap)
+                    
+                    range1_1 = ego_location[0]-1
+                    range1_2 = ego_location[0]+2
+                    range2_1 = ego_location[1]-1
+                    range2_2 = ego_location[1]+2
+                    
+                    goal_locations = [[x,y] for x in range(ego_location[0]-1,ego_location[0]+2,1) for y in range(ego_location[1]-1,ego_location[1]+2,1) if not (x == ego_location[0] and y == ego_location[1])]
+                    limited_occ_map[ego_location[0],ego_location[1]] = 1
+                    
+                    for agent_id in self.being_helped: #locations with teammates
+
+                        agent_idx = info['robot_key_to_index'][agent_id]
+                        other_robot_location = robotState.robots[agent_idx]["neighbor_location"]
+                        limited_occ_map[other_robot_location[0],other_robot_location[1]] = 1
+
+            
+                    possible_permutations = list(itertools.permutations(list(range(len(self.being_helped)))))
+                    
+                    solution_found = []
+                    for perm in possible_permutations:
+
+                        possible_perm = self.find_order_team_rec(perm,0,robotState,info,goal_locations,limited_occ_map, len(self.being_helped))
+                        
+                        if possible_perm:
+                            solution_found = perm
+                            break
+                            
+                    if solution_found:
+                        possible_perm.reverse()
+                        
+                        self.being_helped_combinations = [[solution_found[p_idx],possible_perm[p_idx]] for p_idx in range(len(possible_perm))]
+                        print("Combinaionts", self.being_helped_combinations)                    
+
+                    else:
+                        combinations_found = False
+                        self.message_text += self.MessagePattern.carry_help_finish()
+                        print("No possible combinations 2")
                 
             print("Expected locations:", self.being_helped_locations)
                
         
             if within_comms_range and combinations_found and (not self.being_helped_locations or (self.being_helped_locations and self.being_helped_locations[-1] == previous_agent_location and len(self.being_helped_locations) != len(self.being_helped))):
 
+                """
                 if not next_locations:
 
                     
@@ -755,6 +828,7 @@ class HeuristicControl:
                     
                     if not new_location: #One agent is not able to get close
                         wait_for_others = True
+                        print("Not able to plan for agent", agent_id)
                     else:
                         self.being_helped_locations.append(new_location)
                         self.message_text += self.MessagePattern.move_order(agent_id, new_location, self.env.convert_to_real_coordinates)
@@ -766,16 +840,17 @@ class HeuristicControl:
                         
                     
                 else:
-                    comb_idx = len(self.being_helped_locations)
-                    new_location = self.being_helped_combinations[comb_idx][1]
+                """
+                comb_idx = len(self.being_helped_locations)
+                new_location = self.being_helped_combinations[comb_idx][1]
 
-                    self.being_helped_locations.append(new_location)
-                    
-                    help_idx = self.being_helped_combinations[comb_idx][0]
-                    
-                    agent_id = self.being_helped[help_idx]
-                    self.message_text += self.MessagePattern.move_order(agent_id, new_location, self.env.convert_to_real_coordinates)
-                    self.asked_time = time.time()
+                self.being_helped_locations.append(new_location)
+                
+                help_idx = self.being_helped_combinations[comb_idx][0]
+                
+                agent_id = self.being_helped[help_idx]
+                self.message_text += self.MessagePattern.move_order(agent_id, new_location, self.env.convert_to_real_coordinates)
+                self.asked_time = time.time()
             
             elif len(self.being_helped_locations) == len(self.being_helped) and self.being_helped_locations[-1] == previous_agent_location: #When all agents have followed orders
                 wait_for_others = False
@@ -790,7 +865,7 @@ class HeuristicControl:
     def wait_movement(self, agent_idx, agent):
     
         self.message_text = self.MessagePattern.wait(agent) #What happens when someone is carrying object
-        if not self.action_index == self.State.wait_random.value:
+        if not self.action_index == self.State.wait_random.value and not self.action_index == self.State.wait_free.value:
             self.last_action_index = self.action_index
         self.action_index = self.State.wait_random.value
         self.wait_requester = agent_idx
@@ -934,19 +1009,22 @@ class HeuristicControl:
                         self.action_index = self.State.move_and_pickup.value
                         self.being_helped_locations = []
                         
+                    
                     match_pattern = re.search(self.MessagePattern.location_regex(),self.message_text)
                     
-                    if not match_pattern.group(6):
-                        self.message_text.replace(match_pattern.group(), match_pattern.group() + " Helping " + self.robot_id + ". ")
+                    if match_pattern and not match_pattern.group(6):
+                        self.message_text = self.message_text.replace(match_pattern.group(), match_pattern.group() + " Helping " + self.robot_id + ". ")
                         
                     self.message_text += self.MessagePattern.follow(rm[0],teammate_number)
                 else:
                     self.message_text += self.MessagePattern.carry_help_reject(rm[0])
-            if re.search(self.MessagePattern.carry_help_regex(),rm[1]): # "I need help" in rm[1]:
+                    
+                    
+            if re.search(self.MessagePattern.carry_help_regex(),rm[1]) and self.role != "scout": # "I need help" in rm[1]:
                 rematch = re.search(self.MessagePattern.carry_help_regex(),rm[1])
                 
                 if re.search(self.MessagePattern.carry_help_regex(),self.message_text): #This means the robot is preparing to ask for help and reject the help request, we shouldn't allow this
-                    self.message_text.replace(re.search(self.MessagePattern.carry_help_regex(),self.message_text).group(), "")
+                    self.message_text = self.message_text.replace(re.search(self.MessagePattern.carry_help_regex(),self.message_text).group(), "")
                     self.asked_help = False
                     self.asked_time = time.time()
                     self.action_index = self.last_action_index
@@ -954,7 +1032,7 @@ class HeuristicControl:
                 
                 if not robotState.object_held and not self.helping and not self.being_helped and not self.accepted_help and not self.asked_help: # and not self.asked_help:
                     self.message_text += self.MessagePattern.carry_help_accept(rm[0])
-                    self.accepted_help = True
+                    self.accepted_help = rm[0]
                     
 
                     #self.helping = rm[0]
@@ -962,7 +1040,9 @@ class HeuristicControl:
                     
                 else:
                     self.message_text += self.MessagePattern.carry_help_participant_reject(rm[0])
-                    print(not robotState.object_held, not self.helping, not self.being_helped, not self.asked_help)
+                    print("Cannot help", not robotState.object_held, not self.helping, not self.being_helped, not self.accepted_help, not self.asked_help)
+                    
+                    
                     
             if re.search(self.MessagePattern.follow_regex(),rm[1]):
             
@@ -985,15 +1065,17 @@ class HeuristicControl:
                 
                 
                 if self.helping and self.helping[0] == rm[0]:
-                    self.accepted_help = False
+                    self.accepted_help = ""
                     self.action_index = self.State.get_closest_object.value
+                    print("Changed -3")
                 
                     self.helping = []
+                elif self.accepted_help == rm[0]:
+                    self.accepted_help = ""
                 
-                
-            if self.MessagePattern.carry_help_participant_reject(self.robot_id) in rm[1]:
-                #self.asked_help = False
-                self.asked_time = time.time()
+            #if self.MessagePattern.carry_help_participant_reject(self.robot_id) in rm[1]:
+            #    #self.asked_help = False
+            #    self.asked_time = time.time()
                 
             if re.search(self.MessagePattern.sensing_help_regex(),rm[1]): #"What do you know about object " in rm[1]:
                 rematch = re.search(self.MessagePattern.sensing_help_regex(),rm[1])
@@ -1004,43 +1086,73 @@ class HeuristicControl:
                 
                 if not self.message_text:
                      self.message_text += self.MessagePattern.sensing_help_negative_response(object_id)
-            if re.search(self.MessagePattern.item_regex_partial(),rm[1]):
+            if re.search(self.MessagePattern.item_regex_full(),rm[1]):
             
-                rematch = re.search(self.MessagePattern.item_regex_full(),rm[1])
+                for rematch in re.finditer(self.MessagePattern.item_regex_full(),rm[1]):
                 
-                full_match = False
-                
-                if not rematch:
-                    rematch = re.search(self.MessagePattern.item_regex_partial(),rm[1])
-                else:
-                    full_match = True
-            
-                object_id = rematch.group(1)
-                object_idx = info['object_key_to_index'][object_id]
-                
-                item = {}
-                
-                last_seen = list(eval(rematch.group(3)))
-                item["item_location"] = self.env.convert_to_grid_coordinates(last_seen)
-                last_time = rematch.group(4).split(":")
-                item["item_time"] = [int(last_time[1]) + int(last_time[0])*60]
-                item["item_weight"] = int(rematch.group(2))
-                item["item_danger_level"] = 0
-                item["item_danger_confidence"] = []
-                
-                
-                if full_match:
+                    object_id = rematch.group(1)
+                    object_idx = info['object_key_to_index'][object_id]
                     
-                    if "benign" in rematch.group(5):
-                        danger_level = 1
+                    item = {}
+                    
+                    last_seen = list(eval(rematch.group(3)))
+                    item["item_location"] = self.env.convert_to_grid_coordinates(last_seen)
+                    last_time = rematch.group(4).split(":")
+                    item["item_time"] = [int(last_time[1]) + int(last_time[0])*60]
+                    item["item_weight"] = int(rematch.group(2))
+                    item["item_danger_level"] = 0
+                    item["item_danger_confidence"] = []
+                    
+                    
+                    if rematch.group(5):
+                        
+                        if "benign" in rematch.group(6):
+                            danger_level = 1
+                            
+                        else:
+                            danger_level = 2
+                    
+                        item["item_danger_level"] = danger_level
+                        item["item_danger_confidence"] = [float(rematch.group(7))/100]
+                        print("update estimates", danger_level,item["item_danger_confidence"])
+                        
+                    robotState.update_items(item,object_idx) #Object gets updated based on higher confidence estimates
+                    
+                    if robotState.items[object_idx]["item_danger_level"] == 1:
+                    
+                        if object_idx not in self.not_dangerous_objects:
+                    
+                            self.not_dangerous_objects.append(object_idx)
+                            
+                            
+                        if item["item_weight"] > 1 and object_idx in self.heavy_objects["index"]:
+                            oi = self.heavy_objects["index"].index(object_idx)
+                            del self.heavy_objects["index"][oi]
+                            del self.heavy_objects["weight"][oi]
+                        
+                    elif robotState.items[object_idx]["item_danger_level"] == 2:
+                    
+                        if object_idx in self.not_dangerous_objects:
+                            self.not_dangerous_objects.remove(object_idx)
+                            
+                        if item["item_weight"] > 1 and object_idx not in self.heavy_objects["index"]:
+                            self.heavy_objects["index"].append(object_idx)
+                            self.heavy_objects["weight"].append(item["item_weight"])
+                        
+                    
+                    agent_idx = info['robot_key_to_index'][rm[0]]
+                    
+                    if object_id not in self.other_agents[agent_idx].items.keys():
+                        self.other_agents[agent_idx].items[object_id] = {"danger_level":0,"confidence":0}
+                        
+
+                    self.other_agents[agent_idx].items[object_id]["danger_level"] = item["item_danger_level"] #Update estimates about what other robots know
+                    
+                    if item["item_danger_confidence"]:
+                        self.other_agents[agent_idx].items[object_id]["confidence"] = item["item_danger_confidence"][0]
                     else:
-                        danger_level = 2
-                
-                    item["item_danger_level"] = danger_level
-                    item["item_danger_confidence"] = [float(rematch.group(6))/100]
-                    print("update estimates", danger_level,item["item_danger_confidence"])
-                    
-                robotState.update_items(item,object_idx)
+                        self.other_agents[agent_idx].items[object_id]["confidence"] = 0
+
 
                     
             if re.search(self.MessagePattern.location_regex(),rm[1]) and not (self.helping and self.helping[0] == rm[0] and self.action_index == self.State.obey.value) and not (self.being_helped and rm[0] in self.being_helped and self.action_index == self.State.drop_object.value) and not self.action_index == self.State.wait_message.value: #"Going towards location" in rm[1]: 
@@ -1059,11 +1171,17 @@ class HeuristicControl:
                 else:
                     self.other_agents[agent_idx].team = ""
                     
+                if match_pattern.group(4):
+                    self.other_agents[agent_idx].carrying = True
+                else:
+                    self.other_agents[agent_idx].carrying = False
+                    
                     
                 if self.helping and self.helping[0] == rm[0] and not match_pattern.group(6): #This means the team leader disbanded the team without us knowing
                     self.helping = []
-                    self.accepted_help = False
+                    self.accepted_help = ""
                     self.action_index = self.State.get_closest_object.value
+                    print("Changed -2")
                     
                 
                 curr_loc = tuple(self.env.convert_to_grid_coordinates(eval(match_pattern.group(3))))
@@ -1078,6 +1196,7 @@ class HeuristicControl:
                         
                     if self.target_location == other_target_location and not self.action_index == self.State.follow.value and not self.action_index == self.State.obey.value: #Change destination
                         self.action_index = self.State.get_closest_object.value
+                        print("Changed -1")
                         if self.being_helped:
                             self.being_helped = []
                             self.being_helped_locations = []
@@ -1096,6 +1215,7 @@ class HeuristicControl:
                                     
                                     if ord(rm[0]) < ord(self.robot_id): #If sender's id appears first than receiver in alphabetic order
                                         self.ignore_object.append(other_target_location)
+                                        print("Changed 0")
                                         self.action_index = self.State.get_closest_object.value
                                         
                                         if self.being_helped:
@@ -1106,6 +1226,7 @@ class HeuristicControl:
                                    
                                 else:
                                     self.ignore_object.append(other_target_location)
+                                    print("Changed 1")
                                     self.action_index = self.State.get_closest_object.value
                                     if self.being_helped:
                                         self.being_helped = []
@@ -1137,6 +1258,7 @@ class HeuristicControl:
                             if ord(other_id) < ord(our_id): #If sender's id appears first than receiver in alphabetic order
                                 #Move to free location
                                 self.ignore_object.append(other_target_location)
+                                print("Changed 2")
                                 self.action_index = self.State.get_closest_object.value
                                 if self.being_helped:
                                     self.being_helped = []
@@ -1146,6 +1268,7 @@ class HeuristicControl:
                         elif match_pattern.group(5) or match_pattern.group(4):
                             self.ignore_object.append(other_target_location)
                             self.action_index = self.State.get_closest_object.value
+                            print("Changed 3")
                             if self.being_helped:
                                 self.being_helped = []
                                 self.being_helped_locations = []
@@ -1202,13 +1325,35 @@ class HeuristicControl:
                                 self.wait_movement(agent_idx,rm[0])
                                 
                         else:
-                            if other_next_step not in self.potential_occupied_locations:
-                            
+
+                            if match_pattern.group(5):
+                                other_id = match_pattern.group(6)
+                            else:
                                 other_id = rm[0]
+                                
+                            if self.helping: 
+                                our_id = self.helping[0]
+                            else:
                                 our_id = self.robot_id
+                            
+                            other_id = rm[0]
+                            our_id = self.robot_id
+                                
+                            previous_index = -1
+                            
+                            if match_pattern.group(5) or match_pattern.group(4) or (ord(other_id) < ord(our_id) and (((match_pattern.group(5) and (self.helping or self.being_helped)) or (match_pattern.group(4) and robotState.object_held) or (match_pattern.group(4) and (self.helping or self.being_helped)) or (match_pattern.group(5) and robotState.object_held)) or not match_pattern.group(4) and not robotState.object_held and not match_pattern.group(5) and not self.helping and not self.being_helped)):
+                            
+                                for s_idx,s in enumerate(self.potential_occupied_locations):
+                                    if s[0] == other_next_step:
+                                        previous_index = s_idx
                                     
-                                if ord(other_id) < ord(our_id):
-                                    self.potential_occupied_locations.append(other_next_step)
+                                if previous_index == -1:
+                                    self.potential_occupied_locations.append([other_next_step,time.time()])
+                                    
+                                else:
+                                    self.potential_occupied_locations[previous_index][1] = time.time()
+                                        
+                                        
                     
             if self.MessagePattern.explanation_question(self.robot_id) in rm[1]:
                 self.message_text += self.MessagePattern.explanation_response(self.action_index)
@@ -1224,7 +1369,7 @@ class HeuristicControl:
             
                 
                 
-                if not robotState.object_held and not self.helping and not self.being_helped: #This condition is true only when robots have no teams and are not carrying any object
+                if not robotState.object_held and not self.being_helped and (not self.helping or (self.helping and self.helping[0] == rm[0])): #This condition is true only when robots have no teams and are not carrying any object
                             
                     print("MOVING")
                     
@@ -1255,7 +1400,7 @@ class HeuristicControl:
                         ego_location2 = [ego_location[0][0] + next_location[0],ego_location[1][0] + next_location[1]]
                         self.pending_location = ego_location2
                          
-                        if not self.action_index == self.State.wait_random.value:
+                        if not self.action_index == self.State.wait_random.value and not self.action_index == self.State.wait_free.value:
                             self.last_action_index = self.action_index
                         self.action_index = self.State.wait_random.value
                         self.wait_requester = agent_idx
@@ -1265,36 +1410,76 @@ class HeuristicControl:
                         #object_id = list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(self.heavy_objects['index'][ho])]
                         robot_index_to_key = list(info['robot_key_to_index'].keys())
                         self.message_text += self.MessagePattern.move_request(robot_index_to_key[list(info['robot_key_to_index'].values()).index(agent_idx)])
-                        if not self.action_index == self.State.wait_free.value:
+                        if not self.action_index == self.State.wait_free.value and not self.action_index == self.State.wait_random.value:
                             self.last_action_index = self.action_index
                         self.action_index = self.State.wait_free.value
                         self.asked_time = time.time()
                         self.wait_locations.append(next_location_with_robot)
+                        print("MOVING robot", action)
                 
                 
             if re.search(self.MessagePattern.move_order_regex(),rm[1]):
                 rematch = re.search(self.MessagePattern.move_order_regex(),rm[1])
                 
-                if rematch.group(1) == self.robot_id:
+                if rematch.group(1) == self.robot_id and self.helping:
                     self.target_location = self.env.convert_to_grid_coordinates(eval(rematch.group(2)))
                     self.action_index = self.State.obey.value
                     
         return action  
+        
+    def check_team_arrangement(self, item_location, occMap, weight, ego_location): #We need to know if it's even possible for a team to arrange itself in order to carry the object
+        
+        sub_occMap = occMap[item_location[0]-1:item_location[0]+2,item_location[1]-1:item_location[1]+2]
+        
+        free_locs = np.where((sub_occMap == 0) | (sub_occMap == 3))
+        num_possibles = 0
+        
+        for fl_idx in range(len(free_locs[0])):
+            
+            new_fl = [free_locs[0][fl_idx] + item_location[0]-1, free_locs[1][fl_idx] + item_location[1]-1]
+            
+        
+            possible_path = LLMControl.findPath(np.array([ego_location[0][0],ego_location[1][0]]),np.array([new_fl[0],new_fl[1]]),occMap)
+            
+            if possible_path:
+                num_possibles += 1
+                
+        clean_occMap = np.copy(occMap)
+        
+        for sg in self.extended_goal_coords:
+            clean_occMap[sg[0],sg[1]] = 0
+            
+        clean_occMap[item_location[0],item_location[1]] = 0
+                
+        possible_path = LLMControl.findPath(np.array([item_location[0],item_location[1]]),np.array([sg[0],sg[1]]),clean_occMap)
+        
+        free_locs_path = []
+        
+        for p in possible_path: #Check if there is space through all the trajectory
+            sub_occMap = clean_occMap[p[0]-1:p[0]+2,p[1]-1:p[1]+2]
+        
+            free_locs = len(np.where((sub_occMap == 0) | (sub_occMap == 3))[0])
+            
+            free_locs_path.append(free_locs)
+                
+        return num_possibles >= weight and all(f >= weight for f in free_locs_path)
 
-    def planner_sensing(self, robotState, reward, step_count, done, next_observation, info, received_messages):
+
+    def cancel_cooperation(self, message=""):
     
-        occMap = np.copy(robotState.latest_map)
+        self.action_index = self.State.get_closest_object.value
         
-        action = ""
-        item = 0
-        message = ''
-        robot = 0
-        num_neighbors = 0
+        if message:
+            self.message_text += message
+        self.asked_time = time.time()
+        self.being_helped = []
+        self.being_helped_locations = []
+        action = Action.get_occupancy_map.value
         
-        ego_location = np.where(occMap == 5)
-        neighbors_location = np.where(occMap == 3)
+        return action
         
-
+    def modify_occMap(self,robotState, occMap, ego_location, info):
+    
         if robotState.object_held: #Eliminate all carried objects from the occupancy map if robot is carrying object
             carried_objects = np.where(occMap == 4)
             for c_idx in range(len(carried_objects[0])):
@@ -1302,6 +1487,7 @@ class HeuristicControl:
             
 
         print(self.occupied_locations)
+
         for rob_loc_idx in reversed(range(len(self.occupied_locations))): #Make sure agents don't move to locations already occupied
         
             other_robot_location = self.occupied_locations[rob_loc_idx]
@@ -1331,10 +1517,15 @@ class HeuristicControl:
                 occMap[new_direction[0],new_direction[1]] = 1
                 
                 
-        for pot in self.potential_occupied_locations: #Potentially occupied locations
-            occMap[pot[0],pot[1]] = 1
+        print("Potential locations before", self.potential_occupied_locations)
+        for pot_idx in reversed(range(len(self.potential_occupied_locations))): #Potentially occupied locations, eliminate after some time
+            
+            if time.time() - self.potential_occupied_locations[pot_idx][1] > 5 or occMap[self.potential_occupied_locations[pot_idx][0][0],self.potential_occupied_locations[pot_idx][0][1]]: #Seconds to eliminate
+                del self.potential_occupied_locations[pot_idx]
+            else:
+                occMap[self.potential_occupied_locations[pot_idx][0][0],self.potential_occupied_locations[pot_idx][0][1]] = 1
         
-        self.potential_occupied_locations = []
+        print("Potential locations", self.potential_occupied_locations)
         
         if self.action_index != self.State.drop_object.value and robotState.object_held:
             for agent_id in self.being_helped: #if you are being helped, ignore locations of your teammates
@@ -1348,7 +1539,111 @@ class HeuristicControl:
         
         occMap[ego_location[0][0],ego_location[1][0]] = 5
         
+        
+    def get_neighboring_agents(self, robotState, ego_location):
+    
         nearby_other_agents = []
+        #Get number of neighboring robots at communication range
+        for n_idx in range(len(robotState.robots)):
+            if "neighbor_location" in robotState.robots[n_idx] and self.compute_real_distance([robotState.robots[n_idx]["neighbor_location"][0],robotState.robots[n_idx]["neighbor_location"][1]],[ego_location[0][0],ego_location[1][0]]) < self.env.map_config['communication_distance_limit']:
+                nearby_other_agents.append(n_idx)
+                
+        return nearby_other_agents
+
+    def carry_heavy_object(self, robotState, ego_location, nearby_other_agents, info):
+    
+        num_neighbors = len(nearby_other_agents)
+    
+        for ho_idx in reversed(range(len(self.heavy_objects["index"]))): #Eliminate heavy objects if they have already been taken care of
+            if tuple(robotState.items[self.heavy_objects["index"][ho_idx]]['item_location']) in self.extended_goal_coords:
+                del self.heavy_objects["index"][ho_idx]
+                del self.heavy_objects["weight"][ho_idx]
+                            
+        print("Asked help", self.asked_help)  
+        if self.role != "scout" and self.heavy_objects["index"] and not robotState.object_held and not self.accepted_help and not self.being_helped and not self.asked_help and time.time() - self.asked_time > self.help_time_limit: #Ask for help to move heavy objects 
+            
+            
+                    
+            order_heavy_objects_ind = np.argsort(self.heavy_objects['weight'])[::-1] #Depening on the number of neighbors, ask for help for a specific object
+                    
+            unavailable_robots = sum(1 if self.other_agents[oa_idx].team or self.other_agents[oa_idx].carrying else 0 for oa_idx in range(len(self.other_agents)) if oa_idx in nearby_other_agents)
+                    
+            chosen_object = -1
+            
+            for ho in order_heavy_objects_ind: #Select the object closest to ego
+            
+                    
+                if self.heavy_objects["index"][ho] in self.sensed_items and self.heavy_objects['weight'][ho] <= num_neighbors+1 - unavailable_robots and self.check_team_arrangement(robotState.items[self.heavy_objects["index"][ho]]['item_location'],robotState.latest_map, self.heavy_objects['weight'][ho], ego_location): #Heavy object should have been sensed by robot, there should be enough nearby robots, and it should be feasible
+                
+                    if chosen_object == -1 or (chosen_object > -1 and self.compute_real_distance(robotState.items[self.heavy_objects["index"][ho]]['item_location'],[ego_location[0][0],ego_location[1][0]]) < self.compute_real_distance(robotState.items[self.heavy_objects["index"][chosen_object]]['item_location'],[ego_location[0][0],ego_location[1][0]])):
+                        chosen_object = ho
+
+                    
+            
+            if chosen_object > -1:
+                object_id = list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(self.heavy_objects['index'][chosen_object])]
+                self.message_text += self.MessagePattern.carry_help(object_id,self.heavy_objects['weight'][chosen_object]-1)
+                self.asked_help = True
+                self.asked_time = time.time()
+                if not self.action_index == self.State.wait_free.value and not self.action_index == self.State.wait_random.value:
+                    self.last_action_index = self.action_index
+                self.action_index = self.State.wait_message.value
+                self.chosen_heavy_object = chosen_object
+                print("ASKING HELP")        
+
+    
+
+    
+    def exchange_sensing_info(self, robotState, info, nearby_other_agents):
+    
+        
+        object_info_message = []
+        
+        for noa in nearby_other_agents:   
+            
+            for item_idx in range(len(robotState.items)):
+                danger_level = robotState.items[item_idx]["item_danger_level"]
+                
+               
+                if danger_level > 0:
+                
+                    confidence = robotState.items[item_idx]["item_danger_confidence"][0]
+                
+                    object_id = list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(item_idx)]
+                    
+                    if object_id not in self.other_agents[noa].items.keys():
+                        self.other_agents[noa].items[object_id] = {"danger_level":0,"confidence":0}
+                    
+                    if not (self.other_agents[noa].items[object_id]["danger_level"] == danger_level and self.other_agents[noa].items[object_id]["confidence"] == confidence):
+                    
+                        if object_id not in object_info_message:
+                            object_info_message.append(object_id)
+                            self.message_text += self.MessagePattern.item(robotState.items,item_idx,object_id, self.env.convert_to_real_coordinates)
+                            
+                        self.other_agents[noa].items[object_id]["danger_level"] = danger_level
+                        self.other_agents[noa].items[object_id]["confidence"] = confidence
+                    
+    
+    def planner_sensing(self, robotState, reward, step_count, done, next_observation, info, received_messages):
+    
+        occMap = np.copy(robotState.latest_map)
+        
+        action = ""
+        item = 0
+        message = ''
+        robot = 0
+        num_neighbors = 0
+        
+        self.role = "general"
+        
+        ego_location = np.where(occMap == 5)
+        
+
+        self.modify_occMap(robotState, occMap, ego_location, info)
+
+        
+        
+        
         #Get number of neighboring robots at communication range
         #for nl_idx in range(len(neighbors_location[0])):
 
@@ -1358,41 +1653,14 @@ class HeuristicControl:
         #        num_neighbors += 1
                 
                 
-        #Get number of neighboring robots at communication range
-        for n_idx in range(len(robotState.robots)):
-            if "neighbor_location" in robotState.robots[n_idx] and self.compute_real_distance([robotState.robots[n_idx]["neighbor_location"][0],robotState.robots[n_idx]["neighbor_location"][1]],[ego_location[0][0],ego_location[1][0]]) < self.env.map_config['communication_distance_limit']:
-                num_neighbors += 1
-                nearby_other_agents.append(n_idx)
         
+        nearby_other_agents = self.get_neighboring_agents(robotState, ego_location)
+        num_neighbors = len(nearby_other_agents)
         
         if not self.helping: #not helping another robot
 
-            
-            for ho_idx in reversed(range(len(self.heavy_objects["index"]))): #Eliminate heavy objects if they have already been taken care of
-                if occMap[robotState.items[self.heavy_objects["index"][ho_idx]]['item_location'][0],robotState.items[self.heavy_objects["index"][ho_idx]]['item_location'][1]] == 0:
-                    del self.heavy_objects["index"][ho_idx]
-                    del self.heavy_objects["weight"][ho_idx]
-                                
+            self.carry_heavy_object(robotState, ego_location, nearby_other_agents, info)
                         
-            if self.heavy_objects["index"] and not robotState.object_held and not self.being_helped and not self.asked_help and time.time() - self.asked_time > self.help_time_limit: #Ask for help to move heavy objects 
-                
-                
-                        
-                order_heavy_objects_ind = np.argsort(self.heavy_objects['weight'])[::-1] #Depening on the number of neighbors, ask for help for a specific object
-                        
-                unavailable_robots = sum(1 if self.other_agents[oa_idx].team else 0 for oa_idx in range(len(self.other_agents)) if oa_idx in nearby_other_agents)
-                        
-                for ho in order_heavy_objects_ind:
-                        
-                    if self.heavy_objects['weight'][ho] <= num_neighbors+1 - unavailable_robots:
-                        object_id = list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(self.heavy_objects['index'][ho])]
-                        self.message_text += self.MessagePattern.carry_help(object_id,self.heavy_objects['weight'][ho]-1)
-                        self.asked_help = True
-                        self.asked_time = time.time()
-                        self.last_action_index = self.action_index
-                        self.action_index = self.State.wait_message.value
-                        self.chosen_heavy_object = ho
-                        break
 
 
         
@@ -1406,7 +1674,8 @@ class HeuristicControl:
             #        break
                                 
 
-            
+        
+        self.exchange_sensing_info(robotState, info, nearby_other_agents)    
             
         if not self.message_text: #if going to send message, skip normal execution of actions
         
@@ -1422,16 +1691,30 @@ class HeuristicControl:
                 item_location_idx = -1
                 min_path = []
                 
-                heavy_objects_location = [tuple(robotState.items[idx]['item_location']) for idx in self.heavy_objects["index"]]
+                heavy_objects_location = [tuple(robotState.items[idx]['item_location']) for idx in self.heavy_objects["index"] if idx in self.sensed_items] #We only exclude objects if they were sensed by this robot
+                non_dangerous_objects_location = [tuple(robotState.items[idx]['item_location']) for idx in self.not_dangerous_objects if idx in self.sensed_items]
+                
+                
+                if self.role == "general":
+                    objects_to_ignore = [self.extended_goal_coords, self.ignore_object, non_dangerous_objects_location, heavy_objects_location]
+                elif self.role == "scout":
+                    sensed_objects_location = [tuple(robotState.items[idx]['item_location']) for idx in self.sensed_items]
+                    objects_to_ignore = [self.extended_goal_coords, self.ignore_object, sensed_objects_location]
+                elif self.role == "lifter":
+                    non_sensed_objects = [tuple(robotState.items[idx]['item_location']) for idx in robotState.items if idx not in self.heavy_objects["index"] and idx not in self.not_dangerous_objects]
+                    objects_to_ignore = [self.extended_goal_coords, non_sensed_objects]
+                
                 
                 for it_idx in range(len(item_locations[0])): #Check which object in the map to go to
                     loc = (item_locations[0][it_idx],item_locations[1][it_idx])
                     
-                    if loc in self.extended_goal_coords or loc in self.ignore_object or loc in self.not_dangerous_objects or loc in heavy_objects_location: 
+                    if any(1 if loc in group else 0 for group in objects_to_ignore): 
                         continue
                         
+                        
                     try:
-                        possible_path = LLMControl.findPath(np.array([ego_location[0][0],ego_location[1][0]]),np.array([loc[0],loc[1]]),occMap,all_movements=(not robotState.object_held))
+                        _,possible_path = self.go_to_location(loc[0],loc[1],occMap,robotState,info,ego_location,ego_location,checking=True)
+                        #possible_path = LLMControl.findPath(np.array([ego_location[0][0],ego_location[1][0]]),np.array([loc[0],loc[1]]),occMap,all_movements=(not robotState.object_held))
                     except:
                         pdb.set_trace()
                     
@@ -1449,66 +1732,80 @@ class HeuristicControl:
                     
                     
                     
-                    action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info)
-                    
-                    print(action)
-                    self.action_index = self.State.sense_area.value
-                    already_scanned = False
+                    action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info,ego_location)
                     
                     
-                    for obj_idx,obj in enumerate(robotState.items): #If we have already scanned it, no need to do it again
-                        if obj_idx in self.sensed_items and obj["item_location"][0] == self.target_location[0] and obj["item_location"][1] == self.target_location[1] and not obj["item_weight"] > len(self.being_helped):
-                            self.action_index = self.State.move_and_pickup.value
-                            already_scanned = True
-                            
-                            print("Scanned", robotState.items[obj_idx],heavy_objects_location, self.heavy_objects)
-                            if tuple(robotState.items[obj_idx]["item_location"]) in heavy_objects_location:
-                                pdb.set_trace()
-                            #self.message_text = "What do you know about object " + str(list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(obj_idx)])
-                            
-                            if not action and isinstance(action, list) : #If already near target
-
+                    if self.role == "lifter":
+                        already_scanned = True
+                    elif self.role == "scout":
+                        already_scanned = False
+                    else:
+                    
+                        print(action)
+                        already_scanned = False
+                        
+                        
+                        for obj_idx,obj in enumerate(robotState.items): #If we have already scanned it, no need to do it again
+                            if obj_idx in self.sensed_items and obj["item_location"][0] == self.target_location[0] and obj["item_location"][1] == self.target_location[1]:
+                                self.action_index = self.State.move_and_pickup.value
+                                already_scanned = True
                                 
-                                wait_for_others,_ = self.wait_for_others_func(occMap, info, robotState, nearby_other_agents, [])
-                                self.being_helped_locations = []
-                                if not wait_for_others:
-                                    action = self.pick_up(occMap, self.target_location)
-                                    self.action_index = self.State.pickup_and_move_to_goal.value
-                                    
-                                    if action < 0:
-                                        action = Action.get_occupancy_map.value
-          
-                                else:
+                                print("Scanned", robotState.items[obj_idx],heavy_objects_location, self.heavy_objects)
+
+                        
+                                break
+
+
+                    if not already_scanned:
+                        if not action and isinstance(action, list): #If already near target, start sensing
+                            action = Action.danger_sensing.value
+                            print("Object:", self.target_location, robotState.items)
+                            self.target_location = []
+                            self.action_index = self.State.init_check_items.value   
+                        else:
+                            self.action_index = self.State.sense_area.value
+                    else:
+                        if not action and isinstance(action, list) : #If already near target
+
+                            wait_for_others,_ = self.wait_for_others_func(occMap, info, robotState, nearby_other_agents, [], ego_location)
+                            self.being_helped_locations = []
+                            if not wait_for_others:
+                                action = self.pick_up(occMap, self.target_location, ego_location)
+                                self.action_index = self.State.pickup_and_move_to_goal.value
+                                
+                                if action < 0:
                                     action = Action.get_occupancy_map.value
-                                    
-                                self.asked_time = time.time()
-                                #ego_location = np.where(occMap == 5)
-                                #self.past_location = [ego_location[0][0],ego_location[1][0]]
-                                self.retries = 0
-                            break
-                    
-                    
-                    self.past_location = [ego_location[0][0],ego_location[1][0]]   
-                    if not already_scanned and not action and isinstance(action, list): #If already near target, start sensing
-                        action = Action.danger_sensing.value
-                        self.target_location = []
-                        self.action_index = self.State.init_check_items.value   
+      
+                            else:
+                                action = Action.get_occupancy_map.value
+                                
+                            self.asked_time = time.time()
+                            #ego_location = np.where(occMap == 5)
+                            #self.past_location = [ego_location[0][0],ego_location[1][0]]
+                            self.retries = 0
+                            
+                        
+                    self.past_location = [ego_location[0][0],ego_location[1][0]]       
                     
                        
     
-                else:  
+                else: #No objective found
 
                     no_more_objects = True
-                    for obj_idx,obj in enumerate(robotState.items):
+                    for obj_idx,obj in enumerate(robotState.items): #If objects have not been scanned or objects of weight 1 have not been carried
+                        
                         if tuple(obj["item_location"]) not in self.extended_goal_coords:
-                            if obj["item_danger_level"] == 0:
+                            if obj_idx not in self.sensed_items and self.role != "lifter":
+                                print("Object missing scan", obj)
                                 no_more_objects = False
                                 break
-                            elif obj["item_weight"] == 1:
+                            elif obj["item_weight"] == 1 and obj_idx not in self.not_dangerous_objects and self.role != "scout":
                                 no_more_objects = False
+                                print("Object missing", obj)
                                 break
+                        
                                 
-                    if no_more_objects:
+                    if no_more_objects or self.stuck_too_much >= 100:
 
                         print("FINISHED")
                         
@@ -1519,26 +1816,34 @@ class HeuristicControl:
                         
                         self.target_location = random.choice(true_ending_locations)
                         
-                        action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info)
+                        action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info,ego_location)
+                        
+                        if self.role == "scout":
+                            self.item_index = 0
                         
                     else:
                         self.stuck_too_much += 1
                         
-                        #if self.stuck_too_much == 10:
+                        #if self.stuck_too_much == 100:
                         #    pdb.set_trace()
+                        
+                        
                     
                         action = Action.get_occupancy_map.value
                        
             elif self.action_index == self.State.sense_area.value:
             
-                self.ignore_object = []
-                action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info)
+                
+                action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info,ego_location)
                 
 
                 if self.stuck_moving > 10:
                     self.stuck_moving = 0
                     self.action_index = self.State.get_closest_object.value
                     self.ignore_object.append(self.target_location)
+                    print("Getting stuck moving!", self.ignore_object)
+                else:
+                    self.ignore_object = []
             
                 if occMap[self.target_location[0],self.target_location[1]] == 0: #The package was taken or something happened
                     self.action_index = self.State.get_closest_object.value
@@ -1572,7 +1877,7 @@ class HeuristicControl:
                     
                     if robotState.items[self.item_index-1]['item_danger_level'] == 1: #If not dangerous
                         if self.item_index-1 not in self.sensed_items:
-                            self.not_dangerous_objects.append(tuple(robotState.items[self.item_index-1]['item_location']))
+                            self.not_dangerous_objects.append(self.item_index-1) #tuple(robotState.items[self.item_index-1]['item_location']))
                     elif robotState.items[self.item_index-1]['item_weight'] == 1: #If dangerous and their weight is 1
                         self.target_location = robotState.items[self.item_index-1]['item_location']
                         self.target_idx = self.item_index-1
@@ -1587,31 +1892,39 @@ class HeuristicControl:
 
                         object_id = list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(self.item_index-1)]
                         
-                        self.message_text += self.MessagePattern.item(robotState.items,self.item_index-1,object_id, self.env.convert_to_real_coordinates)
-                        if not self.message_text:
-                            pdb.set_trace()
+                        #self.message_text += self.MessagePattern.item(robotState.items,self.item_index-1,object_id, self.env.convert_to_real_coordinates)
+     
 
             
                 action,item = self.process_sensor(robotState, next_observation)
                 if action < 0: #finished processing sensor measurements
-                    if not self.target_location: #in case there is no object sensed
+                
+                    if not self.target_location or self.role == "scout": #in case there is no object sensed
                         self.action_index = self.State.get_closest_object.value
                         action = Action.get_occupancy_map.value
+                        
+                        if self.role != "scout":
+                            self.too_stuck += 1
+                            if self.too_stuck > 100:
+                                print("Too stuck")
+                                pdb.set_trace()
+                        
 
                     else: #move towards object location
+                        self.too_stuck = 0
                         print(self.target_location)
-                        action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info)
+                        action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info,ego_location)
                         self.action_index = self.State.move_and_pickup.value
                         
                         self.message_text += self.MessagePattern.sensing_help(str(list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(self.target_idx)]))
                         
                         if not action and isinstance(action, list): #If already next to object, try to pick it up
                         
-                            wait_for_others,_ = self.wait_for_others_func(occMap, info, robotState, nearby_other_agents,[])
+                            wait_for_others,_ = self.wait_for_others_func(occMap, info, robotState, nearby_other_agents,[], ego_location)
                             self.being_helped_locations = []
                             
                             if not wait_for_others:
-                                action = self.pick_up(occMap, self.target_location)
+                                action = self.pick_up(occMap, self.target_location, ego_location)
                                 #ego_location = np.where(occMap == 5)
                                 if action < 0:
                                     action = LLMControl.position_to_action([ego_location[0][0],ego_location[1][0]],self.past_location,False) 
@@ -1622,9 +1935,9 @@ class HeuristicControl:
                                action = Action.get_occupancy_map.value 
                 else: 
                     self.past_location = [ego_location[0][0],ego_location[1][0]]
-            elif self.action_index == self.State.move_and_pickup.value:
+            elif self.action_index == self.State.move_and_pickup.value: #From here on, only lifter behavior
                 self.ignore_object = []
-                action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info)
+                action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info,ego_location)
                 print(self.target_location)
                 if occMap[self.target_location[0],self.target_location[1]] == 0: #The package was taken or something happened
                     self.action_index = self.State.get_closest_object.value
@@ -1641,13 +1954,13 @@ class HeuristicControl:
                     print("waiting for others!")                    
                     
                         
-                    wait_for_others,_ = self.wait_for_others_func(occMap, info, robotState, nearby_other_agents, [])
+                    wait_for_others,_ = self.wait_for_others_func(occMap, info, robotState, nearby_other_agents, [], ego_location)
                     
                     if not wait_for_others and not robotState.object_held: #pickup if next to object already
-                        action = self.pick_up(occMap, self.target_location)
+                        action = self.pick_up(occMap, self.target_location, ego_location)
                         if action < 0:
                             action = LLMControl.position_to_action([ego_location[0][0],ego_location[1][0]],self.past_location,False) 
-                          
+                        
                     else:
                         action = Action.get_occupancy_map.value 
                         self.past_location = [ego_location[0][0],ego_location[1][0]]
@@ -1674,7 +1987,7 @@ class HeuristicControl:
                     
                     self.target_location = g_coord
                     
-                    action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info)
+                    action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info,ego_location)
                     self.action_index = self.State.drop_object.value
                     
                     self.being_helped_locations = []
@@ -1696,46 +2009,41 @@ class HeuristicControl:
                       
                     if action == -1:
                     
-                        wait_for_others,_ = self.wait_for_others_func(occMap, info, robotState, nearby_other_agents, [])
+                        wait_for_others,combinations_found = self.wait_for_others_func(occMap, info, robotState, nearby_other_agents, [], ego_location)
                         
-                        print("Action move and pickup:", action, wait_for_others) 
+                        print("Action move and pickup:", action, wait_for_others, self.being_helped_locations) 
                         
                         if not wait_for_others:
                             
-                            action = self.pick_up(occMap, self.target_location)
-                            self.retries += 1
+                            action = self.pick_up(occMap, self.target_location, ego_location)
+                            
                             if self.retries == 3: #If can't pickup object just try with another
-                                self.action_index = self.State.get_closest_object.value
+
                                 self.ignore_object.append(tuple(self.target_location))
                                 
+                                message = ""
                                 if self.being_helped:
-                                    self.message_text += self.MessagePattern.carry_help_finish()
-                                    self.asked_time = time.time()
-                                self.being_helped = []
-                                self.being_helped_locations = []
+                                    message = self.MessagePattern.carry_help_finish()
+                                
+                                action = self.cancel_cooperation(message=message)
+                                
+                            self.retries += 1   
                             self.asked_time = time.time()
-                        elif time.time() - self.asked_time > self.help_time_limit2:
-                            self.action_index = self.State.get_closest_object.value
-                            self.message_text += self.MessagePattern.carry_help_complain() #"Thanks for nothing. I don't need your help."
-                            self.asked_time = time.time()
-                            action = Action.get_occupancy_map.value
-                            self.being_helped = []
-                            self.being_helped_locations = []
+                        elif not combinations_found: #No way of moving                          
+                            action = self.cancel_cooperation(message=self.MessagePattern.carry_help_finish())
+                        elif time.time() - self.asked_time > self.help_time_limit2:                           
+                            action = self.cancel_cooperation(message=self.MessagePattern.carry_help_complain())
                         else:
                             action = Action.get_occupancy_map.value 
                             
-
+                        
                     
 
             elif self.action_index == self.State.drop_object.value:
                             
                 if not robotState.object_held:            
-                    self.action_index = self.State.get_closest_object.value
-                    self.message_text += self.MessagePattern.carry_help_complain() #"Thanks for nothing. I don't need your help."
-                    self.asked_time = time.time()
-                    self.being_helped = []
-                    self.being_helped_locations = []
-                    action = Action.get_occupancy_map.value
+
+                    action = self.cancel_cooperation(message=self.MessagePattern.carry_help_complain())
                     
                 else:
                 
@@ -1749,7 +2057,7 @@ class HeuristicControl:
                     loop_done = False
                     
                     if not self.previous_next_loc or (self.previous_next_loc and self.previous_next_loc[0].tolist() == [ego_location[0][0],ego_location[1][0]]):
-                        action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info)
+                        action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info,ego_location)
                         
                         print("HAPPENING", action, self.next_loc)
                         
@@ -1767,21 +2075,18 @@ class HeuristicControl:
                         
                     
                     if not loop_done:
-                        wait_for_others,combinations_found = self.wait_for_others_func(occMap, info, robotState, nearby_other_agents, self.previous_next_loc)
+                        wait_for_others,combinations_found = self.wait_for_others_func(occMap, info, robotState, nearby_other_agents, self.previous_next_loc, ego_location)
                         
                         if not combinations_found: #No way of moving
                             action = self.drop()
-                            self.action_index = self.State.get_closest_object.value
-                            self.message_text += self.MessagePattern.carry_help_finish() 
-                            self.asked_time = time.time()
-                            self.being_helped = []
-                            self.being_helped_locations = []
+                            
+                            self.cancel_cooperation(message=self.MessagePattern.carry_help_finish())
                     
                     
                             
                     if loop_done or not wait_for_others: #If carrying heavy objects, wait for others
                         
-                        action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info)
+                        action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info,ego_location)
                         
                         if self.next_loc and self.previous_next_loc and not self.previous_next_loc[0].tolist() == self.next_loc[0].tolist(): #location changed
                             self.previous_next_loc = []
@@ -1796,23 +2101,19 @@ class HeuristicControl:
                             self.target_location = self.past_location
                             self.action_index = self.State.move_end.value
                         else:
-                            ego_location = np.where(occMap == 5)
                             self.past_location = [ego_location[0][0],ego_location[1][0]]
                             
                         self.asked_time = time.time()
                     elif time.time() - self.asked_time > self.help_time_limit2:
                         action = self.drop()
-                        self.action_index = self.State.get_closest_object.value
-                        self.message_text += self.MessagePattern.carry_help_complain() #"Thanks for nothing. I don't need your help."
-                        self.asked_time = time.time()
-                        self.being_helped = []
-                        self.being_helped_locations = []
-                    else:
+                        
+                        self.cancel_cooperation(message=self.MessagePattern.carry_help_complain())
+                    elif action != Action.drop_object.value:
                         action = Action.get_occupancy_map.value
                         print("waiting for others...")
                         
             elif self.action_index == self.State.move_end.value:
-                action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info)
+                action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info,ego_location)
             
                 if not action and isinstance(action, list):
                     action = Action.get_occupancy_map.value
@@ -1827,14 +2128,10 @@ class HeuristicControl:
                     
             elif self.action_index == self.State.wait_message.value:
                 if time.time() - self.asked_time > self.wait_time_limit:
-                    self.action_index = self.State.get_closest_object.value
-                    self.asked_time = time.time()
-                    self.asked_help = False
-                    self.message_text += self.MessagePattern.carry_help_cancel()
-                    self.asked_time = time.time()
-                    self.being_helped = []
-                    self.being_helped_locations = []
-                    self.help_time_limit = random.randrange(30)
+
+                    self.asked_help = False                    
+                    self.cancel_cooperation(message=self.MessagePattern.carry_help_cancel())
+                    self.help_time_limit = random.randrange(self.wait_time_limit,30)
                     print("end of waiting")
                 action = Action.get_occupancy_map.value
                 
@@ -1861,13 +2158,15 @@ class HeuristicControl:
                     
             elif self.action_index == self.State.wait_free.value: 
                 
-                for loc_wait_idx in reversed(range(len(self.wait_locations))):
+                for loc_wait_idx in reversed(range(len(self.wait_locations))): #Wait for robots to move from location
                     loc_wait = self.wait_locations[loc_wait_idx]
                     if occMap[loc_wait[0],loc_wait[1]] == 0:
                         del self.wait_locations[loc_wait_idx]
                 print(time.time() - self.asked_time)
-                if not self.wait_locations or time.time() - self.asked_time > self.help_time_limit:
+                if not self.wait_locations or time.time() - self.asked_time > self.wait_time_limit:
                     self.action_index = self.last_action_index
+                    self.wait_locations = []
+                    print("Last action", self.last_action_index)
                 else:
                     action = Action.get_occupancy_map.value
                         
@@ -1887,7 +2186,7 @@ class HeuristicControl:
                 self.target_location = robotState.robots[agent_idx]["neighbor_location"]
                 
 
-                action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info)
+                action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info,ego_location)
                 
                 if (not action and isinstance(action, list)) or self.compute_real_distance([self.target_location[0],self.target_location[1]],[ego_location[0][0],ego_location[1][0]]) < self.env.map_config['communication_distance_limit']-1:
                     action = Action.get_occupancy_map.value
@@ -1904,7 +2203,7 @@ class HeuristicControl:
                 
                 occMap[helping_location[0],helping_location[1]] = 1
                 
-                action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info, end=True)
+                action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info, ego_location, end=True)
                 if (not action and isinstance(action, list)):
                     action = Action.get_occupancy_map.value
             
@@ -1915,11 +2214,24 @@ class HeuristicControl:
                     
             elif self.action_index == self.State.end_meeting.value:
             
-                    action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info)
-            
-                    if not action and isinstance(action, list):
-                        action = Action.get_occupancy_map.value
-                    print("Finished")
+                action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info,ego_location)
+        
+                if not action and isinstance(action, list):
+                    
+                    if self.role == "scout": #Scout should share information
+                        
+                        object_id = list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(self.item_index)]
+                        
+                        self.message_text += self.MessagePattern.item(robotState.items,self.item_index,object_id, self.env.convert_to_real_coordinates)
+                        self.item_index += 1
+                        
+                        if self.item_index == len(robotState.items):
+                            self.item_index = 0
+                            self.role = "lifter"
+                            self.action_index = self.State.get_closest_object.value
+                
+                    action = Action.get_occupancy_map.value
+                print("Finished")
                     
                     
             if num_neighbors: #If there are nearby robots, announce next location and goal
@@ -1972,7 +2284,9 @@ class HeuristicControl:
                         
                         action,message = self.send_message(self.message_text)
                         self.message_text = ""
-                        print("SENDING MESSAGE", message)
+
+                        print("SENDING MESSAGE", info['time'], message)
+                        
 
                 
             
@@ -1985,7 +2299,7 @@ class HeuristicControl:
         
             action,message = self.send_message(self.message_text)
             self.message_text = ""
-            print("SENDING MESSAGE", message)
+            print("SENDING MESSAGE2", info['time'], message)
             
 
         """        
@@ -2024,141 +2338,4 @@ class HeuristicControl:
         
         
         
-    def planner(self, robotState, reward, step_count, done):
     
-        occMap = robotState.latest_map
-        
-        action = ""
-        
-        if self.action_index == 0:
-            print("New sequence")
-            item_locations = np.where(occMap == 2)
-            
-            ego_location = np.where(occMap == 5)
-            
-            
-            min_possible_path = float('inf')
-            item_location_idx = -1
-            min_path = []
-            
-            for it_idx in range(len(item_locations[0])):
-                loc = (item_locations[0][it_idx],item_locations[1][it_idx])
-                
-                if loc in self.goal_coords or loc in self.ignore_object: 
-                    continue
-                    
-
-                possible_path = LLMControl.findPath(np.array([ego_location[0][0],ego_location[1][0]]),np.array([loc[0],loc[1]]),occMap)
-                
-                if possible_path:
-                    possible_path_len = len(possible_path)
-                
-                    if possible_path_len < min_possible_path:
-                        min_possible_path = possible_path_len
-                        min_path = possible_path
-                        item_location_idx = it_idx
-                    
-            self.target_location = [item_locations[0][item_location_idx],item_locations[1][item_location_idx]]
-            
-            action = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info)
-            self.ignore_object = []
-            print(action)
-            self.action_index += 1
-            
-            if not action and isinstance(action, list):
-                action = self.pick_up(occMap, self.target_location)
-                ego_location = np.where(occMap == 5)
-                self.past_location = [ego_location[0][0],ego_location[1][0]]
-                self.action_index += 1
-                self.retries = 0
-        
-        elif self.action_index == 1:
-            action = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info)
-        
-            if occMap[self.target_location[0],self.target_location[1]] == 0: #The package was taken or something happened
-                self.action_index = 0
-
-         
-            if not action and isinstance(action, list):
-                action = self.pick_up(occMap, self.target_location)
-                ego_location = np.where(occMap == 5)
-                self.past_location = [ego_location[0][0],ego_location[1][0]]
-                self.action_index += 1
-                self.retries = 0
-                
-                
-        elif self.action_index == 2:
-            if robotState.object_held:
-                g_coord = []
-                for g_coord in self.goal_coords:
-                    if not occMap[g_coord[0],g_coord[1]]:
-                        target = g_coord
-                        break
-                
-                self.target_location = g_coord
-                action = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info)
-                self.action_index += 1
-                if not action and isinstance(action, list):
-                    #pdb.set_trace()
-                    action = self.drop()
-                    self.target_location = self.past_location
-                    self.action_index += 1
-            else:
-                
-                ego_location = np.where(occMap == 5)
-                action = LLMControl.position_to_action([ego_location[0][0],ego_location[1][0]],self.past_location,False)   
-                if action == -1:
-                    action = self.pick_up(occMap, self.target_location)
-                    self.retries += 1
-                    if self.retries == 3: #If can't pickup object just try with another
-                        self.action_index = 0
-                        self.ignore_object.append(tuple(self.target_location))
-
-                
-
-        elif self.action_index == 3:
-                        
-            action = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info)
-
-            if occMap[self.target_location[0],self.target_location[1]] == 2: #A package is now there
-                self.action_index = 2
-
-        
-            if not action and isinstance(action, list):
-                action = self.drop()
-                self.target_location = self.past_location
-                self.action_index += 1
-            else:
-                ego_location = np.where(occMap == 5)
-                self.past_location = [ego_location[0][0],ego_location[1][0]]
-                
-        elif self.action_index == 4:
-            action = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info)
-        
-            if not action and isinstance(action, list):
-                action = Action.get_occupancy_map.value
-                
-                self.action_index = 0
-                
-                
-        next_state = torch.tensor(np.concatenate((robotState.latest_map.ravel(),np.array([robotState.object_held]))), dtype=torch.float32).unsqueeze(0)
-        
-        if self.last_action >= 0 and action != Action.get_occupancy_map.value:
-            self.memory_replay.push(self.state, self.last_action, next_state, reward)
-            if step_count % 100:
-                self.memory_replay.save_to_disk("memory.json")
-        
-        self.state = next_state
-        
-        self.last_action = action
-        
-        if done or step_count == self.num_steps:
-            return -1
-            
-        if not action and isinstance(action, list):
-            pdb.set_trace()
-        
-        print(self.action_index)
-        
-        return action
-            

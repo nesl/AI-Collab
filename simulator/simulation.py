@@ -124,6 +124,7 @@ class Stats():
         self.grabbed_objects = 0
         self.grab_attempts = 0
         self.forced_dropped_objects = 0
+        self.dropped_outside_goal = 0
         self.objects_sensed = 0
         self.sensor_activation = 0
         self.objects_in_goal = []
@@ -135,8 +136,10 @@ class Stats():
         self.end_time = 0
         self.team_objects_in_goal = 0
         self.total_dangerous_objects = 0
+        self.quality_work = 0
         self.team_end_time = 0
         self.team_failure_reasons = {}
+        self.team_quality_work = 0
         
 
 #This class inherits the magnebot class, we just add a number of attributes over it
@@ -458,6 +461,10 @@ class Simulation(Controller):
                             arm = Arm(int(actions[2]))
                             ai_agent.drop(object_id, arm)
                             self.object_dropping.append([int(ai_agent.dynamic.held[arm][0]),time.time(),ai_agent,arm])
+                            
+                            if self.danger_level[object_id] == 2 and np.linalg.norm(self.object_manager.transforms[object_id].position[[0,2]]) >= float(self.cfg["goal_radius"]):
+                                ai_agent.stats.dropped_outside_goal += 1
+                                
                         elif actions[0] == 'reset_arm':
                             ai_agent.reset_arm(Arm(int(actions[1])))
                         elif actions[0] == 'rotate_camera':
@@ -1411,8 +1418,14 @@ class Simulation(Controller):
                 #print(self.user_magnebots[idx].resetting_arm)
                 
                 if self.user_magnebots[idx].dynamic.held[arm].size > 0 and not self.user_magnebots[idx].resetting_arm: #Press once to pick up, twice to drop
-                    self.user_magnebots[idx].drop(target=self.user_magnebots[idx].dynamic.held[arm][0], arm=arm, wait_for_object=False)
+                
+                    object_id = self.user_magnebots[idx].dynamic.held[arm][0]
+                
+                    self.user_magnebots[idx].drop(target=object_id, arm=arm, wait_for_object=False)
                     self.user_magnebots[idx].grasping = False
+                    
+                    if self.danger_level[object_id] == 2 and np.linalg.norm(self.object_manager.transforms[object_id].position[[0,2]]) >= float(self.cfg["goal_radius"]):
+                        self.user_magnebots[idx].stats.dropped_outside_goal += 1
                     
                     print("dropping", self.user_magnebots[idx].dynamic.held[arm], arm, self.required_strength[self.user_magnebots[idx].dynamic.held[arm][0]], self.danger_level[self.user_magnebots[idx].dynamic.held[arm][0]])
                     
@@ -2170,6 +2183,10 @@ class Simulation(Controller):
                         if robot_id_translated in all_magnebots[idx].item_info[object_id_translated]["sensor"]:
                             all_magnebots[idx].stats.objects_sensed += 1
                     
+                    
+                    number_dangerous_objects_in_goal = len(all_magnebots[idx].dangerous_objects_in_goal)
+                    all_magnebots[idx].stats.quality_work = max(0,(number_dangerous_objects_in_goal - (len(all_magnebots[idx].objects_in_goal) - number_dangerous_objects_in_goal) - all_magnebots[idx].dropped_outside_goal)/len(self.dangerous_objects))
+                    
                     #for k in all_magnebots[idx].stats.time_with_teammates.keys():
                     #    all_magnebots[idx].stats.time_with_teammates[k] = round(all_magnebots[idx].stats.time_with_teammates[k],1)
                     #all_magnebots[idx].stats.distance_traveled = round(all_magnebots[idx].stats.distance_traveled,1)
@@ -2181,11 +2198,14 @@ class Simulation(Controller):
                     
                         failure_reasons = {self.robot_names_translate[str(am.robot_id)]:am.stats.failed for am in all_magnebots}
                         
+                        team_quality_work = sum([am.stats.quality_work for am in all_magnebots])
+                        
                         for idx2 in range(len(all_magnebots)):
                             all_magnebots[idx2].stats.team_objects_in_goal = goal_counter
                             all_magnebots[idx2].stats.total_dangerous_objects = len(self.dangerous_objects)
                             all_magnebots[idx2].stats.team_end_time = all_magnebots[idx].stats.end_time
                             all_magnebots[idx2].stats.team_failure_reasons = failure_reasons
+                            all_magnebots[idx2].stats.team_quality_work = team_quality_work
                             
                             self.sio.emit("stats", (self.robot_names_translate[str(all_magnebots[idx2].robot_id)], all_magnebots[idx2].stats.__dict__, self.timer, True))
                             
@@ -2358,6 +2378,10 @@ class Simulation(Controller):
                             
                             all_magnebots[idx].stats.forced_dropped_objects += 1
                             
+                            
+                            if self.danger_level[grasped_object] == 2 and np.linalg.norm(self.object_manager.transforms[grasped_object].position[[0,2]]) >= float(self.cfg["goal_radius"]):
+                                all_magnebots[idx].stats.dropped_outside_goal += 1
+                            
                             """
                             if grasped_object in self.dangerous_objects:
                                 
@@ -2442,7 +2466,7 @@ class Simulation(Controller):
                 commands.append({"$type": "step_physics", "frames": 1})
             
             try:
-                
+                #commands.append({"$type": "step_physics", "frames": 1})
                 resp = self.communicate(commands)
             except Exception as e:
                 print("Error communication")
