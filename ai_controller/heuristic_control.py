@@ -12,7 +12,7 @@ import itertools
 
 class HeuristicControl:
 
-    def __init__(self, goal_coords, num_steps, robot_id, env):
+    def __init__(self, goal_coords, num_steps, robot_id, env, role):
         self.goal_coords = goal_coords.copy()
         
         self.extended_goal_coords = goal_coords.copy()
@@ -37,8 +37,16 @@ class HeuristicControl:
         
         self.other_agents = [self.Other_Agent() for r in range(env.action_space["robot"].n-1)]
         
+        
+        self.role = role
+        
+        self.planning = "equal"
+        
+        self.room_distance = 5
+        
     class State(Enum):
         get_closest_object = 0
+        init_move = 0 #Exchangable
         sense_area = 1
         init_check_items = 2
         check_items = 3
@@ -53,6 +61,11 @@ class HeuristicControl:
         wait_free = 12
         obey = 13
         end_meeting = 14
+        init_move_complete = 14 #Exchangable
+        waiting_order = 15
+        sense_compute = 16
+        sense_order = 17
+        collect_order = 18
         
     class Other_Agent:
         
@@ -63,6 +76,7 @@ class HeuristicControl:
             self.team = ""
             self.carrying = False
             self.items = {}
+            self.assignment = "None"
     
         
         
@@ -295,6 +309,53 @@ class HeuristicControl:
             
             return response
             
+        @staticmethod
+        def order_sense(robot_id, location, convert_to_real_coordinates):
+       
+            real_location = convert_to_real_coordinates(location)
+       
+            return str(robot_id) + ", go to location (" + str(real_location[0]) + "," + str(real_location[1]) + "). "
+        
+        @staticmethod    
+        def order_sense_regex():
+            return "(\w+), go to location (\(-?\d+\.\d+,-?\d+\.\d+\))"
+            
+        @staticmethod
+        def order_collect(robot_id, object_id):
+
+            return str(robot_id) + ", collect object " + str(object_id) + ". "
+        
+        @staticmethod    
+        def order_collect_regex():
+            return "(\w+), collect object (\d+)"
+            
+        @staticmethod
+        def order_collect_group(robot_id, other_robot_ids, object_id):
+        
+            
+            output_string = "Team leader: " + str(robot_id) + ". Helpers: ["
+            
+            for ori_idx,other_robot_id in enumerate(other_robot_ids):
+                if ori_idx:
+                    output_string += "," + other_robot_id
+                else:
+                    output_string += other_robot_id
+                    
+            output_string += "]. Collect object " + str(object_id) + ". "
+
+            return output_string 
+            
+        @staticmethod    
+        def order_collect_group_regex():
+            return "Team leader: (\w+). Helpers: \[(\w+)(,\w+)*\]. Collect object (\d+)"
+            
+        @staticmethod
+        def order_finished():
+            return "Order completed. "
+            
+        @staticmethod
+        def task_finished():
+            return "Task finished. "
         
             
         
@@ -338,6 +399,8 @@ class HeuristicControl:
         self.stuck_moving = 0
         self.too_stuck = 0
         self.stuck_wait_moving = 0
+        self.target_object_idx = -1
+        self.assigned_target_location = []
         
         #self.other_agents = {n:Other_Agent() for n in agents_ids}
         
@@ -980,6 +1043,8 @@ class HeuristicControl:
         return output_location
     
     """
+    
+    
     def message_processing(self,received_messages, robotState, info):
     
         action = -1
@@ -1005,6 +1070,7 @@ class HeuristicControl:
                         self.asked_help = False
                         
                         self.target_location = robotState.items[self.heavy_objects["index"][self.chosen_heavy_object]]['item_location']
+                        self.target_object_idx = self.heavy_objects["index"][self.chosen_heavy_object]
                         
                         self.action_index = self.State.move_and_pickup.value
                         self.being_helped_locations = []
@@ -1425,6 +1491,69 @@ class HeuristicControl:
                     self.target_location = self.env.convert_to_grid_coordinates(eval(rematch.group(2)))
                     self.action_index = self.State.obey.value
                     
+                    
+            if re.search(self.MessagePattern.order_sense_regex(),rm[1]):
+                for rematch in re.finditer(self.MessagePattern.order_sense_regex(),rm[1]):
+                    if rematch.group(1) == self.robot_id:
+                        self.assigned_target_location = self.env.convert_to_grid_coordinates(eval(rematch.group(2)))
+                        self.role = "scout"
+                        self.action_index = self.State.get_closest_object.value
+                        
+            if re.search(self.MessagePattern.order_collect_regex(),rm[1]):
+                for rematch in re.finditer(self.MessagePattern.order_collect_regex(),rm[1]):
+                    if rematch.group(1) == self.robot_id:
+                        object_idx = info['object_key_to_index'][rematch.group(2)]
+                        self.target_location = robotState.items[object_idx]["item_location"] #Check assignment
+                        self.target_object_idx = object_idx
+                        self.role = "lifter"
+                        self.action_index = self.State.move_and_pickup.value
+                        self.being_helped_locations = []
+                        
+            if re.search(self.MessagePattern.order_collect_group_regex(),rm[1]):
+                for rematch in re.finditer(self.MessagePattern.order_collect_group_regex(),rm[1]):
+                    if rematch.group(1) == self.robot_id:
+                        object_idx = info['object_key_to_index'][rematch.group(4)]
+                        self.role = "lifter"
+                        self.asked_time = time.time()
+                        self.being_helped.append(rematch.group(2))
+                        
+                        if rematch.group(3):
+                            self.being_helped.extend(rematch.group(3).split(",")[1:])
+                    
+                        
+                        self.target_location = robotState.items[object_idx]['item_location']
+                        self.target_object_idx = object_idx
+                        
+                        self.action_index = self.State.move_and_pickup.value
+                        self.being_helped_locations = []
+                        
+                    
+                        match_pattern = re.search(self.MessagePattern.location_regex(),self.message_text)
+                        
+                        if match_pattern and not match_pattern.group(6):
+                            self.message_text = self.message_text.replace(match_pattern.group(), match_pattern.group() + " Helping " + self.robot_id + ". ")
+                            
+                    elif rematch.group(2) == self.robot_id or (rematch.group(3) and self.robot_id in rematch.group(3).split(",")):
+                    
+
+                        self.role = "lifter"
+                        
+                        self.helping = [rematch.group(1),0]
+                        
+                        self.action_index = self.State.follow.value
+                        
+                        
+
+            if self.MessagePattern.order_finished() in rm[1] and self.role == "coordinator":  
+                robot_idx = info['robot_key_to_index'][rm[0]]
+                
+                self.other_agents[robot_idx].assignment = ""
+                
+            if self.MessagePattern.task_finished() in rm[1] and self.role == "coordinated":
+                
+                self.role = "lifter"
+                self.planning = "equal"
+                    
         return action  
         
     def check_team_arrangement(self, item_location, occMap, weight, ego_location): #We need to know if it's even possible for a team to arrange itself in order to carry the object
@@ -1464,6 +1593,15 @@ class HeuristicControl:
                 
         return num_possibles >= weight and all(f >= weight for f in free_locs_path)
 
+    def check_safe_direction(self, location):
+        
+        for ax in location:
+            if ax < 0:
+                return False
+            elif ax >= self.env.map_config['num_cells'][0]:
+                return False
+                
+        return True
 
     def cancel_cooperation(self, message=""):
     
@@ -1512,6 +1650,9 @@ class HeuristicControl:
         #Make sure possible directions are not blocked by other robots
         for direction in [[0,1],[1,0],[-1,0],[0,-1]]:
             new_direction = [ego_location[0][0] + direction[0],ego_location[1][0] + direction[1]]
+            
+            if not self.check_safe_direction(new_direction):
+                continue
             
             if occMap[new_direction[0],new_direction[1]] == 3: 
                 occMap[new_direction[0],new_direction[1]] = 1
@@ -1622,7 +1763,176 @@ class HeuristicControl:
                             
                         self.other_agents[noa].items[object_id]["danger_level"] = danger_level
                         self.other_agents[noa].items[object_id]["confidence"] = confidence
+            
+            
+    def central_planning(self, robotState, info, occMap, ego_location, nearby_other_agents):
+        
+        
+        
+        if self.action_index == self.State.init_move.value:
+        
+            
+            action = self.return_to_meeting_point(occMap, robotState, info, ego_location)
+            
+        elif self.action_index == self.State.init_move_complete.value:
+        
+            action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info,ego_location)
+        
+            all_robots_in_place = all([1 if not rob.assignment else 0 for rob in self.other_agents])
+                
+        
+            if not action and isinstance(action, list) and all_robots_in_place:
+                
+                self.action_index = self.State.sense_compute.value
+            
+                action = Action.get_occupancy_map.value
+                
+                self.assigned_item_locations = []
+    
+        elif self.action_index == self.State.sense_compute.value: #Calculate all clusters of object locations
+            item_locations = np.where(occMap == 2)    
+            
+            
+            
+            for assigned_item in range(len(item_locations[0])):
+            
+                distance = float("inf")
+                
+                item_loc = [item_locations[0][assigned_item],item_locations[1][assigned_item]]
+                
+                if self.assigned_item_locations:
+                    for ail1 in self.assigned_item_locations:
+                        distance = np.linalg.norm(np.array(ail1)-np.array(item_loc))
+
+                        if distance < self.room_distance:
+                            break
+                            
+                if distance < self.room_distance:
+                    continue
                     
+                _,possible_path = self.go_to_location(item_loc[0],item_loc[1],occMap,robotState,info,ego_location,checking=True)
+                
+                if possible_path:
+                    object_id = list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(assigned_item)]
+                    self.assigned_item_locations.append(item_loc)
+                    
+            
+            self.action_index = self.State.sense_order.value
+            action = Action.get_occupancy_map.value
+            
+            
+        elif self.action_index == self.State.sense_order.value:
+        
+            for rob in nearby_other_agents:
+                if not self.other_agents[rob].assignment:
+                
+                    robot_index_to_key = list(info['robot_key_to_index'].keys())
+                    robot_id = robot_index_to_key[list(info['robot_key_to_index'].values()).index(rob)]
+                    
+                    self.message_text += self.MessagePattern.order_sense(robot_id, self.assigned_item_locations[self.target_object_idx], self.env.convert_to_real_coordinates)
+                
+                    self.target_object_idx += 1
+                    
+                    if self.target_object_idx == len(self.assigned_item_locations):
+                        break
+            
+                        
+            if self.target_object_idx == len(self.assigned_item_locations):
+                self.action_index = self.State.move_order.value
+                self.target_object_idx = 0
+                
+            action = Action.get_occupancy_map.value
+                
+        elif self.action_index == self.State.collect_order.value:
+        
+            agents_not_busy = [rob for rob in nearby_other_agents if not self.other_agents[rob].assignment]
+        
+            missing_objects = []
+            
+            all_missing_objects = []
+            
+            for i_idx in range(len(robotState.items)):
+                item_location = robotState.items[i_idx]["item_location"]
+                
+                object_id = list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(i_idx)]
+                        
+                if item_location not in self.extended_goal_coords and robotState.items[i_idx]["item_danger_level"] == 2 and not any(1 if rob2.assignment == object_id else 0 for rob2 in self.other_agents) and len(robotState.robots) + 1 != robotState.items[i_idx]["item_weight"]:
+                    missing_objects.append(i_idx) 
+                    all_missing_objects.append(i_idx)
+                elif robotState.items[i_idx]["item_danger_level"] == 0 and not len(robotState.robots) + 1 == robotState.items[i_idx]["item_weight"]:
+                    all_missing_objects.append(i_idx)
+                
+        
+            for rob in nearby_other_agents:
+            
+                if not self.other_agents[rob].assignment:
+                
+                    robot_index_to_key = list(info['robot_key_to_index'].keys())
+                    robot_id = robot_index_to_key[list(info['robot_key_to_index'].values()).index(rob)]
+                        
+                    for m_idx in reversed(range(len(missing_objects))):
+                        
+                        i_idx = missing_objects[m_idx]
+                        
+                        if robotState.items[i_idx]["item_weight"] == 1: 
+                        
+                            object_id = list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(i_idx)]
+                            self.other_agents[rob].assignment = object_id
+                            self.message_text += self.MessagePattern.order_collect(robot_id,object_id, self.env.convert_to_real_coordinates)
+                            
+                            del missing_objects[m_idx]
+                            
+                        elif robotState.items[i_idx]["item_weight"] <= agents_not_busy:
+                            
+                            agents_needed = 0
+                            
+                            object_id = list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(i_idx)]
+                            
+                            
+                            other_robot_ids = []
+                            
+                            agent_idx = agents_not_busy.index(rob)
+                            del agents_not_busy[agent_idx]
+                            
+                            for agent_idx in reversed(range(robotState.items[i_idx]["item_weight"]-1)):
+                                other_robot_id = robot_index_to_key[list(info['robot_key_to_index'].values()).index(agents_not_busy[agent_idx])]
+                                self.other_agents[agents_not_busy[agent_idx]].assignment = object_id
+                                del agents_not_busy[agent_idx]
+                                
+                                other_robot_ids.append(other_robot_id)
+                                
+                                
+                            self.message_text += self.MessagePattern.order_collect_group(robot_id, other_robot_ids,object_id, self.env.convert_to_real_coordinates)
+                            
+                            del missing_objects[m_idx]
+                                    
+                                    
+            if not all_missing_objects:
+                self.action_index = self.State.end_meeting.value
+                self.planning = "equal"
+                
+            action = Action.get_occupancy_map.value                    
+                                
+                                
+                                
+        return action            
+        
+    
+    def return_to_meeting_point(self, occMap, robotState, info, ego_location):
+    
+        self.action_index = self.State.end_meeting.value
+                            
+        true_ending_locations = [loc for loc in self.ending_locations if occMap[loc[0],loc[1]] == 0]
+        
+        if self.target_location not in self.ending_locations:
+            self.target_location = random.choice(true_ending_locations)
+        
+        action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info,ego_location)
+        
+        if self.role == "scout":
+            self.item_index = 0
+            
+        return action
     
     def planner_sensing(self, robotState, reward, step_count, done, next_observation, info, received_messages):
     
@@ -1634,7 +1944,6 @@ class HeuristicControl:
         robot = 0
         num_neighbors = 0
         
-        self.role = "general"
         
         ego_location = np.where(occMap == 5)
         
@@ -1657,7 +1966,7 @@ class HeuristicControl:
         nearby_other_agents = self.get_neighboring_agents(robotState, ego_location)
         num_neighbors = len(nearby_other_agents)
         
-        if not self.helping: #not helping another robot
+        if not self.helping and not self.planning == "coordinator" and not self.planning == "coordinated": #not helping another robot
 
             self.carry_heavy_object(robotState, ego_location, nearby_other_agents, info)
                         
@@ -1674,565 +1983,625 @@ class HeuristicControl:
             #        break
                                 
 
-        
-        self.exchange_sensing_info(robotState, info, nearby_other_agents)    
+
+        self.exchange_sensing_info(robotState, info, nearby_other_agents) #Exchange info about objects sensing measurements
+            
             
         if not self.message_text: #if going to send message, skip normal execution of actions
         
         
-            if self.action_index == self.State.get_closest_object.value:
-                print("New sequence")
-                item_locations = np.where(occMap == 2)
-                
-                
-                
-                
-                min_possible_path = float('inf')
-                item_location_idx = -1
-                min_path = []
-                
-                heavy_objects_location = [tuple(robotState.items[idx]['item_location']) for idx in self.heavy_objects["index"] if idx in self.sensed_items] #We only exclude objects if they were sensed by this robot
-                non_dangerous_objects_location = [tuple(robotState.items[idx]['item_location']) for idx in self.not_dangerous_objects if idx in self.sensed_items]
-                
-                
-                if self.role == "general":
-                    objects_to_ignore = [self.extended_goal_coords, self.ignore_object, non_dangerous_objects_location, heavy_objects_location]
-                elif self.role == "scout":
-                    sensed_objects_location = [tuple(robotState.items[idx]['item_location']) for idx in self.sensed_items]
-                    objects_to_ignore = [self.extended_goal_coords, self.ignore_object, sensed_objects_location]
-                elif self.role == "lifter":
-                    non_sensed_objects = [tuple(robotState.items[idx]['item_location']) for idx in robotState.items if idx not in self.heavy_objects["index"] and idx not in self.not_dangerous_objects]
-                    objects_to_ignore = [self.extended_goal_coords, non_sensed_objects]
-                
-                
-                for it_idx in range(len(item_locations[0])): #Check which object in the map to go to
-                    loc = (item_locations[0][it_idx],item_locations[1][it_idx])
-                    
-                    if any(1 if loc in group else 0 for group in objects_to_ignore): 
-                        continue
-                        
-                        
-                    try:
-                        _,possible_path = self.go_to_location(loc[0],loc[1],occMap,robotState,info,ego_location,ego_location,checking=True)
-                        #possible_path = LLMControl.findPath(np.array([ego_location[0][0],ego_location[1][0]]),np.array([loc[0],loc[1]]),occMap,all_movements=(not robotState.object_held))
-                    except:
-                        pdb.set_trace()
-                    
-                    if possible_path:
-                        possible_path_len = len(possible_path)
-                    
-                        if possible_path_len < min_possible_path:
-                            min_possible_path = possible_path_len
-                            min_path = possible_path
-                            item_location_idx = it_idx
-                        
-                if item_location_idx >= 0: #If there is an object to go to
-                    self.stuck_too_much = 0
-                    self.target_location = [item_locations[0][item_location_idx],item_locations[1][item_location_idx]]
+            if self.planning != "coordinator":
+            
+                if self.action_index == self.State.get_closest_object.value:
+                    print("New sequence")
+                    item_locations = np.where(occMap == 2)
                     
                     
                     
-                    action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info,ego_location)
+                    
+                    min_possible_path = float('inf')
+                    item_location_idx = -1
+                    min_path = []
                     
                     
-                    if self.role == "lifter":
-                        already_scanned = True
+                    
+                    
+                    if self.role == "general":
+                        heavy_objects_location = [tuple(robotState.items[idx]['item_location']) for idx in self.heavy_objects["index"] if idx in self.sensed_items] #We only exclude objects if they were sensed by this robot
+                        non_dangerous_objects_location = [tuple(robotState.items[idx]['item_location']) for idx in self.not_dangerous_objects if idx in self.sensed_items]
+                        objects_to_ignore = [self.extended_goal_coords, self.ignore_object, non_dangerous_objects_location, heavy_objects_location]
                     elif self.role == "scout":
-                        already_scanned = False
-                    else:
+                        sensed_objects_location = [tuple(robotState.items[idx]['item_location']) for idx in self.sensed_items]
+                        objects_to_ignore = [self.extended_goal_coords, self.ignore_object, sensed_objects_location]
+                    elif self.role == "lifter":
+                        non_sensed_objects = [tuple(robotState.items[idx]['item_location']) for idx in range(len(robotState.items)) if robotState.items[idx]["item_danger_level"] == 0]
+                        non_dangerous_objects_location = [tuple(robotState.items[idx]['item_location']) for idx in self.not_dangerous_objects]
+                        heavy_objects_location = [tuple(robotState.items[idx]['item_location']) for idx in self.heavy_objects["index"]]
+                        objects_to_ignore = [self.extended_goal_coords, self.ignore_object, non_dangerous_objects_location, heavy_objects_location, non_sensed_objects]
                     
-                        print(action)
-                        already_scanned = False
-                        
-                        
-                        for obj_idx,obj in enumerate(robotState.items): #If we have already scanned it, no need to do it again
-                            if obj_idx in self.sensed_items and obj["item_location"][0] == self.target_location[0] and obj["item_location"][1] == self.target_location[1]:
-                                self.action_index = self.State.move_and_pickup.value
-                                already_scanned = True
-                                
-                                print("Scanned", robotState.items[obj_idx],heavy_objects_location, self.heavy_objects)
-
-                        
-                                break
-
-
-                    if not already_scanned:
-                        if not action and isinstance(action, list): #If already near target, start sensing
-                            action = Action.danger_sensing.value
-                            print("Object:", self.target_location, robotState.items)
-                            self.target_location = []
-                            self.action_index = self.State.init_check_items.value   
-                        else:
-                            self.action_index = self.State.sense_area.value
-                    else:
-                        if not action and isinstance(action, list) : #If already near target
-
-                            wait_for_others,_ = self.wait_for_others_func(occMap, info, robotState, nearby_other_agents, [], ego_location)
-                            self.being_helped_locations = []
-                            if not wait_for_others:
-                                action = self.pick_up(occMap, self.target_location, ego_location)
-                                self.action_index = self.State.pickup_and_move_to_goal.value
-                                
-                                if action < 0:
-                                    action = Action.get_occupancy_map.value
-      
-                            else:
-                                action = Action.get_occupancy_map.value
-                                
-                            self.asked_time = time.time()
-                            #ego_location = np.where(occMap == 5)
-                            #self.past_location = [ego_location[0][0],ego_location[1][0]]
-                            self.retries = 0
+                    
+                    if not self.planning == "coordinated" and not self.assigned_target_location:
+                    
+                        for it_idx in range(len(item_locations[0])): #Check which object in the map to go to
+                            loc = (item_locations[0][it_idx],item_locations[1][it_idx])
                             
-                        
-                    self.past_location = [ego_location[0][0],ego_location[1][0]]       
-                    
-                       
-    
-                else: #No objective found
-
-                    no_more_objects = True
-                    for obj_idx,obj in enumerate(robotState.items): #If objects have not been scanned or objects of weight 1 have not been carried
-                        
-                        if tuple(obj["item_location"]) not in self.extended_goal_coords:
-                            if obj_idx not in self.sensed_items and self.role != "lifter":
-                                print("Object missing scan", obj)
-                                no_more_objects = False
-                                break
-                            elif obj["item_weight"] == 1 and obj_idx not in self.not_dangerous_objects and self.role != "scout":
-                                no_more_objects = False
-                                print("Object missing", obj)
-                                break
-                        
+                            if any(1 if loc in group else 0 for group in objects_to_ignore): 
+                                continue
                                 
-                    if no_more_objects or self.stuck_too_much >= 100:
+                                
+                            try:
+                                _,possible_path = self.go_to_location(loc[0],loc[1],occMap,robotState,info,ego_location,checking=True)
+                                #possible_path = LLMControl.findPath(np.array([ego_location[0][0],ego_location[1][0]]),np.array([loc[0],loc[1]]),occMap,all_movements=(not robotState.object_held))
+                            except:
+                                pdb.set_trace()
+                            
+                            if possible_path:
+                                possible_path_len = len(possible_path)
+                            
+                                if possible_path_len < min_possible_path:
+                                    min_possible_path = possible_path_len
+                                    min_path = possible_path
+                                    item_location_idx = it_idx
+                            
+                    if item_location_idx >= 0 or self.assigned_target_location: #If there is an object to go to
+                        self.stuck_too_much = 0
+                        
+                        
+                        if not self.assigned_target_location:
+                            
+                            self_location = [ego_location[0][0],ego_location[1][0]]
+                        
+                            if self_location in self.ending_locations or step_count == 1: #If it's in the meeting location, we should not care about returning there immediately
+                                previous_target_location = []
+                            else:
+                                previous_target_location = self_location
+                            
+                            self.target_location = [item_locations[0][item_location_idx],item_locations[1][item_location_idx]]
+                        else:
+                            previous_target_location = []
+                            self.target_location = self.assigned_target_location
+                            self.assigned_target_location = []
+                        
 
-                        print("FINISHED")
                         
                         
-                        self.action_index = self.State.end_meeting.value
-                        
-                        true_ending_locations = [loc for loc in self.ending_locations if occMap[loc[0],loc[1]] == 0]
-                        
-                        self.target_location = random.choice(true_ending_locations)
                         
                         action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info,ego_location)
                         
-                        if self.role == "scout":
-                            self.item_index = 0
                         
+                        if self.role == "lifter":
+                            already_scanned = True
+                        elif self.role == "scout":
+                            already_scanned = False
+                        else:
+                        
+                            print(action)
+                            already_scanned = False
+                            
+                            
+                            for obj_idx,obj in enumerate(robotState.items): #If we have already scanned it, no need to do it again
+                                if obj_idx in self.sensed_items and obj["item_location"][0] == self.target_location[0] and obj["item_location"][1] == self.target_location[1]:
+                                    self.action_index = self.State.move_and_pickup.value
+                                    self.target_object_idx = obj_idx
+                                    already_scanned = True
+                                    
+                                    print("Scanned", robotState.items[obj_idx],heavy_objects_location, self.heavy_objects)
+      
+                                    
+                                    break
+
+
+                        if not already_scanned:
+                            if not action and isinstance(action, list): #If already near target, start sensing
+                                action = Action.danger_sensing.value
+                                print("Object:", self.target_location, robotState.items)
+                                self.target_location = []
+                                self.action_index = self.State.init_check_items.value 
+                            elif self.role == "scout" and (previous_target_location and np.linalg.norm(np.array(previous_target_location) - np.array(self.target_location)) > self.room_distance): #Whenever it finishes sensing a room return to meeting location. CHECK THIS!!!
+                                action = self.return_to_meeting_point(occMap, robotState, info, ego_location)
+                            else:
+                                self.action_index = self.State.sense_area.value
+                        else:
+                            if not action and isinstance(action, list) : #If already near target
+
+                                wait_for_others,_ = self.wait_for_others_func(occMap, info, robotState, nearby_other_agents, [], ego_location)
+                                self.being_helped_locations = []
+                                if not wait_for_others:
+                                    action = self.pick_up(occMap, self.target_location, ego_location)
+                                    self.action_index = self.State.pickup_and_move_to_goal.value
+                                    
+                                    if action < 0:
+                                        action = Action.get_occupancy_map.value
+          
+                                else:
+                                    action = Action.get_occupancy_map.value
+                                    
+                                self.asked_time = time.time()
+                                #ego_location = np.where(occMap == 5)
+                                #self.past_location = [ego_location[0][0],ego_location[1][0]]
+                                self.retries = 0
+                                
+                            
+                        self.past_location = [ego_location[0][0],ego_location[1][0]]       
+                        
+                           
+        
+                    else: #No objective found
+
+                        no_more_objects = True
+                        for obj_idx,obj in enumerate(robotState.items): #If objects have not been scanned or objects of weight 1 have not been carried
+                            
+                            if tuple(obj["item_location"]) not in self.extended_goal_coords:
+                                if obj_idx not in self.sensed_items and self.role != "lifter":
+                                    print("Object missing scan", obj)
+                                    no_more_objects = False
+                                    break
+                                elif obj["item_weight"] == 1 and obj_idx not in self.not_dangerous_objects and self.role != "scout" and not (obj_idx in self.ignore_object and self.role == "lifter"):
+                                    no_more_objects = False
+                                    print("Object missing", obj)
+                                    break
+                            
+                                    
+                        if no_more_objects or self.stuck_too_much >= 100 or self.planning == "coordinated":
+
+                            print("FINISHED")
+
+                            action = self.return_to_meeting_point(occMap, robotState, info, ego_location)
+                            
+                        else:
+                            self.stuck_too_much += 1
+                            
+                            #if self.stuck_too_much == 100:
+                            #    pdb.set_trace()
+                            
+                            
+                        
+                            action = Action.get_occupancy_map.value
+                           
+                elif self.action_index == self.State.sense_area.value:
+                
+                    
+                    action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info,ego_location)
+                    
+
+                    if self.stuck_moving > 10:
+                        self.stuck_moving = 0
+                        self.action_index = self.State.get_closest_object.value
+                        self.ignore_object.append(self.target_location)
+                        print("Getting stuck moving!", self.ignore_object)
                     else:
-                        self.stuck_too_much += 1
-                        
-                        #if self.stuck_too_much == 100:
-                        #    pdb.set_trace()
-                        
-                        
-                    
-                        action = Action.get_occupancy_map.value
+                        self.ignore_object = []
+                
+                    if occMap[self.target_location[0],self.target_location[1]] == 0: #The package was taken or something happened
+                        self.action_index = self.State.get_closest_object.value
+
+                 
+                    if not action and isinstance(action, list):
+                        action = Action.danger_sensing.value
+                        self.target_location = []
+                        self.action_index = self.State.init_check_items.value
+
                        
-            elif self.action_index == self.State.sense_area.value:
-            
-                
-                action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info,ego_location)
-                
-
-                if self.stuck_moving > 10:
-                    self.stuck_moving = 0
-                    self.action_index = self.State.get_closest_object.value
-                    self.ignore_object.append(self.target_location)
-                    print("Getting stuck moving!", self.ignore_object)
-                else:
-                    self.ignore_object = []
-            
-                if occMap[self.target_location[0],self.target_location[1]] == 0: #The package was taken or something happened
-                    self.action_index = self.State.get_closest_object.value
-
-             
-                if not action and isinstance(action, list):
-                    action = Action.danger_sensing.value
-                    self.target_location = []
-                    self.action_index = self.State.init_check_items.value
-
-                   
-                    
-            elif self.action_index == self.State.init_check_items.value:
-                self.ignore_object = []
-                self.item_index = 0
-                self.target_location = []
-                action,item = self.process_sensor(robotState, next_observation)
-                if action < 0: #No new sensing measurements
-
-                    self.action_index = self.State.get_closest_object.value
-                    action = Action.get_occupancy_map.value
-                else:
-                    self.action_index = self.State.check_items.value
-
-            elif self.action_index == self.State.check_items.value:
-            
-                
-                if robotState.items[self.item_index-1]['item_danger_level'] > 0: #Consider only those objects we obtain measurements from
-                    print(robotState.items[self.item_index-1])
-
-                    
-                    if robotState.items[self.item_index-1]['item_danger_level'] == 1: #If not dangerous
-                        if self.item_index-1 not in self.sensed_items:
-                            self.not_dangerous_objects.append(self.item_index-1) #tuple(robotState.items[self.item_index-1]['item_location']))
-                    elif robotState.items[self.item_index-1]['item_weight'] == 1: #If dangerous and their weight is 1
-                        self.target_location = robotState.items[self.item_index-1]['item_location']
-                        self.target_idx = self.item_index-1
-                    else: #If dangerous and heavy
-                        if self.item_index-1 not in self.sensed_items:
-                            #self.heavy_objects["location"].append(tuple(robotState.items[self.item_index-1]['item_location']))
-                            self.heavy_objects["index"].append(self.item_index-1)
-                            self.heavy_objects["weight"].append(robotState.items[self.item_index-1]['item_weight'])
-
-                    if self.item_index-1 not in self.sensed_items: #Create a list of sensed objects
-                        self.sensed_items.append(self.item_index-1)
-
-                        object_id = list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(self.item_index-1)]
                         
-                        #self.message_text += self.MessagePattern.item(robotState.items,self.item_index-1,object_id, self.env.convert_to_real_coordinates)
-     
+                elif self.action_index == self.State.init_check_items.value:
+                    self.ignore_object = []
+                    self.item_index = 0
+                    self.target_location = []
+                    action,item = self.process_sensor(robotState, next_observation)
+                    if action < 0: #No new sensing measurements
 
-            
-                action,item = self.process_sensor(robotState, next_observation)
-                if action < 0: #finished processing sensor measurements
-                
-                    if not self.target_location or self.role == "scout": #in case there is no object sensed
                         self.action_index = self.State.get_closest_object.value
                         action = Action.get_occupancy_map.value
-                        
-                        if self.role != "scout":
-                            self.too_stuck += 1
-                            if self.too_stuck > 100:
-                                print("Too stuck")
-                                pdb.set_trace()
-                        
-
-                    else: #move towards object location
-                        self.too_stuck = 0
-                        print(self.target_location)
-                        action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info,ego_location)
-                        self.action_index = self.State.move_and_pickup.value
-                        
-                        self.message_text += self.MessagePattern.sensing_help(str(list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(self.target_idx)]))
-                        
-                        if not action and isinstance(action, list): #If already next to object, try to pick it up
-                        
-                            wait_for_others,_ = self.wait_for_others_func(occMap, info, robotState, nearby_other_agents,[], ego_location)
-                            self.being_helped_locations = []
-                            
-                            if not wait_for_others:
-                                action = self.pick_up(occMap, self.target_location, ego_location)
-                                #ego_location = np.where(occMap == 5)
-                                if action < 0:
-                                    action = LLMControl.position_to_action([ego_location[0][0],ego_location[1][0]],self.past_location,False) 
-                                #self.past_location = [ego_location[0][0],ego_location[1][0]]
-                                self.action_index = self.State.pickup_and_move_to_goal.value
-                                self.retries = 0
-                            else:
-                               action = Action.get_occupancy_map.value 
-                else: 
-                    self.past_location = [ego_location[0][0],ego_location[1][0]]
-            elif self.action_index == self.State.move_and_pickup.value: #From here on, only lifter behavior
-                self.ignore_object = []
-                action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info,ego_location)
-                print(self.target_location)
-                if occMap[self.target_location[0],self.target_location[1]] == 0: #The package was taken or something happened
-                    self.action_index = self.State.get_closest_object.value
-                    print("Something happened at move_and_pickup")
-                    if self.being_helped:
-                        self.message_text += self.MessagePattern.carry_help_finish()
-                        self.asked_time = time.time()
-                    self.being_helped = []
-                    self.being_helped_locations = []
-
-             
-                if not action and isinstance(action, list):
-                
-                    print("waiting for others!")                    
-                    
-                        
-                    wait_for_others,_ = self.wait_for_others_func(occMap, info, robotState, nearby_other_agents, [], ego_location)
-                    
-                    if not wait_for_others and not robotState.object_held: #pickup if next to object already
-                        action = self.pick_up(occMap, self.target_location, ego_location)
-                        if action < 0:
-                            action = LLMControl.position_to_action([ego_location[0][0],ego_location[1][0]],self.past_location,False) 
-                        
                     else:
-                        action = Action.get_occupancy_map.value 
+                        self.action_index = self.State.check_items.value
+
+                elif self.action_index == self.State.check_items.value:
+                
+                    
+                    if robotState.items[self.item_index-1]['item_danger_level'] > 0: #Consider only those objects we obtain measurements from
+                        print(robotState.items[self.item_index-1])
+
+                        
+                        if robotState.items[self.item_index-1]['item_danger_level'] == 1: #If not dangerous
+                            if self.item_index-1 not in self.sensed_items:
+                                self.not_dangerous_objects.append(self.item_index-1) #tuple(robotState.items[self.item_index-1]['item_location']))
+                        elif robotState.items[self.item_index-1]['item_weight'] == 1: #If dangerous and their weight is 1
+                            self.target_location = robotState.items[self.item_index-1]['item_location']
+                            self.target_object_idx = self.item_index-1
+                        else: #If dangerous and heavy
+                            if self.item_index-1 not in self.sensed_items:
+                                #self.heavy_objects["location"].append(tuple(robotState.items[self.item_index-1]['item_location']))
+                                self.heavy_objects["index"].append(self.item_index-1)
+                                self.heavy_objects["weight"].append(robotState.items[self.item_index-1]['item_weight'])
+
+                        if self.item_index-1 not in self.sensed_items: #Create a list of sensed objects
+                            self.sensed_items.append(self.item_index-1)
+
+                            object_id = list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(self.item_index-1)]
+                            
+                            #self.message_text += self.MessagePattern.item(robotState.items,self.item_index-1,object_id, self.env.convert_to_real_coordinates)
+         
+
+                
+                    action,item = self.process_sensor(robotState, next_observation)
+                    if action < 0: #finished processing sensor measurements
+                    
+                        if not self.target_location or self.role == "scout": #in case there is no object sensed
+                            self.action_index = self.State.get_closest_object.value
+                            action = Action.get_occupancy_map.value
+                            
+                            if self.role != "scout":
+                                self.too_stuck += 1
+                                if self.too_stuck > 100:
+                                    print("Too stuck")
+                                    pdb.set_trace()
+                            
+
+                        else: #move towards object location
+                            self.too_stuck = 0
+                            print(self.target_location)
+                            action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info,ego_location)
+                            self.action_index = self.State.move_and_pickup.value
+                            
+                            self.message_text += self.MessagePattern.sensing_help(str(list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(self.target_object_idx)]))
+                            
+                            if not action and isinstance(action, list): #If already next to object, try to pick it up
+                            
+                                wait_for_others,_ = self.wait_for_others_func(occMap, info, robotState, nearby_other_agents,[], ego_location)
+                                self.being_helped_locations = []
+                                
+                                if not wait_for_others:
+                                    action = self.pick_up(occMap, self.target_location, ego_location)
+                                    #ego_location = np.where(occMap == 5)
+                                    if action < 0:
+                                        action = LLMControl.position_to_action([ego_location[0][0],ego_location[1][0]],self.past_location,False) 
+                                    #self.past_location = [ego_location[0][0],ego_location[1][0]]
+                                    self.action_index = self.State.pickup_and_move_to_goal.value
+                                    self.retries = 0
+                                else:
+                                   action = Action.get_occupancy_map.value 
+                    else: 
                         self.past_location = [ego_location[0][0],ego_location[1][0]]
                         
-                    #self.past_location = [ego_location[0][0],ego_location[1][0]]
-                    self.action_index = self.State.pickup_and_move_to_goal.value
-                    self.retries = 0
-                    self.asked_time = time.time()
-                    self.being_helped_locations = []
-
-                else:
-                    self.past_location = [ego_location[0][0],ego_location[1][0]]
-                    
-                
-            elif self.action_index == self.State.pickup_and_move_to_goal.value:
-                self.ignore_object = []
-
-                if robotState.object_held:
-                    g_coord = []
-                    for g_coord in self.goal_coords:
-                        if not occMap[g_coord[0],g_coord[1]]:
-                            target = g_coord
-                            break
-                    
-                    self.target_location = g_coord
-                    
+                        
+                        
+                elif self.action_index == self.State.move_and_pickup.value: #From here on, only lifter behavior
+                    self.ignore_object = []
                     action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info,ego_location)
-                    self.action_index = self.State.drop_object.value
+                    print(self.target_location)
                     
-                    self.being_helped_locations = []
-                    self.previous_next_loc = []
-                    #self.wait_for_others_func(occMap, info, robotState, self.next_loc)
-
-                    self.asked_time = time.time()
+                    if occMap[self.target_location[0],self.target_location[1]] == 0 or robotState.items[self.target_object_idx]["item_danger_level"] == 1: #The package was taken or something happened
+                        print("Something happened at move_and_pickup")
+                        message = ""
+                        if self.being_helped:
+                            message = self.MessagePattern.carry_help_finish()
+                        self.cancel_cooperation(message=message)
+                 
                     if not action and isinstance(action, list):
-                        #pdb.set_trace()
-                        action = self.drop()
-                        self.target_location = self.past_location
-                        self.action_index = self.State.move_end.value
-                    else:
-                        action = Action.get_occupancy_map.value #Wait for the next state in order to start moving
-                else:
                     
-                    #ego_location = np.where(occMap == 5)
-                    action = LLMControl.position_to_action([ego_location[0][0],ego_location[1][0]],self.past_location,False)
-                      
-                    if action == -1:
-                    
-                        wait_for_others,combinations_found = self.wait_for_others_func(occMap, info, robotState, nearby_other_agents, [], ego_location)
+                        print("waiting for others!")                    
                         
-                        print("Action move and pickup:", action, wait_for_others, self.being_helped_locations) 
-                        
-                        if not wait_for_others:
                             
+                        wait_for_others,_ = self.wait_for_others_func(occMap, info, robotState, nearby_other_agents, [], ego_location)
+                        
+                        if not wait_for_others and not robotState.object_held: #pickup if next to object already
                             action = self.pick_up(occMap, self.target_location, ego_location)
+                            if action < 0:
+                                action = LLMControl.position_to_action([ego_location[0][0],ego_location[1][0]],self.past_location,False) 
                             
-                            if self.retries == 3: #If can't pickup object just try with another
-
-                                self.ignore_object.append(tuple(self.target_location))
-                                
-                                message = ""
-                                if self.being_helped:
-                                    message = self.MessagePattern.carry_help_finish()
-                                
-                                action = self.cancel_cooperation(message=message)
-                                
-                            self.retries += 1   
-                            self.asked_time = time.time()
-                        elif not combinations_found: #No way of moving                          
-                            action = self.cancel_cooperation(message=self.MessagePattern.carry_help_finish())
-                        elif time.time() - self.asked_time > self.help_time_limit2:                           
-                            action = self.cancel_cooperation(message=self.MessagePattern.carry_help_complain())
                         else:
                             action = Action.get_occupancy_map.value 
+                            self.past_location = [ego_location[0][0],ego_location[1][0]]
                             
+                        #self.past_location = [ego_location[0][0],ego_location[1][0]]
+                        self.action_index = self.State.pickup_and_move_to_goal.value
+                        self.retries = 0
+                        self.asked_time = time.time()
+                        self.being_helped_locations = []
+
+                    else:
+                        self.past_location = [ego_location[0][0],ego_location[1][0]]
                         
                     
+                elif self.action_index == self.State.pickup_and_move_to_goal.value:
+                    self.ignore_object = []
 
-            elif self.action_index == self.State.drop_object.value:
-                            
-                if not robotState.object_held:            
-
-                    action = self.cancel_cooperation(message=self.MessagePattern.carry_help_complain())
-                    
-                else:
-                
-                    for agent_id in self.being_helped: #remove locations with teammates
-
-                        agent_idx = info['robot_key_to_index'][agent_id]
-                        other_robot_location = robotState.robots[agent_idx]["neighbor_location"]
-                        occMap[other_robot_location[0],other_robot_location[1]] = 3
-                                
-                    
-                    loop_done = False
-                    
-                    if not self.previous_next_loc or (self.previous_next_loc and self.previous_next_loc[0].tolist() == [ego_location[0][0],ego_location[1][0]]):
+                    if robotState.object_held:
+                        g_coord = []
+                        for g_coord in self.goal_coords:
+                            if not occMap[g_coord[0],g_coord[1]]:
+                                target = g_coord
+                                break
+                        
+                        self.target_location = g_coord
+                        
                         action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info,ego_location)
+                        self.action_index = self.State.drop_object.value
                         
-                        print("HAPPENING", action, self.next_loc)
-                        
+                        self.being_helped_locations = []
+                        self.previous_next_loc = []
+                        #self.wait_for_others_func(occMap, info, robotState, self.next_loc)
+
+                        self.asked_time = time.time()
                         if not action and isinstance(action, list):
-                            loop_done = True
-                         
-                        if not loop_done and self.next_loc:
-                            self.previous_next_loc = [self.next_loc[0]]
-                            self.being_helped_locations = []
-                        
-                            print("PEFIOUVS",self.being_helped_locations, self.next_loc, self.previous_next_loc)
-                            
-                        
-                        
-                        
-                    
-                    if not loop_done:
-                        wait_for_others,combinations_found = self.wait_for_others_func(occMap, info, robotState, nearby_other_agents, self.previous_next_loc, ego_location)
-                        
-                        if not combinations_found: #No way of moving
-                            action = self.drop()
-                            
-                            self.cancel_cooperation(message=self.MessagePattern.carry_help_finish())
-                    
-                    
-                            
-                    if loop_done or not wait_for_others: #If carrying heavy objects, wait for others
-                        
-                        action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info,ego_location)
-                        
-                        if self.next_loc and self.previous_next_loc and not self.previous_next_loc[0].tolist() == self.next_loc[0].tolist(): #location changed
-                            self.previous_next_loc = []
-                            
-                        if occMap[self.target_location[0],self.target_location[1]] == 2: #A package is now there
-                            self.action_index = self.State.pickup_and_move_to_goal.value
-                            self.being_helped_locations = []
-
-                    
-                        if not action and isinstance(action, list): #If already next to drop location
+                            #pdb.set_trace()
                             action = self.drop()
                             self.target_location = self.past_location
                             self.action_index = self.State.move_end.value
                         else:
-                            self.past_location = [ego_location[0][0],ego_location[1][0]]
+                            action = Action.get_occupancy_map.value #Wait for the next state in order to start moving
+                    else:
+                        
+                        #ego_location = np.where(occMap == 5)
+                        action = LLMControl.position_to_action([ego_location[0][0],ego_location[1][0]],self.past_location,False)
+                          
+                        if action == -1:
+                        
+                            wait_for_others,combinations_found = self.wait_for_others_func(occMap, info, robotState, nearby_other_agents, [], ego_location)
                             
-                        self.asked_time = time.time()
-                    elif time.time() - self.asked_time > self.help_time_limit2:
-                        action = self.drop()
+                            print("Action move and pickup:", action, wait_for_others, self.being_helped_locations) 
+                            
+                            if not wait_for_others:
+                                
+                                action = self.pick_up(occMap, self.target_location, ego_location)
+                                
+                                if self.retries == 3: #If can't pickup object just try with another
+
+                                    self.ignore_object.append(tuple(self.target_location))
+                                    
+                                    message = ""
+                                    if self.being_helped:
+                                        message = self.MessagePattern.carry_help_finish()
+                                    
+                                    action = self.cancel_cooperation(message=message)
+                                    
+                                self.retries += 1   
+                                self.asked_time = time.time()
+                            elif not combinations_found: #No way of moving                          
+                                action = self.cancel_cooperation(message=self.MessagePattern.carry_help_finish())
+                            elif time.time() - self.asked_time > self.help_time_limit2:                           
+                                action = self.cancel_cooperation(message=self.MessagePattern.carry_help_complain())
+                            else:
+                                action = Action.get_occupancy_map.value 
+                                
+                            
                         
-                        self.cancel_cooperation(message=self.MessagePattern.carry_help_complain())
-                    elif action != Action.drop_object.value:
+
+                elif self.action_index == self.State.drop_object.value:
+                                
+                    if not robotState.object_held:            
+
+                        action = self.cancel_cooperation(message=self.MessagePattern.carry_help_complain())
+                        
+                    else:
+                    
+                        for agent_id in self.being_helped: #remove locations with teammates
+
+                            agent_idx = info['robot_key_to_index'][agent_id]
+                            other_robot_location = robotState.robots[agent_idx]["neighbor_location"]
+                            occMap[other_robot_location[0],other_robot_location[1]] = 3
+                                    
+                        
+                        loop_done = False
+                        
+                        if not self.previous_next_loc or (self.previous_next_loc and self.previous_next_loc[0].tolist() == [ego_location[0][0],ego_location[1][0]]):
+                            action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info,ego_location)
+                            
+                            print("HAPPENING", action, self.next_loc)
+                            
+                            if not action and isinstance(action, list):
+                                loop_done = True
+                             
+                            if not loop_done and self.next_loc:
+                                self.previous_next_loc = [self.next_loc[0]]
+                                self.being_helped_locations = []
+                            
+                                print("PEFIOUVS",self.being_helped_locations, self.next_loc, self.previous_next_loc)
+                                
+                            
+                            
+                            
+                        
+                        if not loop_done:
+                            wait_for_others,combinations_found = self.wait_for_others_func(occMap, info, robotState, nearby_other_agents, self.previous_next_loc, ego_location)
+                            
+                            if not combinations_found: #No way of moving
+                                action = self.drop()
+                                
+                                self.cancel_cooperation(message=self.MessagePattern.carry_help_finish())
+                        
+                        
+                                
+                        if loop_done or not wait_for_others: #If carrying heavy objects, wait for others
+                            
+                            action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info,ego_location)
+                            
+                            if self.next_loc and self.previous_next_loc and not self.previous_next_loc[0].tolist() == self.next_loc[0].tolist(): #location changed
+                                self.previous_next_loc = []
+                                
+                            if occMap[self.target_location[0],self.target_location[1]] == 2: #A package is now there
+                                self.action_index = self.State.pickup_and_move_to_goal.value
+                                self.being_helped_locations = []
+
+                        
+                            if not action and isinstance(action, list): #If already next to drop location
+                                action = self.drop()
+                                self.target_location = self.past_location
+                                self.action_index = self.State.move_end.value
+                            else:
+                                self.past_location = [ego_location[0][0],ego_location[1][0]]
+                                
+                            self.asked_time = time.time()
+                        elif time.time() - self.asked_time > self.help_time_limit2:
+                            action = self.drop()
+                            
+                            self.cancel_cooperation(message=self.MessagePattern.carry_help_complain())
+                        elif action != Action.drop_object.value:
+                            action = Action.get_occupancy_map.value
+                            print("waiting for others...")
+                            
+                elif self.action_index == self.State.move_end.value:
+                    action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info,ego_location)
+                
+                    if not action and isinstance(action, list):
                         action = Action.get_occupancy_map.value
-                        print("waiting for others...")
                         
-            elif self.action_index == self.State.move_end.value:
-                action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info,ego_location)
-            
-                if not action and isinstance(action, list):
+                        self.action_index = self.State.get_closest_object.value
+                        
+                        if self.being_helped:
+                            self.message_text += self.MessagePattern.carry_help_finish()
+                            self.asked_time = time.time()
+                        self.being_helped = []
+                        self.being_helped_locations = []
+                        
+                elif self.action_index == self.State.wait_message.value:
+                    if time.time() - self.asked_time > self.wait_time_limit:
+
+                        self.asked_help = False                    
+                        self.cancel_cooperation(message=self.MessagePattern.carry_help_cancel())
+                        self.help_time_limit = random.randrange(self.wait_time_limit,30)
+                        print("end of waiting")
                     action = Action.get_occupancy_map.value
                     
-                    self.action_index = self.State.get_closest_object.value
-                    
-                    if self.being_helped:
-                        self.message_text += self.MessagePattern.carry_help_finish()
-                        self.asked_time = time.time()
-                    self.being_helped = []
-                    self.being_helped_locations = []
-                    
-            elif self.action_index == self.State.wait_message.value:
-                if time.time() - self.asked_time > self.wait_time_limit:
-
-                    self.asked_help = False                    
-                    self.cancel_cooperation(message=self.MessagePattern.carry_help_cancel())
-                    self.help_time_limit = random.randrange(self.wait_time_limit,30)
-                    print("end of waiting")
-                action = Action.get_occupancy_map.value
+                elif self.action_index == self.State.wait_random.value:
                 
-            elif self.action_index == self.State.wait_random.value:
-            
-                #for rm in received_messages:
-                #    if self.MessagePattern.move_request(self.robot_id) in rm[1]:
-                #        pdb.set_trace() 
-                #        break
-              
-            
-                other_robot_location = robotState.robots[self.wait_requester]["neighbor_location"]
-                #if not (self.next_loc and (occMap[self.next_loc[0][0],self.next_loc[0][1]] == 3 or (len(self.next_loc) > 1 and occMap[self.next_loc[1][0],self.next_loc[1][1]] == 3))): #Wait until there is no one in your next location
+                    #for rm in received_messages:
+                    #    if self.MessagePattern.move_request(self.robot_id) in rm[1]:
+                    #        pdb.set_trace() 
+                    #        break
+                  
                 
-                if self.compute_real_distance(other_robot_location,[ego_location[0][0],ego_location[1][0]]) >= self.env.map_config['communication_distance_limit'] or time.time() - self.asked_time > self.help_time_limit: #Until the other robot is out of range we can move
-                    self.action_index = self.last_action_index
-                
-                if self.pending_location and self.pending_location != [ego_location[0][0],ego_location[1][0]]:
-                    action = LLMControl.position_to_action([ego_location[0][0],ego_location[1][0]],self.pending_location,False)
-                else:
-                    action = Action.get_occupancy_map.value    
-                    self.pending_location = []
+                    other_robot_location = robotState.robots[self.wait_requester]["neighbor_location"]
+                    #if not (self.next_loc and (occMap[self.next_loc[0][0],self.next_loc[0][1]] == 3 or (len(self.next_loc) > 1 and occMap[self.next_loc[1][0],self.next_loc[1][1]] == 3))): #Wait until there is no one in your next location
                     
+                    if self.compute_real_distance(other_robot_location,[ego_location[0][0],ego_location[1][0]]) >= self.env.map_config['communication_distance_limit'] or time.time() - self.asked_time > self.help_time_limit: #Until the other robot is out of range we can move
+                        self.action_index = self.last_action_index
                     
-            elif self.action_index == self.State.wait_free.value: 
-                
-                for loc_wait_idx in reversed(range(len(self.wait_locations))): #Wait for robots to move from location
-                    loc_wait = self.wait_locations[loc_wait_idx]
-                    if occMap[loc_wait[0],loc_wait[1]] == 0:
-                        del self.wait_locations[loc_wait_idx]
-                print(time.time() - self.asked_time)
-                if not self.wait_locations or time.time() - self.asked_time > self.wait_time_limit:
-                    self.action_index = self.last_action_index
-                    self.wait_locations = []
-                    print("Last action", self.last_action_index)
-                else:
-                    action = Action.get_occupancy_map.value
+                    if self.pending_location and self.pending_location != [ego_location[0][0],ego_location[1][0]]:
+                        action = LLMControl.position_to_action([ego_location[0][0],ego_location[1][0]],self.pending_location,False)
+                    else:
+                        action = Action.get_occupancy_map.value    
+                        self.pending_location = []
                         
-                
-                
+                        
+                elif self.action_index == self.State.wait_free.value: 
+                    
+                    for loc_wait_idx in reversed(range(len(self.wait_locations))): #Wait for robots to move from location
+                        loc_wait = self.wait_locations[loc_wait_idx]
+                        if occMap[loc_wait[0],loc_wait[1]] == 0:
+                            del self.wait_locations[loc_wait_idx]
+                    print(time.time() - self.asked_time)
+                    if not self.wait_locations or time.time() - self.asked_time > self.wait_time_limit:
+                        self.action_index = self.last_action_index
+                        self.wait_locations = []
+                        print("Last action", self.last_action_index)
+                    else:
+                        action = Action.get_occupancy_map.value
+                            
+                    
+                    
 
-                """
-                if self.action_index == self.State.check_neighbors.value:
+                    """
+                    if self.action_index == self.State.check_neighbors.value:
+                        agent_idx = info['robot_key_to_index'][self.helping[0]]
+                        action = Action.check_robot.value
+                        robot = agent_idx
+                        self.action_index += 1
+                    """
+                elif self.action_index == self.State.follow.value:
+                    
                     agent_idx = info['robot_key_to_index'][self.helping[0]]
-                    action = Action.check_robot.value
-                    robot = agent_idx
-                    self.action_index += 1
-                """
-            elif self.action_index == self.State.follow.value:
-                
-                agent_idx = info['robot_key_to_index'][self.helping[0]]
-                self.target_location = robotState.robots[agent_idx]["neighbor_location"]
-                
+                    self.target_location = robotState.robots[agent_idx]["neighbor_location"]
+                    
 
-                action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info,ego_location)
+                    action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info,ego_location)
+                    
+                    if (not action and isinstance(action, list)) or self.compute_real_distance([self.target_location[0],self.target_location[1]],[ego_location[0][0],ego_location[1][0]]) < self.env.map_config['communication_distance_limit']-1:
+                        action = Action.get_occupancy_map.value
+                            
+                            
+                elif self.action_index == self.State.obey.value:
+                    print("TARGET LOCATION:", self.target_location)
+                    
+                    try:
+                        agent_idx = info['robot_key_to_index'][self.helping[0]]
+                    except:
+                        pdb.set_trace()
+                    helping_location = robotState.robots[agent_idx]["neighbor_location"]
+                    
+                    occMap[helping_location[0],helping_location[1]] = 1
+                    
+                    action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info, ego_location, end=True)
+                    if (not action and isinstance(action, list)):
+                        action = Action.get_occupancy_map.value
                 
-                if (not action and isinstance(action, list)) or self.compute_real_distance([self.target_location[0],self.target_location[1]],[ego_location[0][0],ego_location[1][0]]) < self.env.map_config['communication_distance_limit']-1:
-                    action = Action.get_occupancy_map.value
+                    
+                    if action == -1:
+                        self.ignore_go_location = []
+                        #pdb.set_trace()
                         
-                        
-            elif self.action_index == self.State.obey.value:
-                print("TARGET LOCATION:", self.target_location)
+                elif self.action_index == self.State.end_meeting.value:
                 
-                try:
-                    agent_idx = info['robot_key_to_index'][self.helping[0]]
-                except:
-                    pdb.set_trace()
-                helping_location = robotState.robots[agent_idx]["neighbor_location"]
-                
-                occMap[helping_location[0],helping_location[1]] = 1
-                
-                action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info, ego_location, end=True)
-                if (not action and isinstance(action, list)):
-                    action = Action.get_occupancy_map.value
+                    action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info,ego_location)
             
-                
-                if action == -1:
-                    self.ignore_go_location = []
-                    #pdb.set_trace()
+                    if not action and isinstance(action, list):
+                        
+                        if self.role == "scout": #Scout should share information
+                            
+                            """
+                            object_id = list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(self.item_index)]
+                            
+                            missing_objects = 0
+                            while robotState.items[self.item_index]["item_danger_level"] == 0 and self.item_index < len(robotState.items):
+                                self.message_text += self.MessagePattern.item(robotState.items,self.item_index,object_id, self.env.convert_to_real_coordinates)
+                                
+                                if robotState.items[self.item_index]["item_danger_level"] == 0:
+                                    missing_objects += 1
+                                
+                                self.item_index += 1
+                                
+                                
+                            
+                            if self.item_index == len(robotState.items):
+                                self.item_index = 0
+                            """    
+                            missing_objects = 0
+                            for obj in robotState.items:
+                                if obj["item_danger_level"] == 0:
+                                    missing_objects += 1
+                                    
+                            if self.planning != "coordinated":
+                                if not missing_objects: #If scout finishes sensing, it can transition to lift                        
+                                    self.role = "lifter"
+                                
+                                self.action_index = self.State.get_closest_object.value
+                            else:
+                                self.message_text += self.MessagePattern.order_finished()
+                                self.action_index = self.State.waiting_order.value
+                                
+                        elif self.role == "lifter": #If there are objects one can lift
+                            if self.planning != "coordinated":
+                                for idx in range(len(robotState.items)):
+                                    if robotState.items[idx]["item_danger_level"] == 2 and robotState.items[idx]["item_weight"] == 1:
+                                        self.action_index = self.State.get_closest_object.value
+                                    
+                            else:
+                                self.message_text += self.MessagePattern.order_finished()
+                                self.action_index = self.State.waiting_order.value
+                                
+                        elif self.planning == "coordinated":
+                            self.message_text += self.MessagePattern.order_finished()
+                            self.action_index = self.State.waiting_order.value
                     
-            elif self.action_index == self.State.end_meeting.value:
-            
-                action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info,ego_location)
-        
-                if not action and isinstance(action, list):
+                        action = Action.get_occupancy_map.value
+                    print("Finished")
                     
-                    if self.role == "scout": #Scout should share information
-                        
-                        object_id = list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(self.item_index)]
-                        
-                        self.message_text += self.MessagePattern.item(robotState.items,self.item_index,object_id, self.env.convert_to_real_coordinates)
-                        self.item_index += 1
-                        
-                        if self.item_index == len(robotState.items):
-                            self.item_index = 0
-                            self.role = "lifter"
-                            self.action_index = self.State.get_closest_object.value
-                
+                elif self.action_index == self.State.waiting_order.value:
                     action = Action.get_occupancy_map.value
-                print("Finished")
                     
+            
+            else:
+                action = self.central_planning(robotState, info, occMap, ego_location, nearby_other_agents)
                     
             if num_neighbors: #If there are nearby robots, announce next location and goal
             
@@ -2277,7 +2646,7 @@ class HeuristicControl:
                     target_loc = eval(rematch.group(2))
                     
                     #pdb.set_trace()
-                    if target_goal != target_loc and not (self.previous_message and self.previous_message[0] == target_goal and self.previous_message[1] == target_loc):
+                    if target_goal != target_loc and not (self.previous_message and self.previous_message[0] == target_goal and self.previous_message[1] == target_loc): #Only if there was a change of location do we prioritize this message
 
                         self.previous_message = [target_goal,target_loc]
 

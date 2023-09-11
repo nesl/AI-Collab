@@ -34,6 +34,7 @@ parser.add_argument("--robot-number", default=1, help="Robot number to control")
 parser.add_argument("--view-radius", default=0, help="When using occupancy maps, the view radius")
 parser.add_argument("--control", default="heuristic", type=str, help="Type of control to apply: heuristic,llm,openai,deepq,q,manual")
 parser.add_argument("--message-loop", action="store_true", help="Use to allow messages to be sent back to sender")
+parser.add_argument("--role", default="general", help="Choose a role for the agent: general, scout, lifter")
 #parser.add_argument("--openai", action='store_true', help="Use openai.")
 #parser.add_argument("--llm", action='store_true', help="Use LLM.")
 
@@ -222,7 +223,8 @@ observation, info = env.reset()
 
 
 if args.control == 'heuristic':
-    h_control = HeuristicControl(env.goal_coords, num_steps, env.robot_id, env)
+    h_control = HeuristicControl(env.goal_coords, num_steps, env.robot_id, env, args.role)
+    print("ROLE:", args.role)
 elif args.control == 'deepq':
     deepq_control = DeepQControl(observation,device,num_steps)
 
