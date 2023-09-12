@@ -4,8 +4,9 @@ PROGRAM="./server_command --robot-number "
 COMMAND=""
 
 roles=("scout" "scout" "lifter" "lifter" "lifter")
+planning=("coordinator" "coordinated" "coordinated" "coordinated" "coordinated")
 
-:<<COMMENT
+: '
 roles=("scout" "lifter" "general")
 role_percentage=(0 0 100)
 role_participants=(0 0 0)
@@ -21,7 +22,7 @@ do
     participants_left=$((participants_left-role_participants[i]))
 done
 
-COMMENT
+'
 
 for (( i=1; i<=$1; i++ ))
 do
@@ -29,13 +30,12 @@ do
 
    if [[ $i -eq 1 ]]; then
    	COMMAND="gnome-terminal --title robot1 -- bash -ic \""
-	first_role=
    else
-   	COMMAND+="gnome-terminal --tab --title robot$i -- bash -ic './server_command --robot-number $i --role ${roles[$((i-1))]};'; sleep 3; "
+   	COMMAND+="gnome-terminal --tab --title robot$i -- bash -ic './server_command --robot-number $i --role ${roles[$((i-1))]} --planning ${planning[$((i-1))]};'; sleep 3; "
    fi
 done
 
-COMMAND+="./server_command --robot-number 1 --role ${roles[0]};\""
+COMMAND+="./server_command --robot-number 1 --role ${roles[0]} --planning ${planning[0]};\""
 
 echo $COMMAND
 
