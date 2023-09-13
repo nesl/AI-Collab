@@ -215,7 +215,7 @@ num_steps = 3000 #600 #200#600
 
 num_episodes = 600
 
-process_reward = 0
+
 
 # Get number of actions from gym action space
 
@@ -261,6 +261,9 @@ while True:
 
     step_count = 0
     
+    process_reward = 0
+    
+    disabled = False
     
 
     if args.control == 'llm' or args.control == 'openai':
@@ -320,7 +323,7 @@ while True:
         robotState.strength = next_observation["strength"]
             
         #When any action has completed
-        if next_observation and any(next_observation['action_status']):
+        if next_observation and any(next_observation['action_status']) and not disabled:
             
             
             
@@ -419,8 +422,12 @@ while True:
                         #action["action"] = h_control.planner(robotState, process_reward, step_count, terminated or truncated)
                         
 
-                        action["action"],action["item"],action["message"],action["robot"] = h_control.planner_sensing(robotState, process_reward, step_count, terminated or truncated, next_observation, info, messages)
+                        action["action"],action["item"],action["message"],action["robot"],terminated_tmp = h_control.planner_sensing(robotState, process_reward, step_count, terminated or truncated, next_observation, info, messages)
 
+                        
+                        if terminated_tmp:
+                            disabled = True
+                            env.sio.emit("disable")
                         
                         print("STEP", step_count, action["action"])
                         

@@ -41,9 +41,10 @@ class HeuristicControl:
         self.other_agents = [self.Other_Agent() for r in range(env.action_space["robot"].n-1)]
         
         
-        self.role = role
+        self.original_role = role
         
-        self.planning = planning
+        
+        self.original_planning = planning
         
         self.room_distance = 7
         
@@ -359,6 +360,14 @@ class HeuristicControl:
         @staticmethod
         def task_finished():
             return "Task finished. "
+            
+        @staticmethod
+        def finish():
+            return "Let's finish. "
+            
+        @staticmethod
+        def finish_reject():
+            return "Wait, not yet. "
         
             
         
@@ -405,6 +414,9 @@ class HeuristicControl:
         self.target_object_idx = -1
         self.assigned_target_location = []
         self.just_started = True
+        self.planning = self.original_planning
+        self.role = self.original_role
+        self.finished_robots = []
         
         #self.other_agents = {n:Other_Agent() for n in agents_ids}
         
@@ -1557,6 +1569,17 @@ class HeuristicControl:
                 
                 self.role = "lifter"
                 self.planning = "equal"
+                
+                
+            if self.MessagePattern.finish() in rm[1]:
+                if rm[0] not in self.finished_robots:
+                    self.finished_robots.append(rm[0])
+                    
+                    
+            if self.MessagePattern.finish_reject() in rm[1]:
+                if rm[0] in self.finished_robots:
+                    self.finished_robots.remove(rm[0])
+                
                     
         return action  
         
@@ -1771,7 +1794,7 @@ class HeuristicControl:
             
     def central_planning(self, robotState, info, occMap, ego_location, nearby_other_agents):
         
-        
+        sensing_agents_per_object = 1 #How many robots to sense each room
         
         if self.action_index == self.State.init_move.value:
         
@@ -1832,6 +1855,9 @@ class HeuristicControl:
                     object_id = list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(assigned_item)]
                     self.assigned_item_locations.append(item_loc)
                     
+            
+            for sa in range(sensing_agents_per_object-1):
+                self.assigned_item_locations.extend(self.assigned_item_locations)
             
             self.action_index = self.State.sense_order.value
             action = Action.get_occupancy_map.value
@@ -1933,7 +1959,8 @@ class HeuristicControl:
             print([rob2.assignment for rob2 in self.other_agents])
             if all(1 if not rob2.assignment else 0 for rob2 in self.other_agents):
                 self.action_index = self.State.end_meeting.value
-                self.planning = "equal"
+                self.planning = "equal" #Ends role as coordinator
+                self.role = "lifter"
                 
             action = Action.get_occupancy_map.value                    
                                 
@@ -1987,6 +2014,8 @@ class HeuristicControl:
             self.target_location = random.choice(true_ending_locations)  
         elif [ego_location[0][0],ego_location[1][0]] in self.ending_locations: #If we are already in the ending locations just stay there
             self.target_location = [ego_location[0][0],ego_location[1][0]]
+        elif occMap[self.target_location[0],self.target_location[1]] == 3 or occMap[self.target_location[0],self.target_location[1]] == 2 or occMap[self.target_location[0],self.target_location[1]] == 1:
+            self.target_location = random.choice(true_ending_locations)
         
         action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info,ego_location)
         
@@ -2211,7 +2240,7 @@ class HeuristicControl:
                             print("FINISHED")
 
                             action = self.return_to_meeting_point(occMap, robotState, info, ego_location)
-                            self.just_started = False
+                            
                             
                         else:
                             self.stuck_too_much += 1
@@ -2611,6 +2640,10 @@ class HeuristicControl:
                 
                     action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info,ego_location)
             
+            
+                    if [ego_location[0][0],ego_location[1][0]] in self.ending_locations:
+                        self.just_started = False
+            
                     if not action and isinstance(action, list):
                         
                         if self.role == "scout": #Scout should share information
@@ -2648,10 +2681,14 @@ class HeuristicControl:
                                 
                         elif self.role == "lifter": #If there are objects one can lift
                             if self.planning != "coordinated":
+                                
                                 for idx in range(len(robotState.items)):
                                     if robotState.items[idx]["item_danger_level"] == 2 and robotState.items[idx]["item_weight"] == 1:
                                         self.action_index = self.State.get_closest_object.value
-                                    
+
+                                if self.action_index == self.State.end_meeting.value and self.robot_id not in self.finished_robots: #Voluntarily finish
+                                    self.message_text += MessagePattern.finish()
+                                    self.finished_robots.append(self.robot_id)
                             else:
                                 self.message_text += self.MessagePattern.order_finished()
                                 self.action_index = self.State.waiting_order.value
@@ -2659,6 +2696,10 @@ class HeuristicControl:
                         elif self.planning == "coordinated":
                             self.message_text += self.MessagePattern.order_finished()
                             self.action_index = self.State.waiting_order.value
+                            
+                            
+                            
+
                     
                         action = Action.get_occupancy_map.value
                     print("Finished")
@@ -2752,6 +2793,11 @@ class HeuristicControl:
         self.last_action = action
         """
         
+        
+        if self.action_index != self.State.end_meeting.value and self.robot_id in self.finished_robots: #Voluntarily finish
+            self.message_text += MessagePattern.finish_reject()
+            self.finished_robots.remove(self.robot_id)
+        
         if action == -1 or action == "":
             
             action = Action.get_occupancy_map.value
@@ -2761,7 +2807,7 @@ class HeuristicControl:
         
         print("action index:",self.State(self.action_index), "action:", Action(action), ego_location)
                 
-        if done or step_count == self.num_steps:
+        if done: # or step_count == self.num_steps:
             action = -1
             
         if not action and isinstance(action, list):
@@ -2770,7 +2816,7 @@ class HeuristicControl:
 
 
         
-        return action,item,message,robot
+        return action,item,message,robot,len(self.finished_robots) == self.env.action_space["robot"].n
         
         
         

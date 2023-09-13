@@ -409,7 +409,7 @@ socket.on("stats", (stats_dict, final) => {
         
         const tbl_team = document.createElement('table');
         
-        const key_to_text_team = {"team_objects_in_goal":"Number of dangerous objects brought to goal area: ",
+        const key_to_text_team = {"team_dangerous_objects_in_goal":"Number of dangerous objects brought to goal area: ",
         "team_end_time": "End Time: ",
         "team_failure_reasons": "Final Team Status: ",
         "total_dangerous_objects": "Total number of dangerous objects: "
@@ -422,7 +422,7 @@ socket.on("stats", (stats_dict, final) => {
             
             
             
-            if(key == "team_objects_in_goal"){
+            if(key == "team_dangerous_objects_in_goal"){
             
                 td1.appendChild(document.createTextNode(key_to_text_team[key]));
                 var td1 = tr1.insertCell();

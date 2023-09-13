@@ -48,6 +48,8 @@ dateTime = datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
 extra_commands = []
 duration = []
 
+game_finished = 0
+
 # Given three collinear points p, q, r, the function checks if 
 # point q lies on line segment 'pr' 
 def onSegment(p, q, r):
@@ -134,7 +136,7 @@ class Stats():
         self.failed = 0
         self.time_with_teammates = {}
         self.end_time = 0
-        self.team_objects_in_goal = 0
+        self.team_dangerous_objects_in_goal = 0
         self.total_dangerous_objects = 0
         self.quality_work = 0
         self.team_end_time = 0
@@ -214,39 +216,35 @@ class Simulation(Controller):
         self.timer = 0 #time.time()
         self.real_timer = time.time()
         self.timer_start = self.timer
+        
+        
 
+        """
         if float(self.cfg['timer']) > 0:
             self.timer_limit = self.timer_start + float(self.cfg['timer'])
         else:
             self.timer_limit = 0
+        """
+        
+        self.timer_limit = float(self.cfg['timer'])
             
         self.ai_skip_frames = int(self.cfg['ai_skip_frames'])
         
-        self.occupancy_map_request = []
-        self.objects_held_status_request = []
-        self.danger_sensor_request = []
-        self.ai_status_request = []
-        self.raycast_request = []
-        self.queue_perception_action = []
-        self.extra_keys_pressed = []
+        
         self.segmentation_colors = {}
         self.scenario_size = 20
         self.wall_length = 6
-        self.robot_names_translate = {}
-        self.object_names_translate = {}
-        self.object_dropping = []
-        self.walls = []
 
         
         self.scenario = self.options.scenario
         
         if self.options.seed > -1:
-            seed_value = self.options.seed
+            self.seed_value = self.options.seed
         else:
-            seed_value = random.randrange(sys.maxsize)
+            self.seed_value = random.randrange(sys.maxsize)
             
-        random.seed(seed_value)
-        print("SEED:", seed_value)
+        random.seed(self.seed_value)
+        print("SEED:", self.seed_value)
         
 
         #Functionality of keys according to order of appearance: [Advance, Back, Right, Left, Grab with left arm, Grab with right arm, Camera down, Camera up, Activate sensor, Focus on object]
@@ -297,8 +295,8 @@ class Simulation(Controller):
         #pdb.set_trace()
 
         
-        self.ai_spawn_positions = [{"x": -2, "y": 0, "z": 1.1},{"x": -2, "y": 0, "z": 2.1}, {"x": -2, "y": 0, "z": 3.1}, {"x": -3, "y": 0, "z": 0.1}, {"x": -2, "y": 0, "z": 0.1},{"x": -2, "y": 0, "z": -1.1}, {"x": -2, "y": 0, "z": -2.1},{"x": -2, "y": 0, "z": -3.1},{"x": -3, "y": 0, "z": -1.1},{"x": -3, "y": 0, "z": -2.1}, {"x": -3, "y": 0, "z": 1.1}, {"x": -3, "y": 0, "z": 2.1}, {"x": -3.5, "y": 0, "z": 0.5}, {"x": -3.5, "y": 0, "z": 1.5}, {"x": -3.5, "y": 0, "z": 2.5}, {"x": -3.5, "y": 0, "z": 3.5}, {"x": -3.5, "y": 0, "z": -2.5}, {"x": -3.5, "y": 0, "z": -3.5}]
-        self.user_spawn_positions = [{"x": 0, "y": 0, "z": 1.1},{"x": 0, "y": 0, "z": 2.1}, {"x": 0, "y": 0, "z": 3.1}, {"x": 1, "y": 0, "z": 0.1}, {"x": 0, "y": 0, "z": 0.1},{"x": 0, "y": 0, "z": -1.1}, {"x": 0, "y": 0, "z": -2.1},{"x": 0, "y": 0, "z": -3.1},{"x": 1, "y": 0, "z": -3.1},{"x": 1, "y": 0, "z": -2.1}]
+        self.ai_original_spawn_positions = [{"x": -2, "y": 0, "z": 1.1},{"x": -2, "y": 0, "z": 2.1}, {"x": -2, "y": 0, "z": 3.1}, {"x": -3, "y": 0, "z": 0.1}, {"x": -2, "y": 0, "z": 0.1},{"x": -2, "y": 0, "z": -1.1}, {"x": -2, "y": 0, "z": -2.1},{"x": -2, "y": 0, "z": -3.1},{"x": -3, "y": 0, "z": -1.1},{"x": -3, "y": 0, "z": -2.1}, {"x": -3, "y": 0, "z": 1.1}, {"x": -3, "y": 0, "z": 2.1}, {"x": -3.5, "y": 0, "z": 0.5}, {"x": -3.5, "y": 0, "z": 1.5}, {"x": -3.5, "y": 0, "z": 2.5}, {"x": -3.5, "y": 0, "z": 3.5}, {"x": -3.5, "y": 0, "z": -2.5}, {"x": -3.5, "y": 0, "z": -3.5}]
+        self.user_original_spawn_positions = [{"x": 0, "y": 0, "z": 1.1},{"x": 0, "y": 0, "z": 2.1}, {"x": 0, "y": 0, "z": 3.1}, {"x": 1, "y": 0, "z": 0.1}, {"x": 0, "y": 0, "z": 0.1},{"x": 0, "y": 0, "z": -1.1}, {"x": 0, "y": 0, "z": -2.1},{"x": 0, "y": 0, "z": -3.1},{"x": 1, "y": 0, "z": -3.1},{"x": 1, "y": 0, "z": -2.1}]
         
 
                 
@@ -594,7 +592,9 @@ class Simulation(Controller):
         self.user_magnebots = []
         self.ai_magnebots = []
         self.uis = []
-    
+        
+        self.ai_spawn_positions = self.ai_original_spawn_positions.copy()
+        self.user_spawn_positions = self.user_original_spawn_positions.copy()
         random.shuffle(self.ai_spawn_positions)
         random.shuffle(self.user_spawn_positions)
 
@@ -725,14 +725,16 @@ class Simulation(Controller):
                         rgba=True,
                         position={"x": 0, "y": 0})
 
+            """
             # Add some text.
             if self.timer_limit:
                 #mins, remainder = divmod(self.timer_limit-self.timer, 60)
                 mins, remainder = divmod(self.timer, 60)
                 secs,millisecs = divmod(remainder,1)
             else:
-                mins = 0
-                secs = 0
+            """
+            mins = 0
+            secs = 0
 
             #Add timer
             timer_text_id = ui.add_text(text='{:02d}:{:02d}'.format(int(mins), int(secs)),
@@ -868,16 +870,27 @@ class Simulation(Controller):
     
         
         self.graspable_objects = []
+        self.object_dropping = []
+        self.occupancy_map_request = []
+        self.objects_held_status_request = []
+        self.danger_sensor_request = []
+        self.ai_status_request = []
+        self.raycast_request = []
+        self.queue_perception_action = []
+        self.extra_keys_pressed = []
         
         self.object_names_translate = {}
         
         self.timer = 0 #time.time()
         self.real_timer = time.time()
         self.timer_start = self.timer
+
+        """
         if float(self.cfg['timer']) > 0:
             self.timer_limit = self.timer_start + float(self.cfg['timer'])
         else:
             self.timer_limit = 0
+        """
         
         self.terminate = False
     
@@ -1951,9 +1964,10 @@ class Simulation(Controller):
                     all_magnebots[all_idx].item_info[object_id_translated]["sensor"][robot_id_translated]['value'] = int(self.danger_level[object_id])
                     all_magnebots[all_idx].item_info[object_id_translated]["sensor"][robot_id_translated]['confidence'] = 1
                         
-                    all_magnebots[all_idx].stats.objects_in_goal.append(self.object_names_translate[object_id])
+                    if self.object_names_translate[object_id] not in all_magnebots[all_idx].stats.objects_in_goal:
+                        all_magnebots[all_idx].stats.objects_in_goal.append(self.object_names_translate[object_id])
                     
-                    if self.danger_level[object_id] == 2:
+                    if self.danger_level[object_id] == 2 and self.object_names_translate[object_id] not in all_magnebots[all_idx].stats.dangerous_objects_in_goal:
                         all_magnebots[all_idx].stats.dangerous_objects_in_goal.append(self.object_names_translate[object_id])
                       
 
@@ -1963,6 +1977,9 @@ class Simulation(Controller):
     
     #### Main Loop
     def run(self):
+    
+        global game_finished
+    
         done = False
         commands = []
         key = ""
@@ -2137,12 +2154,14 @@ class Simulation(Controller):
                 
 
             #We update timer
+            """
             if self.timer_limit:
                 mins, remainder = divmod(self.timer_limit-self.timer, 60)
                 secs,millisecs = divmod(remainder,1)
             else:
-                mins = 0
-                secs = 0
+            """
+            mins = 0
+            secs = 0
 
             mins, remainder = divmod(self.timer, 60)
             secs,millisecs = divmod(remainder,1)
@@ -2180,12 +2199,12 @@ class Simulation(Controller):
                     robot_id_translated = self.robot_names_translate[str(all_magnebots[idx].robot_id)]
                   
                     for object_id_translated in all_magnebots[idx].item_info.keys():
-                        if robot_id_translated in all_magnebots[idx].item_info[object_id_translated]["sensor"]:
+                        if "sensor" in all_magnebots[idx].item_info[object_id_translated] and robot_id_translated in all_magnebots[idx].item_info[object_id_translated]["sensor"]:
                             all_magnebots[idx].stats.objects_sensed += 1
                     
                     
-                    number_dangerous_objects_in_goal = len(all_magnebots[idx].dangerous_objects_in_goal)
-                    all_magnebots[idx].stats.quality_work = max(0,(number_dangerous_objects_in_goal - (len(all_magnebots[idx].objects_in_goal) - number_dangerous_objects_in_goal) - all_magnebots[idx].dropped_outside_goal)/len(self.dangerous_objects))
+                    number_dangerous_objects_in_goal = len(all_magnebots[idx].stats.dangerous_objects_in_goal)
+                    all_magnebots[idx].stats.quality_work = max(0,(number_dangerous_objects_in_goal - (len(all_magnebots[idx].stats.objects_in_goal) - number_dangerous_objects_in_goal) - all_magnebots[idx].stats.dropped_outside_goal)/len(self.dangerous_objects))
                     
                     #for k in all_magnebots[idx].stats.time_with_teammates.keys():
                     #    all_magnebots[idx].stats.time_with_teammates[k] = round(all_magnebots[idx].stats.time_with_teammates[k],1)
@@ -2196,18 +2215,35 @@ class Simulation(Controller):
                     #Last magnebot to be sent stats. We also send to everyone the stats related to team performance
                     if len(disabled_robots) == len(all_magnebots):
                     
+                        game_finished += 1
+                    
                         failure_reasons = {self.robot_names_translate[str(am.robot_id)]:am.stats.failed for am in all_magnebots}
                         
                         team_quality_work = sum([am.stats.quality_work for am in all_magnebots])
                         
+                        
+                        all_stats = []
+                        
                         for idx2 in range(len(all_magnebots)):
-                            all_magnebots[idx2].stats.team_objects_in_goal = goal_counter
+                            all_magnebots[idx2].stats.team_dangerous_objects_in_goal = goal_counter
                             all_magnebots[idx2].stats.total_dangerous_objects = len(self.dangerous_objects)
                             all_magnebots[idx2].stats.team_end_time = all_magnebots[idx].stats.end_time
                             all_magnebots[idx2].stats.team_failure_reasons = failure_reasons
                             all_magnebots[idx2].stats.team_quality_work = team_quality_work
                             
                             self.sio.emit("stats", (self.robot_names_translate[str(all_magnebots[idx2].robot_id)], all_magnebots[idx2].stats.__dict__, self.timer, True))
+                            
+                            all_stats.append(all_magnebots[idx2].stats.__dict__)
+                            
+                            
+                        if self.options.log_results:
+                            if not os.path.exists(self.options.log_results):
+                                os.makedirs(self.options.log_results)
+                            
+                        
+                            log_results_f = open(self.options.log_results + "/" + dateTime + "_" + str(game_finished) + '_results.txt', "w")
+                            json.dump({"results": all_stats, "seed": self.seed_value}, log_results_f)
+                            log_results_f.close()
                             
                     else:
                         self.sio.emit("stats", (self.robot_names_translate[str(all_magnebots[idx].robot_id)], all_magnebots[idx].stats.__dict__, self.timer, False))
@@ -2838,14 +2874,22 @@ class Simulation(Controller):
             
             #If timer expires end simulation, else keep going
             if self.timer_limit and self.timer_limit-self.timer <= 0:
-                for idx,um in enumerate(self.user_magnebots):
-                    txt = um.ui.add_text(text="Failure!",
+                for idx,um in enumerate(all_magnebots):
+                
+                    """
+                    txt = um.ui.add_text(text="Session Ended",
                                          position={"x": 0, "y": 0},
                                          color={"r": 1, "g": 0, "b": 0, "a": 1},
                                          font_size=20
                                          )
                     messages.append([idx,txt,0])
-                self.terminate = True
+                    """
+                
+                    #self.sio.emit("disable", (self.robot_names_translate[str(all_magnebots[idx].robot_id)]))
+                    all_magnebots[idx].disabled = True
+                    all_magnebots[idx].stats.end_time = self.timer
+                    
+
             else:
                 new_time = time.time()
                 self.timer += new_time-self.real_timer
@@ -2894,11 +2938,11 @@ class Simulation(Controller):
     def reset_world(self):
         
         if self.options.seed > -1:
-            seed_value = self.options.seed
+            self.seed_value = self.options.seed
         else:
-            seed_value = random.randrange(sys.maxsize)
-        random.seed(seed_value)
-        print("SEED:", seed_value)
+            self.seed_value = random.randrange(sys.maxsize)
+        random.seed(self.seed_value)
+        print("SEED:", self.seed_value)
         
         commands = []
         
@@ -2914,6 +2958,8 @@ class Simulation(Controller):
         
         commands = []
         
+        self.ai_spawn_positions = self.ai_original_spawn_positions.copy()
+        self.user_spawn_positions = self.user_original_spawn_positions.copy()
         random.shuffle(self.ai_spawn_positions)
         random.shuffle(self.user_spawn_positions)
         
@@ -2982,6 +3028,9 @@ if __name__ == "__main__":
     parser.add_argument('--single-weight', type=int, default=0, help="Make all objects of the specified weight")
     parser.add_argument('--single-danger', action='store_true', help="Make all objects dangerous")
     parser.add_argument('--seed', type=int, default=-1, help="Input seed value")
+    parser.add_argument('--log-results', type=str, default='', help='Directory where to log results')
+    
+    
     
     args = parser.parse_args()
     

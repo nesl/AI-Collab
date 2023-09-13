@@ -451,8 +451,11 @@ class AICollabEnv(gym.Env):
         
         
         
-        
-        reward = self.reward(world_state,sensing_output)
+        if not self.truncated:
+            reward = self.reward(world_state,sensing_output)
+
+        else:
+            reward = 0
         
         
         
