@@ -216,6 +216,7 @@ class Simulation(Controller):
         self.timer = 0 #time.time()
         self.real_timer = time.time()
         self.timer_start = self.timer
+        self.reset_number = 0
         
         
 
@@ -880,6 +881,8 @@ class Simulation(Controller):
         self.extra_keys_pressed = []
         
         self.object_names_translate = {}
+        
+        self.already_collected_dangerous = []
         
         self.timer = 0 #time.time()
         self.real_timer = time.time()
@@ -1967,8 +1970,9 @@ class Simulation(Controller):
                     if self.object_names_translate[object_id] not in all_magnebots[all_idx].stats.objects_in_goal:
                         all_magnebots[all_idx].stats.objects_in_goal.append(self.object_names_translate[object_id])
                     
-                    if self.danger_level[object_id] == 2 and self.object_names_translate[object_id] not in all_magnebots[all_idx].stats.dangerous_objects_in_goal:
+                    if self.danger_level[object_id] == 2 and self.object_names_translate[object_id] not in all_magnebots[all_idx].stats.dangerous_objects_in_goal and self.object_names_translate[object_id] not in self.already_collected_dangerous:
                         all_magnebots[all_idx].stats.dangerous_objects_in_goal.append(self.object_names_translate[object_id])
+                        self.already_collected_dangerous.append(self.object_names_translate[object_id])
                       
 
 
@@ -2065,6 +2069,15 @@ class Simulation(Controller):
                 if str(pos_new[0])+'_'+str(pos_new[1]) not in self.object_attributes_id:
                     self.object_attributes_id[str(pos_new[0])+'_'+str(pos_new[1])] = []
                 self.object_attributes_id[str(pos_new[0])+'_'+str(pos_new[1])].append((self.object_names_translate[o],self.required_strength[o],int(self.danger_level[o])))
+            
+            if self.options.save_map and not self.timer:
+                map_f = open("maps/map"+ str(self.reset_number) + ".json", "w")
+                json.dump({"map": self.object_type_coords_map.tolist(), "attributes": self.object_attributes_id}, map_f)
+                map_f.close()
+                
+                
+                
+                
             
             #Magnebots
             for o in [*self.user_magnebots,*self.ai_magnebots]:
@@ -2506,6 +2519,7 @@ class Simulation(Controller):
                 resp = self.communicate(commands)
             except Exception as e:
                 print("Error communication")
+                pdb.set_trace()
                 self.sio.emit("sim_crash", self.timer)
                 if hasattr(e, 'message'):
                     print(e.message)
@@ -2766,6 +2780,10 @@ class Simulation(Controller):
             if cams and not self.no_debug_camera:
                 img_image = magnebot_images["a"]
                 cams[0].send(img_image)
+                """
+                im = Image.fromarray(img_image)
+                im.save("top_view.png")
+                """
                 if self.options.create_video:
                     video[0].write(img_image)
 
@@ -2777,6 +2795,12 @@ class Simulation(Controller):
             
                 if cams and magnebot_id in magnebot_images:
                     cams[idx+1].send(magnebot_images[magnebot_id])
+                    
+                    """
+                    if not idx:
+                        im = Image.fromarray(magnebot_images[magnebot_id])
+                        im.save("first_view.png")
+                    """
                     
                     if self.options.create_video:
                         #pdb.set_trace()
@@ -2905,6 +2929,8 @@ class Simulation(Controller):
                 #resp = self.communicate({"$type": "destroy_all_objects"})
                 self.reset_world()
                 
+                self.reset_number += 1
+                
                 if not self.local:
                     self.reset_agents()
                 
@@ -3029,6 +3055,7 @@ if __name__ == "__main__":
     parser.add_argument('--single-danger', action='store_true', help="Make all objects dangerous")
     parser.add_argument('--seed', type=int, default=-1, help="Input seed value")
     parser.add_argument('--log-results', type=str, default='', help='Directory where to log results')
+    parser.add_argument('--save-map', action='store_true', help="Save the occupancy map")
     
     
     

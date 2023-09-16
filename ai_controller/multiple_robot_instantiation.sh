@@ -4,7 +4,9 @@ PROGRAM="./server_command --robot-number "
 COMMAND=""
 
 roles=("scout" "scout" "lifter" "lifter" "lifter")
-planning=("coordinator" "coordinated" "coordinated" "coordinated" "coordinated")
+#roles=("general" "general" "general" "general" "general")
+#planning=("coordinator" "coordinated" "coordinated" "coordinated" "coordinated")
+planning=("equal" "equal" "equal" "equal" "equal")
 
 : '
 roles=("scout" "lifter" "general")

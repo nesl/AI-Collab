@@ -522,7 +522,8 @@ class HeuristicControl:
                     self.stuck_wait_moving += 1
                     
                     if self.stuck_wait_moving == 100:
-                        pdb.set_trace()
+                        #pdb.set_trace()
+                        print("WAIT TOO MUCH!!!")
                         
                     if not re.search(self.MessagePattern.move_request_regex(),self.message_text):
                         pdb.set_trace()
@@ -1078,26 +1079,32 @@ class HeuristicControl:
                     
                     teammate_number = len(self.being_helped)
                     
-                    print("Being helped by ", rm[0])
                     
-                    self.being_helped.append(rm[0])
-                    
-                    if len(self.being_helped)+1 >= self.heavy_objects["weight"][self.chosen_heavy_object]:
-                        self.asked_help = False
+                    if self.chosen_heavy_object < len(self.heavy_objects["weight"]): 
+                        print("Being helped by ", rm[0])
                         
-                        self.target_location = robotState.items[self.heavy_objects["index"][self.chosen_heavy_object]]['item_location']
-                        self.target_object_idx = self.heavy_objects["index"][self.chosen_heavy_object]
+                        self.being_helped.append(rm[0])
                         
-                        self.action_index = self.State.move_and_pickup.value
-                        self.being_helped_locations = []
+                        try:
+                            if len(self.being_helped)+1 >= self.heavy_objects["weight"][self.chosen_heavy_object]:
+                                self.asked_help = False
+                                
+                                self.target_location = robotState.items[self.heavy_objects["index"][self.chosen_heavy_object]]['item_location']
+                                self.target_object_idx = self.heavy_objects["index"][self.chosen_heavy_object]
+                                
+                                self.action_index = self.State.move_and_pickup.value
+                                self.being_helped_locations = []
+                        except:
+                            pdb.set_trace()    
                         
-                    
-                    match_pattern = re.search(self.MessagePattern.location_regex(),self.message_text)
-                    
-                    if match_pattern and not match_pattern.group(6):
-                        self.message_text = self.message_text.replace(match_pattern.group(), match_pattern.group() + " Helping " + self.robot_id + ". ")
+                        match_pattern = re.search(self.MessagePattern.location_regex(),self.message_text)
                         
-                    self.message_text += self.MessagePattern.follow(rm[0],teammate_number)
+                        if match_pattern and not match_pattern.group(6):
+                            self.message_text = self.message_text.replace(match_pattern.group(), match_pattern.group() + " Helping " + self.robot_id + ". ")
+                            
+                        self.message_text += self.MessagePattern.follow(rm[0],teammate_number)
+                    else: #Something happened with the object
+                        self.message_text += self.MessagePattern.carry_help_reject(rm[0])
                 else:
                     self.message_text += self.MessagePattern.carry_help_reject(rm[0])
                     
@@ -2299,11 +2306,11 @@ class HeuristicControl:
                         if robotState.items[self.item_index-1]['item_danger_level'] == 1: #If not dangerous
                             if self.item_index-1 not in self.sensed_items:
                                 self.not_dangerous_objects.append(self.item_index-1) #tuple(robotState.items[self.item_index-1]['item_location']))
-                        elif robotState.items[self.item_index-1]['item_weight'] == 1: #If dangerous and their weight is 1
+                        elif robotState.items[self.item_index-1]['item_weight'] == 1 and tuple(robotState.items[self.item_index-1]['item_location']) not in self.extended_goal_coords: #If dangerous and their weight is 1
                             self.target_location = robotState.items[self.item_index-1]['item_location']
                             self.target_object_idx = self.item_index-1
                         else: #If dangerous and heavy
-                            if self.item_index-1 not in self.sensed_items:
+                            if self.item_index-1 not in self.sensed_items and self.item_index-1 not in self.heavy_objects["index"]:
                                 #self.heavy_objects["location"].append(tuple(robotState.items[self.item_index-1]['item_location']))
                                 self.heavy_objects["index"].append(self.item_index-1)
                                 self.heavy_objects["weight"].append(robotState.items[self.item_index-1]['item_weight'])
@@ -2328,7 +2335,7 @@ class HeuristicControl:
                                 self.too_stuck += 1
                                 if self.too_stuck > 100:
                                     print("Too stuck")
-                                    pdb.set_trace()
+                                    #pdb.set_trace()
                             
 
                         else: #move towards object location
@@ -2687,7 +2694,7 @@ class HeuristicControl:
                                         self.action_index = self.State.get_closest_object.value
 
                                 if self.action_index == self.State.end_meeting.value and self.robot_id not in self.finished_robots: #Voluntarily finish
-                                    self.message_text += MessagePattern.finish()
+                                    self.message_text += self.MessagePattern.finish()
                                     self.finished_robots.append(self.robot_id)
                             else:
                                 self.message_text += self.MessagePattern.order_finished()
@@ -2795,7 +2802,7 @@ class HeuristicControl:
         
         
         if self.action_index != self.State.end_meeting.value and self.robot_id in self.finished_robots: #Voluntarily finish
-            self.message_text += MessagePattern.finish_reject()
+            self.message_text += self.MessagePattern.finish_reject()
             self.finished_robots.remove(self.robot_id)
         
         if action == -1 or action == "":

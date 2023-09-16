@@ -1144,11 +1144,16 @@ class AICollabEnv(gym.Env):
                             
                             self.last_sensed.append(object_key)
 
+                            if "sensor" not in danger_sensing_data[object_key]:
+                                sensor_data = {}
+                            else:
+                                sensor_data = danger_sensing_data[object_key]['sensor']
+
                             try:
                                 self.update_objects_info(
                                     object_key,
                                     danger_sensing_data[object_key]['time'],
-                                    danger_sensing_data[object_key]['sensor'],
+                                    sensor_data,
                                     [
                                         danger_sensing_data[object_key]['location'][0],
                                         danger_sensing_data[object_key]['location'][2]],
