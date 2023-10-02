@@ -3056,6 +3056,7 @@ if __name__ == "__main__":
     parser.add_argument('--seed', type=int, default=-1, help="Input seed value")
     parser.add_argument('--log-results', type=str, default='', help='Directory where to log results')
     parser.add_argument('--save-map', action='store_true', help="Save the occupancy map")
+    parser.add_argument('--no-launch-build', action='store_true', help="Do not launch build")
     
     
     
@@ -3101,7 +3102,7 @@ if __name__ == "__main__":
 
     address = args.address
 
-    c = Simulation(args, cfg, launch_build=True)
+    c = Simulation(args, cfg, launch_build=not args.no_launch_build)
 
     result = c.run()
     
