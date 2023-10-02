@@ -3,7 +3,7 @@ opencv-python==4.6.0.66
 pyvirtualcam==0.9.1
 pillow==9.2.0
 scipy==1.7.3
-tdw==1.11.13
+tdw==1.12.10
 python-socketio==5.7.2
 json-numpy==1.0.1
 PyYAML==6.0

@@ -22,7 +22,7 @@ from magnebot.util import get_default_post_processing_commands
 from tdw.add_ons.occupancy_map import OccupancyMap
 from tdw.add_ons.logger import Logger
 
-from PIL import Image
+from PIL import Image, ImageOps
 
 import datetime
 import json
@@ -198,7 +198,7 @@ class Enhanced_Magnebot(Magnebot):
 class Simulation(Controller):
   
 
-    def __init__(self, args, cfg, port: int = 1071, check_version: bool = False, launch_build: bool = True, restart=False):
+    def __init__(self, args, cfg, port: int = 1071, check_version: bool = False, launch_build: bool = False, restart=False):
     
         super().__init__(port=port, check_version=check_version, launch_build=launch_build, restart=restart)
 
@@ -2568,8 +2568,8 @@ class Simulation(Controller):
                                 #image_arr = images.get_image(j)
 
                                 # Get a PIL image.
-                                pil_image = TDWUtils.get_pil_image(images=images, index=j)
-                                img_image = np.asarray(pil_image)
+                                pil_image = ImageOps.flip(TDWUtils.get_pil_image(images=images, index=j))
+                                #img_image = np.asarray(pil_image)
                                 magnebot_images[images.get_avatar_id()] = np.asarray(pil_image)
                                 '''
                                 if cams:
@@ -2625,13 +2625,13 @@ class Simulation(Controller):
 
                                     self.raycast_request.append(str(self.user_magnebots[idx].robot_id))
                         
-                        img_image = np.asarray(pil_images['img'])
+                        img_image = np.asarray(ImageOps.flip(pil_images['img']))
 
                         magnebot_images[images.get_avatar_id()] = img_image
                     #Process images from ai magnebot cameras
                     elif images.get_avatar_id() in self.ai_magnebots_ids:
                         idx = self.ai_magnebots_ids.index(images.get_avatar_id())
-                        img_image = np.asarray(self.ai_magnebots[idx].dynamic.get_pil_images()['img'])
+                        img_image = np.asarray(ImageOps.flip(self.ai_magnebots[idx].dynamic.get_pil_images()['img']))
                         magnebot_images[images.get_avatar_id()] = img_image
                         
                     
