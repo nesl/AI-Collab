@@ -192,7 +192,7 @@ function getDevices() {
 //Get simulated webcams and their video streams
 
 async function gotDevices(deviceInfos) {
-    var v = 0;
+    var v = 0, real_video = 0;
     const currentDiv = document.getElementById("videos_div");
 
     /*
@@ -204,10 +204,15 @@ async function gotDevices(deviceInfos) {
     }
     */
 
-    for (let i = first_video_idx; i < deviceInfos.length; i++) {
+    for (let i = 0; i < deviceInfos.length; i++) {
     
     		if(!(deviceInfos[i]["kind"] === "videoinput")){
     			continue;
+    		} else {
+    			real_video += 1
+    			if (real_video-1 < first_video_idx){
+    				continue;
+			}
     		}
     
 		let videoElement = document.createElement('video')

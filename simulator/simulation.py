@@ -3043,6 +3043,7 @@ if __name__ == "__main__":
     parser.add_argument('--local', action='store_true', help='run locally only')
     parser.add_argument('--no_virtual_cameras', action='store_true', help='do not stream frames to virtual cameras')
     parser.add_argument('--address', type=str, default='https://172.17.15.69:4000' ,help='adress to connect to')
+    parser.add_argument('--sim-port', type=int, default=1071 ,help='Simulator open port')
     parser.add_argument('--config', type=str, default='config.yaml', help='Path to simulation configuration file')
     parser.add_argument('--video-index', type=int, default=0 ,help='index of the first /dev/video device to start streaming to')
     parser.add_argument('--no-debug-camera', action='store_true', help='do not instantiate debug top down camera')
@@ -3102,7 +3103,7 @@ if __name__ == "__main__":
 
     address = args.address
 
-    c = Simulation(args, cfg, launch_build=not args.no_launch_build)
+    c = Simulation(args, cfg, launch_build=not args.no_launch_build, port=args.sim_port)
 
     result = c.run()
     
