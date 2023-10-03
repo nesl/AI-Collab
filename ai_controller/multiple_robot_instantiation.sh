@@ -3,8 +3,8 @@
 PROGRAM="./server_command --robot-number "
 COMMAND=""
 
-roles=("scout" "scout" "lifter" "lifter" "lifter")
-#roles=("general" "general" "general" "general" "general")
+#roles=("scout" "scout" "lifter" "lifter" "lifter")
+roles=("general" "general" "general" "general" "general")
 #planning=("coordinator" "coordinated" "coordinated" "coordinated" "coordinated")
 planning=("equal" "equal" "equal" "equal" "equal")
 
@@ -26,6 +26,13 @@ done
 
 '
 
+extra=""
+if [ ! -z "$2" ]
+then
+	extra="--server-port $2"
+fi
+
+
 for (( i=1; i<=$1; i++ ))
 do
    
@@ -33,11 +40,12 @@ do
    if [[ $i -eq 1 ]]; then
    	COMMAND="gnome-terminal --title robot1 -- bash -ic \""
    else
-   	COMMAND+="gnome-terminal --tab --title robot$i -- bash -ic './server_command --robot-number $i --role ${roles[$((i-1))]} --planning ${planning[$((i-1))]};'; sleep 3; "
+   	COMMAND+="gnome-terminal --tab --title robot$i -- bash -ic './server_command $extra --robot-number $i --role ${roles[$((i-1))]} --planning ${planning[$((i-1))]};'; sleep 3; "
    fi
 done
 
-COMMAND+="./server_command --robot-number 1 --role ${roles[0]} --planning ${planning[0]};\""
+
+COMMAND+="./server_command $extra --robot-number 1 --role ${roles[0]} --planning ${planning[0]};\""
 
 echo $COMMAND
 
