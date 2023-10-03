@@ -2698,8 +2698,9 @@ class Simulation(Controller):
             key_pressed.extend(self.extra_keys_pressed)
             self.extra_keys_pressed = []
             #if key_pressed:
-            #    print(key_pressed)    
-            self.keyboard_output(key_pressed, key_hold, extra_commands, duration, keys_time_unheld, all_ids, messages, estimated_fps)
+            #    print(key_pressed)
+            if num_users > 0:    
+                self.keyboard_output(key_pressed, key_hold, extra_commands, duration, keys_time_unheld, all_ids, messages, estimated_fps)
             
             
             #Destroy messages in the user interface after some time
@@ -3060,7 +3061,7 @@ if __name__ == "__main__":
     parser.add_argument('--log-results', type=str, default='', help='Directory where to log results')
     parser.add_argument('--save-map', action='store_true', help="Save the occupancy map")
     parser.add_argument('--no-launch-build', action='store_true', help="Do not launch build")
-    parser.add_argument('--sim-binary', default='/TDW/TDW.x86_64', help="Location of binary if not auto-launched")
+    parser.add_argument('--sim-binary', default='', help="Location of binary if not auto-launched")
     
     
     
@@ -3106,7 +3107,7 @@ if __name__ == "__main__":
 
     address = args.address
 
-    if args.no_launch_build:
+    if args.no_launch_build and args.sim_binary:
         Popen([args.sim_binary, "-port " + str(args.sim_port)])
 
 
