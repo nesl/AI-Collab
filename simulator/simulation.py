@@ -29,6 +29,8 @@ import json
 import os
 import random
 import sys
+from subprocess import Popen
+
 
 
 #Dimension of our camera view
@@ -3058,6 +3060,7 @@ if __name__ == "__main__":
     parser.add_argument('--log-results', type=str, default='', help='Directory where to log results')
     parser.add_argument('--save-map', action='store_true', help="Save the occupancy map")
     parser.add_argument('--no-launch-build', action='store_true', help="Do not launch build")
+    parser.add_argument('--sim-binary', default='/TDW/TDW.x86_64', help="Location of binary if not auto-launched")
     
     
     
@@ -3102,6 +3105,10 @@ if __name__ == "__main__":
             
 
     address = args.address
+
+    if args.no_launch_build:
+        Popen([args.sim_binary, "-port " + str(args.sim_port)])
+
 
     c = Simulation(args, cfg, launch_build=not args.no_launch_build, port=args.sim_port)
 
