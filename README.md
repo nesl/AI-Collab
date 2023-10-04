@@ -2,13 +2,62 @@
 
 This simulator builds upon [ThreeDWorld](https://github.com/threedworld-mit/tdw) (TDW), a platform for interactive multi-modal physical simulation. This simulator as of now allows multiple human users to control the agents present in a single scene in a concurrent manner. It also incorporates an HTTP server to which users can connect to remotely control the agents.
 
-## Setup
+## Docker Setup
+
+For ease of installation, the environment has been containerized using Docker. If manual installation is required, [scroll down](#manual-setup).
+
+### X Server Configuration
+
+This section is needed if you want to run multiple instances at the same time, otherwise skip it.
+
+Run `nvidia-smi` and check if each GPU has only one distinct X server running in it (no X server should be running in multiple GPUs). If that is not the case, follow the next steps:
+
+1. Run `nvidia-xconfig --query-gpu-info`.
+
+2. Run `cd /etc/X11`. For each GPU, annotate their Bus ID and use it as an argument in the next command ({} indicating substitution): `sudo nvidia-xconfig --no-xinerama --probe-all-gpus --use-display-device=none --busid={BUS ID} -o xorg-{# of GPU}.conf`. 
+
+3. For each xorg-{# of GPU}.conf file, add the following lines: 
+
+```
+Section "ServerFlags"
+    Option "AutoAddGPU" "False"
+EndSection
+```
+4. Run `ls /tmp/.X11-unix/` and annotate the highest number that appears in the file names following the *X* prefix. This number plus one will be the starting **DISPLAY** number. Annotate as well the number that appears after running `cat /sys/class/tty/tty0/active` following the *tty* prefix. This is your current virtual terminal.
+
+5. For each GPU in your machine, run the next command: `sudo nohup Xorg :{DISPLAY + # of GPU} vt{# VIRTUAL TERMINAL} -config /etc/X11/xorg-{# of GPU}.conf &`. Note that for each new GPU, `{DISPLAY + # of GPU}` should increase by one, but `{# VIRTUAL TERMINAL}` will always be the same.
+
+6. If you run `nvidia-smi` again, you should see now that each GPU has at least one X server only running in it.
+
+### Docker Configuration
+
+1. Install **docker** and **[nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)**.
+
+2. Clone this repository. 
+
+At this point, you can either build the Docker image or pull it. If you want to build it run the next command:
+
+- Run `cd webrtc` and then `docker build -t julian700/web .`. Go back to the root folder and run `cd simulator` and then `docker build -t julian700/simulator .`.
+
+Else, pull it from its repo:
+
+- Run `docker pull julian700/simulator` and `docker pull julian700/web`.
+
+### Virtual Video Devices Configuration
+
+Finally make sure to read the following: [Virtual Video Devices](#virtual-video-devices).
+
+##Running Docker Containers
+
+- Go to the root folder and just run the script `./parallel_sims.sh {# of parallel instances}`. This will run parallel instances of the simulator with the configuration present in **simulator/config.yaml**.
+
+## Manual Setup
 
 Use `git clone --recurse-submodules https://github.com/nesl/AI-Collab.git` to clone the repository with all the submodules.
 
 ### TDW Simulator
     
-1. Create an environment with python == 3.7.0
+1. Create an environment with python >= 3.7.0
 
 2. Run `pip install -r requirements.txt`
 
@@ -47,30 +96,28 @@ The implementation of the WebRTC server was based on [https://github.com/TannerG
 
 Change to the **ai_controller** directory and install the gym environment by using the next command `pip install -e gym_collab`
 
-## Operation
+## Manual Running
 
 1. Run the server using `node server --address "address" --port "port"`. The simulator assumes the virtual devices to be used are the ones starting at /dev/video0, but if you already have some real webcams, you need to specify the parameter `--video-index <number>` and include the index number of your first simulated webcam corresponding to the ones created for the simulator.
 2. Run the simulator using `python simulation.py --address "https://address:port"`. A window will appear. Wait until a view of the scene appears in it.
 3. Using your web browser, go to **https://address:port/broadcast.html**. This will present a view with all the camera views being streamed.
 4. When you run the first command, there will be an output indicating a code that you need to use as password when connecting through the browser.
 
-### User Control of a Robot 
+## User Control of a Robot 
 
 1. Using your web browser in the same or a different computer, go to **https://address:port/?client=1**, where the client parameter controls which robot you get assigned. This parameter goes from 1 to the number of user controllable robots you have in the simulation.
 
-### AI Control of a Robot
+## AI Control of a Robot
 
 1. Change to the **ai_controller** directory and run the **server_command** script. You have to also create a new certificate + key as this script executes an HTTPS server to setup the WebRTC parameters. Inside the **server_command**, specify the certificate, key and host address associated with this server, as well as the address to connect to.
 2. Alternatively, if you want to run many agents at the same time, you can use the **ai_controller/multiple_robot_instantiation.sh** using as the command-line argument the number of agents you want to instantiate. This will open a terminal with each tab representing each of the robots. This script just runs whatever you put in **server_command** and changes the **--robot-number** argument accordingly.
 
-#### Note
+### Note
 
 To make the HTTPS self-signed certificate work:
 1. Run **server_command**
 2. Access through the web browser to the address provided by the HTTPS server and accept the certificate
 3. Try again running **server_command** and it should work!
-
-## AI Controller
 
 The **ai_controller.py** program uses an HTTPS server to negotiate the WebRTC parameters. Socket.IO is used for normal commmunication with the simulator server. The controller uses the same API functions defined in the [Magnebot repository](https://github.com/alters-mit/magnebot/blob/main/doc/manual/magnebot/actions.md). To receive occupancy maps of a certain view radius instead of camera images, you can run the **ai_controller.py** program as `python ai_controller.py --use-occupancy --view-radius <number>`, this way you don't need to make use of the HTTPS server.
 
@@ -105,15 +152,13 @@ The action space consists of the next fields:
 		* check_robot = 21
 		* get_messages = 22
 		* send_message = 23
-		* request_item_info = 24
-		* request_agent_info = 25
 
 
 2. *"item"* - argument: index of the object to be checked (useful for action = 20, check_item). The robot environment saves the object information collected so far, but to actually get the entries of any of these objects, you should specify the item number and execute the corresponding action. You can get the number of objects known so far by checking the corresponding observation output.
 3. *"robot"* - argument: index of robot to be checked (useful for action = 21, check_robot). The robot environment saves information about other robots and you can get their information by specifying the index of the robot you want.
 4. *"message"* - argument: text message (usefule for action = 23, send_message). If the action is to send a message, this is where to put the message. Use the *"robot"* field to specify the index of the robot you want to receive the message, use 0 if you want everyone to get the message.
 
-Notes: action = 17 (danger_sensing), gets an estimation of the danger level of neighboring objects and updates the necessary information. To actually display this information you need to issue the action = 20 (check_item). Action = 24 (request_item_info) and action = 25 (request_agent_info) are special types of messages that get sent to other robots to get the respective information, with the difference that any information they receive updates the internal information they have over specific objects and robots. They are used by specifying the robot index to which they want to request information, 0 if everyone.
+Notes: action = 17 (danger_sensing), gets an estimation of the danger level of neighboring objects and updates the necessary information. To actually display this information you need to issue the action = 20 (check_item).
 
 ### Observation Space
 
@@ -179,12 +224,12 @@ The web interface consists of the camera views assigned to you robot, and a side
 To control the robot through the web interface, you need to first click in the video area and then you can use one of the next keyboard commands:
 
 * Arrows: To move the robot
-* Z: To grab a focused object or drop it with the left arm
-* X: To grab a focused object or drop it with the right arm
-* C: To move the camera downwards
-* V: To move the camera upwards
-* B: To danger sense around you
-* N: To focus on an object (this also gives you information about it)
+* A: To grab a focused object or drop it with the left arm
+* D: To grab a focused object or drop it with the right arm
+* S: To move the camera downwards
+* W: To move the camera upwards
+* Q: To danger sense around you
+* E: To focus on an object (this also gives you information about it)
 
 ![Interface](interface.png)
 
