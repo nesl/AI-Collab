@@ -16,7 +16,7 @@ Run `nvidia-smi` and check if each GPU has only one distinct X server running in
 
 2. Run `cd /etc/X11`. For each GPU, annotate their Bus ID and use it as an argument in the next command ({} indicating substitution): `sudo nvidia-xconfig --no-xinerama --probe-all-gpus --use-display-device=none --busid={BUS ID} -o xorg-{# of GPU}.conf`. 
 
-3. For each xorg-{# of GPU}.conf file, add the following lines: 
+3. For each `xorg-{# of GPU}.conf` file, add the following lines: 
 
 ```
 Section "ServerFlags"
@@ -47,7 +47,7 @@ Else, pull it from its repo:
 
 Finally make sure to read the following: [Virtual Video Devices](#virtual-video-devices).
 
-##Running Docker Containers
+## Running Docker Containers
 
 - Go to the root folder and just run the script `./parallel_sims.sh {# of parallel instances}`. This will run parallel instances of the simulator with the configuration present in **simulator/config.yaml**.
 
