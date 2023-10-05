@@ -37,7 +37,7 @@ EndSection
 
 ### Docker Configuration
 
-1. Install **docker** and **[nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)**.
+1. Install **docker** and **[nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)**. Make sure to allow for non-root use of Docker.
 
 2. Clone this repository. 
 
@@ -55,7 +55,7 @@ Finally make sure to read the following: [Virtual Video Devices](#virtual-video-
 
 ## Running Docker Containers
 
-- Go to the root folder and just run the script `./parallel_sims.sh {# of parallel instances}`. This will run parallel instances of the simulator with the configuration present in **simulator/config.yaml**.
+- Go to the root folder and just run the script with the following optional arguments: `./parallel_sims.sh -a {server address} -p {server port} -v {video index of first /dev/video* to use} -d {display number} -s {simulator port} -t {# of parallel instances}`. This will run parallel instances of the simulator with the configuration present in **simulator/config.yaml**. To see if it works, it is recommended to use it with the current display number set in the **DISPLAY** environment variable.
 
 ## Manual Setup
 
