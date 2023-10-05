@@ -9,6 +9,9 @@ For ease of installation, the environment has been containerized using Docker. I
 ### X Server Configuration
 
 This section is needed if you want to run multiple instances at the same time, otherwise skip it.
+You can use the **create_x_file.sh** script to create the corresponding X server files and then copy them to **/etc/X11**, otherwise follow the steps in [Manual File Creation](#manual-file-creation).
+
+#### Manual File Creation
 
 Run `nvidia-smi` and check if each GPU has only one distinct X server running in it (no X server should be running in multiple GPUs). If that is not the case, follow the next steps:
 
@@ -23,9 +26,12 @@ Section "ServerFlags"
     Option "AutoAddGPU" "False"
 EndSection
 ```
+
+#### Running X Server
+
 4. Run `ls /tmp/.X11-unix/` and annotate the highest number that appears in the file names following the *X* prefix. This number plus one will be the starting **DISPLAY** number. Annotate as well the number that appears after running `cat /sys/class/tty/tty0/active` following the *tty* prefix. This is your current virtual terminal.
 
-5. For each GPU in your machine, run the next command: `sudo nohup Xorg :{DISPLAY + # of GPU} vt{# VIRTUAL TERMINAL} -config /etc/X11/xorg-{# of GPU}.conf &`. Note that for each new GPU, `{DISPLAY + # of GPU}` should increase by one, but `{# VIRTUAL TERMINAL}` will always be the same.
+5. You can either run the X server in your current virtual terminal (useful for when you have a screen connected) or allow X server to run in different virtual terminals (useful when having a headless server). If you want to run it in the current virtual terminal, for each GPU in your machine, run the next command: `sudo nohup Xorg :{DISPLAY + # of GPU} vt{# VIRTUAL TERMINAL} -config /etc/X11/xorg-{# of GPU}.conf &`. Note that for each new GPU, `{DISPLAY + # of GPU}` should increase by one, but `{# VIRTUAL TERMINAL}` will always be the same. If you are in a headless server, just remove the virtual terminal argument.
 
 6. If you run `nvidia-smi` again, you should see now that each GPU has at least one X server only running in it.
 
@@ -74,6 +80,10 @@ In order to allow us to stream the generated videos to the respective users thro
 Follow the steps in [https://github.com/umlaeute/v4l2loopback](https://github.com/umlaeute/v4l2loopback) to build the v4l2loopback module needed to simulate these virtual video interfaces and then just use the next command: `modprobe v4l2loopback devices=4`, where the devices parameter can be changed to create as many virtual devices as you want (here it is 4). Be sure to use one of the tagged versions for *v4l2loopback* (0.12.7 in our case).
 
 After this you will now be able to run the simulator using the next command: `python simulation.py --local`, which shouldn't present be any different as when using the **--no_virtual_cameras** option.
+
+#### Note
+
+By default the **v4l2loopback** imposes a hard limit on the number of virtual video devices you can create. To override such limit, clone the repo and modify the *MAX_DEVICES* constant inside **v4l2loopback.c** to a high enough one. And then follow the instructions there to compile the module. Make sure it installs the module in the correct path.
 
 ### Web Interface
 
