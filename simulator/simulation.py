@@ -42,6 +42,7 @@ num_ais = 1
 
 cams = []
 video = []
+video_meta_f = -1
 global_refresh_sensor = 0
 
 address = ''
@@ -606,6 +607,7 @@ class Simulation(Controller):
         for ai_idx in range(num_ais):  
             robot_id = self.get_unique_id()                                 
             self.ai_magnebots.append(Enhanced_Magnebot(robot_id=robot_id, position=self.ai_spawn_positions[ai_idx],image_frequency=ImageFrequency.never, controlled_by='ai'))
+            #self.ai_magnebots.append(Enhanced_Magnebot(robot_id=robot_id, position=self.ai_spawn_positions[ai_idx],image_frequency=ImageFrequency.always, pass_masks=['_img'], controlled_by='ai'))
             self.robot_names_translate[str(robot_id)] = chr(ord('A') + ai_idx)
         
         #Create user magnebots
@@ -2778,6 +2780,8 @@ class Simulation(Controller):
             
             #Send frames to virtual cameras in system and occupancy maps if required, and all outputs needed
 
+            if self.options.create_video:
+                video_meta_f.write(str(self.timer)+'\n') #Given variable frame rate, save timestamp of frame
 
             #For top down view
             if cams and not self.no_debug_camera:
@@ -3097,9 +3101,12 @@ if __name__ == "__main__":
             log_dir = './videos/'
             if not os.path.exists(log_dir):
                 os.makedirs(log_dir)
+                
+            video_meta_f = open(log_dir+dateTime+'_meta.txt', 'w')
+
             for c_idx in range(len(cams)):
                 video_name = log_dir+dateTime+ '_' + str(c_idx) + '.mp4'
-                video_tmp = cv2.VideoWriter(video_name, cv2.VideoWriter_fourcc(*'MJPG'), 30, (width,height))
+                video_tmp = cv2.VideoWriter(video_name, cv2.VideoWriter_fourcc(*'MJPG'), 60, (width,height))
                 video.append(video_tmp)
                 print("Created ", video_name)
                 

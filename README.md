@@ -2,6 +2,12 @@
 
 This simulator builds upon [ThreeDWorld](https://github.com/threedworld-mit/tdw) (TDW), a platform for interactive multi-modal physical simulation. This simulator as of now allows multiple human users to control the agents present in a single scene in a concurrent manner. It also incorporates an HTTP server to which users can connect to remotely control the agents.
 
+## System Requirements
+
+- Linux (we've tested TDW on Ubuntu 18, 20, and 22)
+- Python 3.8+
+- A GPU, the faster the better, with up-to-date drivers. It is possible to run TDW without a GPU but you will lose some speed and photorealism. NVIDIA drivers tend to work better.
+
 ## Docker Setup
 
 For ease of installation, the environment has been containerized using Docker. If manual installation is required, [scroll down](#manual-setup).
@@ -120,7 +126,7 @@ Change to the **ai_controller** directory and install the gym environment by usi
 ## AI Control of a Robot
 
 1. Change to the **ai_controller** directory and run the **server_command** script. You have to also create a new certificate + key as this script executes an HTTPS server to setup the WebRTC parameters. Inside the **server_command**, specify the certificate, key and host address associated with this server, as well as the address to connect to.
-2. Alternatively, if you want to run many agents at the same time, you can use the **ai_controller/multiple_robot_instantiation.sh** using as the command-line argument the number of agents you want to instantiate. This will open a terminal with each tab representing each of the robots. This script just runs whatever you put in **server_command** and changes the **--robot-number** argument accordingly.
+2. Alternatively, if you want to run many agents at the same time, you can use the **ai_controller/multiple_robot_instantiation.sh** using as the command-line arguments, the number of agents you want to instantiate and the port of the server where to connect. This will open a terminal with each tab representing each of the robots. This script just runs whatever you put in **server_command** and changes the **--robot-number** argument accordingly.
 
 ### Note
 
