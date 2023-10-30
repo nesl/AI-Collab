@@ -10,6 +10,7 @@ commander
   .option('--port <number>', 'Port', 4000)
   .option('--log', 'Log everything')
   .option('--message-loop', 'Send back messages sent')
+  .option('--password <value>', 'Specify password')
   .parse(process.argv);
 
 const command_line_options = commander.opts();
@@ -69,8 +70,15 @@ const disable_list = [];
 
 var reset_count = 0;
 
+var passcode;
 
-const passcode = Math.random().toString(36).substring(2,7);
+if(! command_line_options.password){
+    passcode = Math.random().toString(36).substring(2,7);
+}
+else{
+    passcode = command_line_options.password;
+}
+
 
 console.log("Code: ", passcode);
 
@@ -217,6 +225,13 @@ io.sockets.on("connection", socket => { //When a client connects
   socket.on("answer", (id, message) => {
     socket.to(id).emit("answer", socket.id, message);
   });
+  socket.on("offer_ai", (id, message, fn) => {
+    console.log(fn)
+    socket.to(id).emit("offer_ai", socket.id, message, fn);
+  });
+  socket.on("answer_ai", (message) => {
+    socket.to(broadcaster).emit("answer_ai", socket.id, message);
+  });
   socket.on("candidate", (id, message) => {
     socket.to(id).emit("candidate", socket.id, message);
   });
@@ -321,6 +336,7 @@ io.sockets.on("connection", socket => { //When a client connects
     
     if(! disable_list.includes(sim_id)){
 		message_sent = true;
+		//console.log("not disabled 1")
 		
 		if(stats[sim_id]["average_message_length"] > 0){
 			stats[sim_id]["average_message_length"] = (stats[sim_id]["average_message_length"] + message.length)/2;
@@ -329,6 +345,7 @@ io.sockets.on("connection", socket => { //When a client connects
 		}
 		stats[sim_id]["num_messages_sent"] += 1;
 		if(all_ids.indexOf(socket.id) >= 0 && neighbors_list){
+		    //console.log("not disabled 2")
 		    let source_id = socket_to_simulator_id(socket.id)
 		    //console.log(source_id)
 		    //console.log(neighbors_list)
@@ -344,6 +361,7 @@ io.sockets.on("connection", socket => { //When a client connects
 		        //console.log(value)
 		        
 		        if(! disable_list.includes(key)){
+		            //console.log("not disabled 3")
 				    keys_neighbors += key + ',';
 				    if(value === 'human'){
 				        let c = clients_ids[user_ids_list.indexOf(key)]; 

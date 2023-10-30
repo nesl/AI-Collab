@@ -16,7 +16,7 @@ from deepq_control import DeepQControl
 from heuristic_control import HeuristicControl
 
 parser = argparse.ArgumentParser(
-    description="WebRTC audio / video / data-channels demo"
+    description="AI Controller"
 )
 parser.add_argument("--cert-file", help="SSL certificate file (for HTTPS)")
 parser.add_argument("--key-file", help="SSL key file (for HTTPS)")
@@ -180,11 +180,11 @@ actions_to_take = [*[1]*2,*[2]*3,11,19,*[3]*4,*[0]*5,16,19]
 
 
 class RobotState:
-    def __init__(self, latest_map, object_held, num_robots):
+    def __init__(self, latest_map, object_held, meta_robots):
         self.latest_map = latest_map
         self.object_held = object_held
         self.items = []
-        self.robots = [{} for n in range(num_robots)]
+        self.robots = [{"neighbor_type": meta_robots[n][1], "neighbor_location": [0,0]} for n in range(len(meta_robots))]
         self.strength = 1
         self.map_metadata = {}
         
@@ -220,27 +220,30 @@ num_episodes = 600
 # Get number of actions from gym action space
 
 # Get the number of state observations
-observation, info = env.reset()
 
 
-if args.control == 'heuristic':
-    h_control = HeuristicControl(env.goal_coords, num_steps, env.robot_id, env, args.role, args.planning)
-    print("ROLE:", args.role, "PLANNING:", args.planning)
-elif args.control == 'deepq':
-    deepq_control = DeepQControl(observation,device,num_steps)
 
 
+just_starting = True
 
 while True:
 
     observation, info = env.reset()
+    
+    if just_starting: #Initialized only once
+        if args.control == 'heuristic':
+            h_control = HeuristicControl(env.goal_coords, num_steps, env.robot_id, env, args.role, args.planning)
+            print("ROLE:", args.role, "PLANNING:", args.planning)
+        elif args.control == 'deepq':
+            deepq_control = DeepQControl(observation,device,num_steps)
+        just_starting = False
     
     if args.message_loop:
         num_robots = env.action_space["robot"].n
     else:
         num_robots = env.action_space["robot"].n-1
     
-    robotState = RobotState(observation['frame'].copy(), 0, num_robots)
+    robotState = RobotState(observation['frame'].copy(), 0, env.neighbors_info)
     #observation, reward, terminated, truncated, info = env.step(17)
     done = False
 
@@ -271,7 +274,7 @@ while True:
 
         room_size = str(obs_sample['frame'].shape[0])
 
-        llm_control = LLMControl(args.control == 'openai',room_size, env.action_space.sample(), device)
+        llm_control = LLMControl(args.control == 'openai',env, device, robotState)
     elif args.control == 'heuristic':
         h_control.start()
     elif args.control == 'deepq':
@@ -353,8 +356,10 @@ while True:
                             m_key_xy = m_key.split('_')
                             if isinstance(map_object, list): #Object information
 
-                                ob_key = info["object_key_to_index"][map_object[0]]
-                                
+                                try:
+                                    ob_key = info["object_key_to_index"][map_object[0]]
+                                except:
+                                    pdb.set_trace()                                
                                 
                                 robotState.items[ob_key]["item_location"] = [int(m_key_xy[0]), int(m_key_xy[1])]
 
@@ -416,8 +421,8 @@ while True:
                     
                     #print("Messages", messages)
                     if args.control == 'llm' or args.control == 'openai':
-                        action_function = llm_control.control(messages, robotState, action_function, function_output)
-                        high_level_action_finished = False
+                        action = llm_control.control(messages, robotState, info, next_observation)
+                        #high_level_action_finished = False
                     elif args.control == 'heuristic':
                         #action["action"] = h_control.planner(robotState, process_reward, step_count, terminated or truncated)
                         
@@ -467,7 +472,7 @@ while True:
                  
                         
 
-            
+            '''
             if not high_level_action_finished:
             
                 
@@ -475,7 +480,7 @@ while True:
                     action, high_level_action_finished,function_output = eval(action_function) #go_to_location(x,y, action_sequence, robotState, next_observation)
                 
                 #print(function_output, high_level_action_finished)
-                
+            '''    
             
             #print_map(robotState.latest_map)
             #print("Held:",robotState.object_held)

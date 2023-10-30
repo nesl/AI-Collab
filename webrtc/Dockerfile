@@ -10,7 +10,7 @@ RUN apt-get -qq install -y nodejs
 #RUN apt-get -qq install -y npm
 RUN apt-get -qq install -y git make gcc g++
 
-RUN git clone https://github.com/nesl/AI-Collab.git
+RUN git clone --branch v1.0.0 https://github.com/nesl/AI-Collab.git
 
 WORKDIR "/AI-Collab/webrtc/"
 

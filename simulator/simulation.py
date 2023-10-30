@@ -2066,7 +2066,8 @@ class Simulation(Controller):
                     ob_type = 4
                     
                 try:
-                    self.object_type_coords_map[pos_new[0],pos_new[1]] = ob_type
+                    if not (self.object_type_coords_map[pos_new[0],pos_new[1]] and ob_type == 4): #If robot carrying object, do not substitute cell with held object
+                        self.object_type_coords_map[pos_new[0],pos_new[1]] = ob_type
                 except:
                     pdb.set_trace()
 

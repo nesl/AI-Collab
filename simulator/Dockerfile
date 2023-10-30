@@ -28,7 +28,7 @@ RUN apt-get -qq update && apt-get -qq install -y git
 #USER containeruser
 #WORKDIR "/home/containeruser"
 
-RUN git clone --recurse-submodules https://github.com/nesl/AI-Collab.git
+RUN git clone --recurse-submodules --branch v1.0.0 https://github.com/nesl/AI-Collab.git
 
 RUN python3 -m pip install -r AI-Collab/requirements.txt
 RUN python3 -m pip install AI-Collab/magnebot/

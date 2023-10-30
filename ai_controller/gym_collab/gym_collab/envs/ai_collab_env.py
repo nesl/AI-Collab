@@ -5,6 +5,7 @@ import logging
 import os
 import ssl
 import uuid
+import re
 
 import json_numpy
 
@@ -27,14 +28,14 @@ import gymnasium as gym
 from gymnasium import spaces
 
 from .action import Action
-
+from cnl import MessagePattern
 
 class AICollabEnv(gym.Env):
 
     # MAIN & SETUP OF HTTP SERVER #########################################
 
     def __init__(self, use_occupancy, view_radius, client_number, address, skip_frames,
-                 host=None, port=None, cert_file=None, key_file=None):
+                 host=None, port=None, cert_file=None, key_file=None, record_to=None):
 
         self.pcs = set()
         self.relay = MediaRelay()
@@ -65,6 +66,14 @@ class AICollabEnv(gym.Env):
         self.objects_in_goal = []
         self.last_sensed = []
         self.extra = {}
+        
+        #For debugging webrtc
+        self.logger = logging.getLogger("pc")
+
+        logging.basicConfig(level=logging.DEBUG)
+        
+        self.record_to = record_to
+
 
         # SOCKET IO message function definitions ###########################
 
@@ -175,6 +184,7 @@ class AICollabEnv(gym.Env):
         @self.sio.event
         def message(message, timestamp, source_agent_id):
 
+            """
             # Special case for receiving data update
             if self.ask_info_objects_str in message:
                 print("Objects UPDATE")
@@ -190,7 +200,25 @@ class AICollabEnv(gym.Env):
                     (source_agent_id,
                      extended_neighbors_info))
             else:
-                self.messages.append((source_agent_id, message, timestamp))
+            """
+            
+            #Whenever we get a message saying an object exists, we just make sure that is reflected here
+            if re.search(MessagePattern.item_regex_full(),message):
+                for rematch in re.finditer(MessagePattern.item_regex_full(),message):
+                    object_id = rematch.group(1)
+                    
+                    if object_id not in list(self.object_key_to_index.keys()):
+                    
+                        last_time = rematch.group(4).split(":")
+                        timer = int(last_time[1]) + int(last_time[0])*60
+                        last_seen = list(eval(rematch.group(3)))
+                        object_location = self.convert_to_grid_coordinates(last_seen)
+                        weight = int(rematch.group(2))
+                    
+                        self.update_objects_info(
+                                    object_id, timer, {}, object_location, weight, True)
+                    
+            self.messages.append((source_agent_id, message, timestamp))
 
             #print("message", message, source_agent_id)
 
@@ -251,6 +279,91 @@ class AICollabEnv(gym.Env):
         def agent_reset():
             self.agent_reset = True
             print("Agent reset")
+            
+        @self.sio.event
+        def offer_ai(broadcast_id, request):
+            asyncio.run(offer_proc(broadcast_id, request, process_answer))
+            
+        async def offer_proc(broadcast_id, request, fn):
+        
+            print("offer here")
+            # async def offer_async(server_id, params):
+            params = json.loads(request)
+            print(params)
+
+            offer = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
+            self.robot_id = params["id"]
+            pc = RTCPeerConnection()
+            pc_id = "PeerConnection(%s)" % uuid.uuid4()
+            self.pcs.add(pc)
+
+            def log_info(msg, *args):
+                self.logger.info(pc_id + " " + msg, *args)
+
+
+
+            # prepare local media
+
+            if self.record_to:
+                recorder = MediaRecorder(self.record_to)
+            else:
+                recorder = MediaBlackhole()
+
+            @pc.on("connectionstatechange")
+            async def on_connectionstatechange():
+                log_info("Connection state is %s", pc.connectionState)
+                if pc.connectionState == "failed":
+                    await pc.close()
+                    self.pcs.discard(pc)
+
+            @pc.on("track")
+            async def on_track(track):
+
+                log_info("Track %s received", track.kind)
+
+                if track.kind == "video":
+
+                    if self.record_to:
+                        print("added record")
+                        recorder.addTrack(self.relay.subscribe(track))
+
+                    if not self.tracks_received:
+                        # processing_thread = threading.Thread(target=main_thread, args = (track, ))
+                        # processing_thread.daemon = True
+                        # processing_thread.start()
+                        self.frame_queue = asyncio.Queue()
+                        # print("waiting queue")
+                        # track = await tracks_received.get()
+                        print("waiting gather")
+                        self.tracks_received += 1
+                        #await asyncio.gather(self.get_frame(track, self.frame_queue), self.actuate(self.frame_queue))
+                    # tracks_received.append(relay.subscribe(track))
+
+                    # print(tracks_received.qsize())
+
+                @track.on("ended")
+                async def on_ended():
+                    log_info("Track %s ended", track.kind)
+                    await recorder.stop()
+
+            # handle offer
+            await pc.setRemoteDescription(offer)
+            await recorder.start()
+
+            # send answer
+            answer = await pc.createAnswer()
+            await pc.setLocalDescription(answer)
+            print("offer", json.dumps(
+                {"sdp": pc.localDescription.sdp, "type": pc.localDescription.type}))
+
+            fn(json.dumps(
+                    {"sdp": pc.localDescription.sdp, "type": pc.localDescription.type}))
+                    
+                    
+            
+            #self.sio.emit("answer_ai", json.dumps(
+            #        {"sdp": pc.localDescription.sdp, "type": pc.localDescription.type})
+            #)
 
         self.run(address, cert_file, key_file)
 
@@ -270,6 +383,12 @@ class AICollabEnv(gym.Env):
         corrected_neighbors_info.append(self.own_neighbors_info_entry)
 
         return corrected_neighbors_info
+        
+    def compute_real_distance(self,neighbor_location,ego_location):
+    
+        res = np.linalg.norm(np.array([neighbor_location[0],neighbor_location[1]]) - np.array([ego_location[0],ego_location[1]]))*self.map_config['cell_size']
+        
+        return res
 
     # Connect to Socket.IO and optionally setup server
     def run(self, address, cert_file, key_file):
@@ -591,6 +710,7 @@ class AICollabEnv(gym.Env):
         self.own_neighbors_info_entry = [self.robot_id, 1, 0, 0, -1]
         self.last_sensed = []
 
+        self.sio.emit("disable")
         self.sio.emit("reset") #self.sio.emit("reset_ai")
         print("Reseting agent")
         while not self.agent_reset:
@@ -988,12 +1108,12 @@ class AICollabEnv(gym.Env):
                 if complete_action["robot"] > 0:
 
                     robot_data = self.neighbors_info[complete_action["robot"] - 1]
-                    if np.linalg.norm((np.array([robot_data[2],robot_data[3]]) - np.array(ego_location))*self.map_config['cell_size']) < self.map_config['communication_distance_limit']:
+                    if robot_data[4] >= 0 and np.linalg.norm((np.array([robot_data[2],robot_data[3]]) - np.array(ego_location))*self.map_config['cell_size']) < self.map_config['communication_distance_limit']:
                         neighbors_dict = {
                             robot_data[0]: "human" if not robot_data[1] else "ai"}
                 else:
                     for robot_data in self.neighbors_info:
-                        if np.linalg.norm((np.array([robot_data[2],robot_data[3]]) - np.array(ego_location))*self.map_config['cell_size']) < self.map_config['communication_distance_limit']:
+                        if robot_data[4] >= 0 and np.linalg.norm((np.array([robot_data[2],robot_data[3]]) - np.array(ego_location))*self.map_config['cell_size']) < self.map_config['communication_distance_limit']:
                             if not robot_data[1]:
                                 robot_type = "human"
                             else:
@@ -1090,29 +1210,32 @@ class AICollabEnv(gym.Env):
                         sensing_output["objects_metadata"] = objects_metadata
                         
                         #Update objects locations
-                        object_locations = np.where((occupancy_map == 2) | (occupancy_map == 4))
+                        object_locations = np.where((occupancy_map == 2) | (occupancy_map == 4) | (occupancy_map == 3))
                         #object_locations = np.array([object_locations[0][:],object_locations[1][:]])
                         
 
                         for ol_idx in range(len(object_locations[0])):
+                        
                             key = str(
                                 object_locations[0][ol_idx]) + '_' + str(object_locations[1][ol_idx])
 
                             for object_info in objects_metadata[key]: #One cell can have multiple objects
-                                self.update_objects_info(
-                                    object_info[0], timer, {}, [
-                                        object_locations[0][ol_idx], object_locations[1][ol_idx]], object_info[1], False)
-                                '''
-                                for ob_idx,ob in enumerate(self.object_info):
-                                    if ob[0] == objects_metadata[key][0][0]:
-                                        self.object_info[ob_idx][3] = object_locations[0][ol_idx]
-                                        self.object_info[ob_idx][4] = object_locations[1][ol_idx]
-                                        self.object_info[ob_idx][5] = timer
-                                        known_object = True
-                                        break
-                                if not known_object:
-                                    self.object_info.append([objects_metadata[key][0][0],objects_metadata[key][0][1],0,object_locations[0][ol_idx],object_locations[1][ol_idx],timer])
-                                '''
+                            
+                                if isinstance(object_info, list): #Only if it's an object
+                                    self.update_objects_info(
+                                        object_info[0], timer, {}, [
+                                            object_locations[0][ol_idx], object_locations[1][ol_idx]], object_info[1], False)
+                                    '''
+                                    for ob_idx,ob in enumerate(self.object_info):
+                                        if ob[0] == objects_metadata[key][0][0]:
+                                            self.object_info[ob_idx][3] = object_locations[0][ol_idx]
+                                            self.object_info[ob_idx][4] = object_locations[1][ol_idx]
+                                            self.object_info[ob_idx][5] = timer
+                                            known_object = True
+                                            break
+                                    if not known_object:
+                                        self.object_info.append([objects_metadata[key][0][0],objects_metadata[key][0][1],0,object_locations[0][ol_idx],object_locations[1][ol_idx],timer])
+                                    '''
 
                         # Update robots locations
                         robots_locations = np.where(occupancy_map == 3)
@@ -1338,6 +1461,7 @@ class AICollabEnv(gym.Env):
 
     async def offer(self, request):
 
+
         print("offer here")
         # async def offer_async(server_id, params):
         params = await request.json()
@@ -1350,14 +1474,14 @@ class AICollabEnv(gym.Env):
         self.pcs.add(pc)
 
         def log_info(msg, *args):
-            logger.info(pc_id + " " + msg, *args)
+            self.logger.info(pc_id + " " + msg, *args)
 
         log_info("Created for %s", request.remote)
 
         # prepare local media
 
-        if args.record_to:
-            recorder = MediaRecorder(args.record_to)
+        if self.record_to:
+            recorder = MediaRecorder(self.record_to)
         else:
             recorder = MediaBlackhole()
 
@@ -1375,7 +1499,7 @@ class AICollabEnv(gym.Env):
 
             if track.kind == "video":
 
-                if args.record_to:
+                if self.record_to:
                     print("added record")
                     recorder.addTrack(self.relay.subscribe(track))
 
@@ -1388,7 +1512,7 @@ class AICollabEnv(gym.Env):
                     # track = await tracks_received.get()
                     print("waiting gather")
                     self.tracks_received += 1
-                    await asyncio.gather(self.get_frame(track, self.frame_queue), self.actuate(self.frame_queue))
+                    #await asyncio.gather(self.get_frame(track, self.frame_queue), self.actuate(self.frame_queue))
                 # tracks_received.append(relay.subscribe(track))
 
                 # print(tracks_received.qsize())
@@ -1449,12 +1573,6 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    logger = logging.getLogger("pc")
-
-    if args.verbose:
-        logging.basicConfig(level=logging.DEBUG)
-    else:
-        logging.basicConfig(level=logging.INFO)
 
     aicollab = AICollabEnv(args.use_occupancy,
                            args.view_radius,
@@ -1463,7 +1581,8 @@ if __name__ == "__main__":
                            args.port,
                            args.address,
                            args.cert_file,
-                           args.key_file)
+                           args.key_file,
+                           args.record_to)
     # aicollab.run(args.address,args.cert_file, args.key_file)
     # print("Finished here")
     # while not aicollab.setup_ready:

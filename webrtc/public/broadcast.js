@@ -22,6 +22,13 @@ socket.on("answer", (id, description) => {
   peerConnections[id].setRemoteDescription(description);
 });
 
+var desc_answer = [];
+socket.on("answer_ai", (id, description) => {
+  console.log("description", description)
+  answer = JSON.parse(description);
+  //peerConnections[id].setRemoteDescription(JSON.parse(description));
+  desc_answer = answer;
+});
 
 
 var current_idx = 1;
@@ -66,6 +73,11 @@ socket.on("watcher", (id, client_number) => { //When human controlled robot conn
   
 });
 
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+
 socket.on("watcher_ai", (id, client_number, server_address, robot_id) => { //When AI controlled robot connects, setup WebRTC and forward correct video track
   const peerConnection = new RTCPeerConnection(config);
   peerConnections[id] = peerConnection;
@@ -93,6 +105,7 @@ socket.on("watcher_ai", (id, client_number, server_address, robot_id) => { //Whe
     
   };
 
+  console.log("peerconnection 1", peerConnection);
   peerConnection
     .createOffer()
     .then(sdp => peerConnection.setLocalDescription(sdp))
@@ -113,7 +126,7 @@ socket.on("watcher_ai", (id, client_number, server_address, robot_id) => { //Whe
                 peerConnection.addEventListener('icegatheringstatechange', checkState);
             }
         });
-    })
+    }) /*
     .then(function() {
         var offer = peerConnection.localDescription;
         var codec;
@@ -133,18 +146,38 @@ socket.on("watcher_ai", (id, client_number, server_address, robot_id) => { //Whe
         console.log(response)
         return response.json();
     }).then(function(answer) {
-
+	console.log(answer)
         return peerConnection.setRemoteDescription(answer);
     }).catch(function(e) {
         alert(e);
     });
-    /*
-    .then(() => {
-      socket.emit("offer", id, peerConnection.localDescription);
-    });
     */
+    .then(() => {
+      var offer = peerConnection.localDescription;
+      var resp = JSON.stringify({
+                sdp: offer.sdp,
+                type: offer.type,
+                id: robot_id
+            });
+      return new Promise(function(resolve) {
+	      socket.emit("offer_ai", id, resp, function process_answer(description){
+		      console.log("description", description);
+		      answer = JSON.parse(description);
+		      //peerConnections[id].setRemoteDescription(JSON.parse(description));
+		      desc_answer = answer;
+		      resolve();
+		      });
+      });
+    }).then(function() {
+    	answer = desc_answer
+	console.log("description", answer)
+        return peerConnection.setRemoteDescription(answer);
+    }).catch(function(e) {
+        alert(e);
+    });
+    
 
-  
+
 });
 
 
