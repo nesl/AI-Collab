@@ -293,7 +293,7 @@ class LLMControl:
         if messages: #Process received messages
             self.message_processing(messages, robotState, info)
         
-        MessagePattern.exchange_sensing_info(robotState, info, self.nearby_other_agents, self.other_agents, self.env.convert_to_real_coordinates) #Exchange info about objects sensing measurements
+        self.message_text += MessagePattern.exchange_sensing_info(robotState, info, self.nearby_other_agents, self.other_agents, self.env.convert_to_real_coordinates) #Exchange info about objects sensing measurements
         
         if not self.message_text:
         
@@ -330,7 +330,12 @@ class LLMControl:
                 action["action"] = -1
                 action["num_cells_move"] = 1
             
+                previous_action_index = self.action_index
+                
                 self.message_text,self.action_index,self.target_location,self.next_loc, low_action = self.movement.movement_state_machine(self.occMap, info, robotState, self.action_index, self.message_text, self.target_location,self.State.llm_state, self.next_loc, ego_location, -1)
+                
+                if previous_action_index == self.movement.State.wait_message and not self.movement.asked_help:
+                    self.action_function = ""
                 
                 action["action"] = low_action
                 
@@ -501,6 +506,9 @@ class LLMControl:
     def collect_object(self, object_id, robotState, next_observation, info):
     
         finished = False
+        output = []
+        
+        action = self.sample_action_space
         
         ego_location = np.where(robotState.latest_map == 5)
         
@@ -584,7 +592,7 @@ class LLMControl:
                     
                     if not combinations_found: #No way of moving
                         self.top_action_sequence += 1
-                        
+                        action["action"] = Action.get_occupancy_map.value
                         _,self.message_text,self.action_index = self.movement.cancel_cooperation(self.State.llm_state,self.message_text,message=MessagePattern.carry_help_finish())
                 
                 
@@ -604,6 +612,7 @@ class LLMControl:
                     """
                 
                     if not action["action"] and isinstance(action["action"], list): #If already next to drop location
+                        action["action"] = Action.get_occupancy_map.value
                         self.top_action_sequence += 1
                         self.target_location = self.past_location
 
@@ -614,7 +623,7 @@ class LLMControl:
                     
                 elif time.time() - self.movement.asked_time > self.help_time_limit2:
                     self.top_action_sequence += 1
-                    
+                    action["action"] = Action.get_occupancy_map.value
                     _,self.message_text,self.action_index = self.movement.cancel_cooperation(self.State.get_closest_object,self.message_text,message=MessagePattern.carry_help_complain())
                     
                 elif action["action"] != Action.drop_object.value:
@@ -676,7 +685,7 @@ class LLMControl:
         self.chosen_object_idx = object_idx
         print("ASKING HELP")
         
-        self.action_function = "self.collect_object(object_id, robotState, next_observation, info)"
+        self.action_function = "self.collect_object(" + str(object_id) + ", robotState, next_observation, info)"
         
         #    self.action_sequence += 1
             

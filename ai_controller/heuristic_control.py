@@ -860,7 +860,7 @@ class HeuristicControl:
             #        break
                                 
 
-        MessagePattern.exchange_sensing_info(robotState, info, nearby_other_agents, self.other_agents, self.env.convert_to_real_coordinates) #Exchange info about objects sensing measurements
+        self.message_text += MessagePattern.exchange_sensing_info(robotState, info, nearby_other_agents, self.other_agents, self.env.convert_to_real_coordinates) #Exchange info about objects sensing measurements
             
             
         if not self.message_text: #if going to send message, skip normal execution of actions
@@ -1113,11 +1113,10 @@ class HeuristicControl:
                                     if self.too_stuck > 100:
                                         print("Too stuck")
                                         #pdb.set_trace()
-                        except:
-                            pdb.set_trace()    
+                           
 
-                        else: #move towards object location
-                            try:
+                            else: #move towards object location
+                                
                                 self.too_stuck = 0
                                 print(self.target_location)
                                 action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info,ego_location)
@@ -1140,8 +1139,8 @@ class HeuristicControl:
                                         self.retries = 0
                                     else:
                                        action = Action.get_occupancy_map.value 
-                            except:
-                                pdb.set_trace()
+                        except:
+                            pdb.set_trace() 
                     else: 
                         self.past_location = [ego_location[0][0],ego_location[1][0]]
                         

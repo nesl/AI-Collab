@@ -176,8 +176,8 @@ class Enhanced_Magnebot(Magnebot):
         self.last_position = np.array([])
         self.stats = Stats()
         self.skip_frames = 0
-        self.p11 = float(random.uniform(0.5, 1)) #Binary channel
-        self.p22 = float(random.uniform(0.5, 1))
+        self.p11 = float(random.uniform(0.4, 0.9)) #Binary channel
+        self.p22 = float(random.uniform(0.4, 0.9))
         
         
     def reset(self,position):
@@ -194,8 +194,8 @@ class Enhanced_Magnebot(Magnebot):
         self.last_output = False
         self.stats = Stats()
         self.last_position = np.array([])
-        self.p11 = float(random.uniform(0.5, 1)) #Binary channel
-        self.p22 = float(random.uniform(0.5, 1))
+        self.p11 = float(random.uniform(0.4, 0.9)) #Binary channel
+        self.p22 = float(random.uniform(0.4, 0.9))
 
 #Main class
 class Simulation(Controller):
@@ -1751,17 +1751,24 @@ class Simulation(Controller):
                         possible_danger_levels_tmp.remove(actual_danger_level)
                     
                         if actual_danger_level == 1:
-                            estimate_accuracy = ego_magnebot.p11
+                            true_accuracy = ego_magnebot.p11
                         elif actual_danger_level == 2:
-                            estimate_accuracy = ego_magnebot.p22
+                            true_accuracy = ego_magnebot.p22
                         #estimate_accuracy = float(np.random.uniform(0.5, 1))
                     
-                        danger_estimate = random.choices([actual_danger_level,*possible_danger_levels_tmp],weights=[estimate_accuracy*100,(1-estimate_accuracy)*100])
+                        danger_estimate = random.choices([actual_danger_level,*possible_danger_levels_tmp],weights=[true_accuracy*100,(1-true_accuracy)*100])
                         danger_estimates[o_translated] = danger_estimate[0]
+                        
+                        if danger_estimate[0] == 1:
+                            estimate_accuracy = ego_magnebot.p11
+                            other_estimate_accuracy = 1-ego_magnebot.p22
+                        elif danger_estimate[0] == 2:
+                            estimate_accuracy = ego_magnebot.p22
+                            other_estimate_accuracy = 1-ego_magnebot.p11
                         
                         ego_magnebot.item_info[o_translated]['sensor'][robot_id_translated] = {}
                         ego_magnebot.item_info[o_translated]['sensor'][robot_id_translated]['value'] = int(danger_estimate[0])
-                        ego_magnebot.item_info[o_translated]['sensor'][robot_id_translated]['confidence'] = estimate_accuracy
+                        ego_magnebot.item_info[o_translated]['sensor'][robot_id_translated]['confidence'] = (estimate_accuracy*0.5)/(0.5*estimate_accuracy + 0.5*other_estimate_accuracy)
 
                         
                     else: #If we already have a danger estimation reuse that one
@@ -2524,7 +2531,7 @@ class Simulation(Controller):
                 resp = self.communicate(commands)
             except Exception as e:
                 print("Error communication")
-                pdb.set_trace()
+                #pdb.set_trace()
                 self.sio.emit("sim_crash", self.timer)
                 if hasattr(e, 'message'):
                     print(e.message)

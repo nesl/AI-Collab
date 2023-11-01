@@ -10,7 +10,7 @@ commander
   .option('--port <number>', 'Port', 4000)
   .option('--log', 'Log everything')
   .option('--message-loop', 'Send back messages sent')
-  .option('--password <value>', 'Specify password')
+  .option('--password <value>', 'Specify passwords separated by comma')
   .parse(process.argv);
 
 const command_line_options = commander.opts();
@@ -73,10 +73,10 @@ var reset_count = 0;
 var passcode;
 
 if(! command_line_options.password){
-    passcode = Math.random().toString(36).substring(2,7);
+    passcode = [Math.random().toString(36).substring(2,7)];
 }
 else{
-    passcode = command_line_options.password;
+    passcode = command_line_options.password.split(",");
 }
 
 
@@ -117,7 +117,7 @@ io.sockets.on("connection", socket => { //When a client connects
   socket.on("watcher", (client_number, code) => { //When a human client connects
 
 
-    if(code == passcode){
+    if(passcode.includes(code)){
 
 
 	    socket.to(broadcaster).emit("watcher", socket.id, client_number);

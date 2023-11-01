@@ -194,10 +194,11 @@ class RobotState:
         if not self.items[item_idx]["item_danger_level"] or  (item_output["item_danger_level"] and round(self.items[item_idx]["item_danger_confidence"][0],3) == round(item_output["item_danger_confidence"][0],3) and self.items[item_idx]["item_time"][0] < item_output["item_time"][0]) or (item_output["item_danger_level"] and self.items[item_idx]["item_danger_confidence"][0] < item_output["item_danger_confidence"][0]):
             
             self.items[item_idx] = item_output
+            self.items[item_idx]["item_location"] = [int(item_output["item_location"][0]),int(item_output["item_location"][1])]
             
         elif self.items[item_idx]["item_time"][0] < item_output["item_time"][0]:
         
-            self.items[item_idx]["item_location"] = item_output["item_location"]
+            self.items[item_idx]["item_location"] = [int(item_output["item_location"][0]),int(item_output["item_location"][1])]
             self.items[item_idx]["item_time"] = item_output["item_time"]
             
         
