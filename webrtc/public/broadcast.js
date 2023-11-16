@@ -1,19 +1,30 @@
+//https://gabrieltanner.org/blog/webrtc-video-broadcast/
 const peerConnections = {};
+
+
 const config = {
   sdpSemantics: 'unified-plan',
 
   iceServers: [
+    //{ 
+    //  urls: ["stun:stun.l.google.com:19302"]
+    //},
     { 
-      "urls": "stun:stun.l.google.com:19302",
-    },
-    // { 
-    //   "urls": "turn:TURN_IP?transport=tcp",
-    //   "username": "TURN_USERNAME",
-    //   "credential": "TURN_CREDENTIALS"
-    // }
+       "urls": "turn:54.85.22.234:3478?transport=tcp",
+       "username": config_api.username,
+       "credential": config_api.password
+    }
   ]
 };
 
+/*
+var config = {};
+(async() => {
+  const response = await fetch("https://nesl.metered.live/api/v1/turn/credentials?apiKey=" + config_api.API_KEY);
+  const iceServers = await response.json();
+  config.iceServers = iceServers
+})();
+*/
 const socket = io.connect(window.location.origin);
 
 socket.on("answer", (id, description) => {
@@ -205,11 +216,76 @@ window.onunload = window.onbeforeunload = () => {
 const videoElements = [];
 //deviceInfos = navigator.mediaDevices.enumerateDevices();
 
+var map_config = {};
 var first_video_idx = 0;
-socket.on("simulator", (video_idx) => {
+var neighbors_list_store = [];
+socket.on("simulator", (video_idx, config_options) => {
     console.log("simulator")
     first_video_idx = video_idx;
     getDevices().then(gotDevices);
+    
+    map_config = config_options;
+    
+    var neighbor_info_div = document.getElementById("collapsible_nearby_team_members");
+    
+    var div_element = document.createElement("div");
+    div_element.setAttribute("class", "wrapper");
+    var input_element = document.createElement("input");
+    input_element.setAttribute("type", "radio");
+    input_element.setAttribute("id", "All");
+    input_element.setAttribute("name", "neighbors");
+    input_element.setAttribute("value", "All");
+    input_element.setAttribute("checked", true);
+    var label_element = document.createElement("label");
+    label_element.setAttribute("for", "All");
+    label_element.style.color = "black";
+    label_element.appendChild(document.createTextNode("All"));
+    
+    
+    div_element.appendChild(input_element);	
+    div_element.appendChild(label_element);
+    neighbor_info_div.appendChild(div_element);
+    
+    for(um_idx in map_config['all_robots']){
+    
+        var agent_type  = 0;
+        
+        if(map_config['all_robots'][um_idx][1] === 'ai'){
+            agent_type = 1;
+        }
+    
+    	neighbors_list_store.push([map_config['all_robots'][um_idx][0], agent_type]);
+    
+        var div_element = document.createElement("div");
+        div_element.setAttribute("class", "wrapper");
+        var input_element = document.createElement("input");
+        input_element.setAttribute("type", "radio");
+        input_element.setAttribute("id", String(map_config['all_robots'][um_idx][0]));
+        input_element.setAttribute("name", "neighbors");
+        input_element.setAttribute("value", String(map_config['all_robots'][um_idx][0]));
+        var label_element = document.createElement("label");
+        label_element.setAttribute("for", String(map_config['all_robots'][um_idx][0]));
+        label_element.setAttribute("id", String(map_config['all_robots'][um_idx][0]) + '_entry');
+        label_element.style.color = "black";
+        
+        const tbl = document.createElement('table');
+        const tr1 = tbl.insertRow();
+	const td1 = tr1.insertCell();
+	td1.appendChild(document.createTextNode("Agent " + String(map_config['all_robots'][um_idx][0]) + " (type: " + map_config['all_robots'][um_idx][1] + ")"));
+	
+	
+        label_element.appendChild(tbl);
+        
+        
+        div_element.appendChild(input_element);	
+        div_element.appendChild(label_element);
+        neighbor_info_div.appendChild(div_element);
+
+
+        
+    }
+    
+    
 });
 
 
@@ -313,5 +389,112 @@ function handleError(error) {
 function manualReset(){
   socket.emit("reset");
 }
+
+function removeTags(str) {
+    if ((str===null) || (str===''))
+        return false;
+    else
+        str = str.toString();
+          
+    // Regular expression to identify HTML tags in
+    // the input string. Replacing the identified
+    // HTML tag with a null string.
+    return str.replace( /(<([^>]+)>)/ig, '');
+}
+
+function newMessage(message, id){
+	const chat = document.getElementById("chat");
+	var p_element = document.createElement("p");
+	p_element.innerHTML = "<strong>"+ removeTags(String(id)) + "</strong>: " + message;
+
+	chat.appendChild(p_element);
+	
+	p_element.scrollIntoView({block: "nearest", inline: "nearest"});
+}
+
+
+
+function sendCommand() {
+
+	final_string = document.getElementById('command_text').value;
+	document.getElementById('command_text').value = "";
+	
+	if(final_string){
+	
+	
+	    newMessage(final_string, "ADMIN");
+
+	    var agents = document.getElementsByName('neighbors');
+	    var command_string;
+	    for(i = 0; i < agents.length; i++) {
+		    if(agents[i].checked){
+			    command_string = agents[i].value;
+			    break;
+		    }
+	    }
+	    
+	    neighbors_dict = {}
+	    
+	    if(command_string === "All"){
+	    
+	    	    /*
+		    for(nl_idx in neighbors_list_store){
+
+			    var human_or_robot = 0;
+			    if(! neighbors_list_store[nl_idx][1]){
+			        human_or_robot = "human";
+			    } else{
+			        human_or_robot = "ai";
+			    }
+			    neighbors_dict[neighbors_list_store[nl_idx][0]] = human_or_robot;
+		        
+		    }
+		    */
+	    } else{
+	    
+	        var robot_id = command_string.split(" ")[0];
+
+	        
+	        for(nl_idx in neighbors_list_store){
+	            if(neighbors_list_store[nl_idx][0] === robot_id){
+	                	    
+            	    if(! neighbors_list_store[nl_idx][1]){
+	                    human_or_robot = "human";
+	                } else{
+	                    human_or_robot = "ai";
+	                }
+	                
+	                break;
+	            }
+	        }
+	        
+	        
+
+	        
+	        neighbors_dict[robot_id] = human_or_robot;
+	    }
+	    
+	    
+	    socket.emit("message", final_string, 0, neighbors_dict);
+	}
+}
+
+
+socket.on("message", (message, timestamp, id) => {
+	console.log("Received message");
+	newMessage(message, id);
+
+});
+
+
+let chat_input_text = document.getElementById("command_text");
+
+chat_input_text.addEventListener("keydown", (event) => {
+
+	if( event.key.includes("Enter")){
+		sendCommand();
+	}
+
+});
 
 socket.emit("broadcaster_load");

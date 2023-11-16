@@ -74,9 +74,11 @@
 		
 		
 	        
-		<button id="leave_button" class="end" onclick="disableRobot()">End control</button>
+		
 	
 		<p style="color:white;"> <b>Controls</b><br><b>Arrow Keys</b> to advance<br><b>A</b> to grab/drop object with left arm<br><b>D</b> to grab/drop object with right arm<br><b>S</b> to rotate camera downwards<br><b>W</b> to rotate camera upwards<br><b>Q</b> to take sensing action<br><b>E</b> to focus in object (you need this to then grab an object)</p>
+		
+	<button id="leave_button" class="end" style="margin-bottom: 150px;"  onclick="disableRobot()">End control</button>
 	</div>
 	
 
@@ -122,6 +124,8 @@
 	    			
 	    			
 	        		</div>
+	        		
+		
 		</div>
 		
 	<div class="popup" id="popup-pass">
@@ -172,6 +176,7 @@
 
     </div>
     <script src="/socket.io/socket.io.js"></script>
+    <script type='text/javascript' src='config.js'></script>
     <script src="/watch.js"></script>
 
 	<script>

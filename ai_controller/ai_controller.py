@@ -184,11 +184,22 @@ class RobotState:
         self.latest_map = latest_map
         self.object_held = object_held
         self.items = []
-        self.robots = [{"neighbor_type": meta_robots[n][1], "neighbor_location": [0,0]} for n in range(len(meta_robots))]
+        self.item_estimates = {}
+        self.robots = [{"neighbor_type": meta_robots[n][1], "neighbor_location": [-1,-1], "last_seen_location": []} for n in range(len(meta_robots))]
         self.strength = 1
         self.map_metadata = {}
         
-    def update_items(self,item_output, item_idx): #Updates items
+    def update_items(self,item_output, item_idx, robot_idx): #Updates items
+
+
+        if item_idx not in self.item_estimates:
+            self.item_estimates[item_idx] = [{"item_danger_level": 0, "item_danger_confidence": 0, "item_location": [-1,-1], "item_time": 0} for n in range(len(self.robots)+1)]
+            
+        self.item_estimates[item_idx][robot_idx]["item_location"] = [int(item_output["item_location"][0]),int(item_output["item_location"][1])]
+        self.item_estimates[item_idx][robot_idx]["item_time"] = item_output["item_time"]
+        self.item_estimates[item_idx][robot_idx]["item_danger_level"] = item_output["item_danger_level"]
+        self.item_estimates[item_idx][robot_idx]["item_danger_confidence"] = item_output["item_danger_confidence"]
+
 
         print(item_output)
         if not self.items[item_idx]["item_danger_level"] or  (item_output["item_danger_level"] and round(self.items[item_idx]["item_danger_confidence"][0],3) == round(item_output["item_danger_confidence"][0],3) and self.items[item_idx]["item_time"][0] < item_output["item_time"][0]) or (item_output["item_danger_level"] and self.items[item_idx]["item_danger_confidence"][0] < item_output["item_danger_confidence"][0]):
@@ -380,12 +391,13 @@ while True:
                 elif Action(last_action[1]) == Action.check_item:
                 
                     #robotState.items[last_action_arguments[0]] = next_observation["item_output"]
-                    robotState.update_items(next_observation["item_output"],last_action_arguments[0])
+                    robotState.update_items(next_observation["item_output"],last_action_arguments[0], -1)
                     
                 elif Action(last_action[1]) == Action.check_robot: #Make sure to update estimates and take the one with the highest confidence
                 
                     item_idx = last_action_arguments[1]-1
-                    robotState.robots[item_idx] = next_observation["neighbors_output"]
+                    robotState.robots[item_idx]["neighbor_location"] = next_observation["neighbors_output"]["neighbor_location"]
+                    robotState.robots[item_idx]["neighbor_type"] = next_observation["neighbors_output"]["neighbor_type"]
                         
 
                         
@@ -411,6 +423,19 @@ while True:
             
             robotState.latest_map[ego_location[0][0],ego_location[1][0]] = 5 #Set ego robot in map
             
+            
+            for ob_key in range(len(robotState.robots)): #If the agent is not where it was last seen, mark it
+                robo_location = robotState.latest_map[robotState.robots[ob_key]["neighbor_location"][0],robotState.robots[ob_key]["neighbor_location"][1]]
+                if robo_location != 5 and robo_location != 3:
+                    robotState.robots[ob_key]["neighbor_location"] = [-1,-1]
+                    
+            for ob_key in range(len(robotState.items)): #If the agent is not where it was last seen, mark it
+                item_location = robotState.latest_map[robotState.items[ob_key]["item_location"][0],robotState.items[ob_key]["item_location"][1]]
+                if item_location == 0:
+                    robotState.items[ob_key]["item_location"] = [-1,-1]
+            	
+            
+            
             if high_level_action_finished: #When a high level action finishes, we sense the environment
                 if last_action[1] == Action.get_messages.value: #Action.get_occupancy_map.value:
                 
@@ -422,7 +447,11 @@ while True:
                     
                     #print("Messages", messages)
                     if args.control == 'llm' or args.control == 'openai':
-                        action = llm_control.control(messages, robotState, info, next_observation)
+                        action,terminated_tmp = llm_control.control(messages, robotState, info, next_observation)
+                        
+                        if terminated_tmp:
+                            disabled = True
+                            env.sio.emit("disable")
                         #high_level_action_finished = False
                     elif args.control == 'heuristic':
                         #action["action"] = h_control.planner(robotState, process_reward, step_count, terminated or truncated)

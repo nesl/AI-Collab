@@ -11,6 +11,7 @@ from cnl import MessagePattern
 from movement import Movement
 from enum import Enum
 import time
+from collections import deque
 
 
 class LLMControl:
@@ -29,10 +30,13 @@ class LLMControl:
         self.sample_action_space = env.action_space.sample()
         self.device = device
         self.action_function = ""
-        self.action_history = ""
+
         self.explore_location = []
         self.previous_message = []
         self.message_text = ""
+        self.action_history = deque(maxlen=5)
+        self.message_info = [False,"",0]
+        self.ask_info_time_limit = 10
         
         self.movement = Movement(env)
 
@@ -41,7 +45,7 @@ class LLMControl:
 
 
         #self.system_prompt = "Imagine you are a robot. You can move around a place, use a sensor to determine whether an object is dangerous or benign, and pick up objects if necessary. Your task is to find all dangerous objects in the scene, pick them up and carry them to the goal area. Just remember that if you pick up an object you cannot pick up another object until you drop the one you are carrying, and you can only sense objects by getting close to the object and activating the sensor. This action will update the information relevant to such object, you should only try sensing an object once as there is no extra information obtained from doing it more times. Location is represented with (x,y) coordinates."
-        self.system_prompt = "Imagine you are a robot working as part of a team. You can move around a place, use a sensor to determine whether an object is dangerous or benign, and pick up objects if necessary. Your task is to find all dangerous objects in the scene, pick them up and carry them to the goal area. Some objects are too heavy for you to carry alone, thus you need to ask for help to a specific number of teammates. The number of teammates needed is equal to the weight of the object you want to carry. Asking teammates to help you prevents them from working individually towards the common objective, so you should make responsible use of them. You can only sense objects by getting close to the desired object and activating the sensor. This action will update the information relevant to such object. Because your sensor is faulty, it will provide a measurement with only a certain percentage of confidence, it is up to you to decide whether you trust it or not. You can exchange information about objects automatically with other teammates by being getting close to them. Location is represented with (x,y) coordinates."
+        self.system_prompt = "Imagine you are a robot working as part of a team. You can move around a place, use a sensor to determine whether an object is dangerous or benign, and pick up objects if necessary. Your task is to find all dangerous objects in the scene, pick them up and carry them to the goal area. Some objects are too heavy for you to carry alone, thus you need to ask for help to a specific number of teammates. The number of teammates needed is equal to the weight of the object you want to carry. Asking teammates to help you prevents them from working individually towards the common objective, so you should make responsible use of them. You can only sense objects by getting close to the desired object and activating the sensor. This action will update the information relevant to such object and add information about its status and measurement confidence. Because your sensor is faulty, it will provide a measurement with only a certain percentage of confidence, it is up to you to decide whether you trust it or not. You can exchange information about objects automatically with other teammates by getting close to them. Location is represented with (x,y) coordinates." # Whenever you think there is nothing else left to do, you can always choose to end participation."
 
         if self.openai:
             self.llm_messages.extend([
@@ -164,10 +168,13 @@ class LLMControl:
                 
                 if return_value == 1:
                     
-                    self.target_location = robotState.items[self.chosen_object_idx]['item_location']
-                    #self.target_object_idx = self.heavy_objects["index"][self.chosen_heavy_object]
-                    
-                    self.action_index = self.State.llm_state
+                    if not (robotState.items[self.chosen_object_idx]['item_location'][0] == -1 and robotState.items[self.chosen_object_idx]['item_location'][1] == -1):
+                        self.target_location = robotState.items[self.chosen_object_idx]['item_location']
+                        #self.target_object_idx = self.heavy_objects["index"][self.chosen_heavy_object]
+                        
+                        self.action_index = self.State.llm_state
+                    else: #Somehow we end here
+                        self.message_text += MessagePattern.carry_help_reject(rm[0])
                         
 
 
@@ -241,26 +248,37 @@ class LLMControl:
                 object_id = rematch.group(1) #rm[1].strip().split()[-1] 
                 object_idx = info['object_key_to_index'][object_id]
                 
-                self.message_text += MessagePattern.item(robotState.items,object_idx,object_id, self.env.convert_to_real_coordinates)
+                self.message_text += MessagePattern.item(robotState,object_idx,object_id, info, self.env.robot_id, self.env.convert_to_real_coordinates)
                 
                 if not self.message_text:
                      self.message_text += MessagePattern.sensing_help_negative_response(object_id)
             if re.search(MessagePattern.item_regex_full(),rm[1]):
             
+                
+            
                 template_match = True
             
                 for rematch in re.finditer(MessagePattern.item_regex_full(),rm[1]):
                 
+                    if rematch.group(1) == str(self.message_info[1]):
+                        self.message_info[0] = True
+                        
                     MessagePattern.parse_sensing_message(rematch, rm, robotState, info, self.other_agents, self.env.convert_to_grid_coordinates)
                     
-   
+                    
+            if re.search(MessagePattern.sensing_help_negative_response_regex(),rm[1]):
+                rematch = re.search(MessagePattern.sensing_help_negative_response_regex(),rm[1])
+                
+                if rematch.group(1) == str(self.message_info[1]):
+                    self.message_info[0] = True
+                template_match = True
    
     def get_neighboring_agents(self, robotState, ego_location):
     
         nearby_other_agents = []
         #Get number of neighboring robots at communication range
         for n_idx in range(len(robotState.robots)):
-            if "neighbor_location" in robotState.robots[n_idx] and self.env.compute_real_distance([robotState.robots[n_idx]["neighbor_location"][0],robotState.robots[n_idx]["neighbor_location"][1]],[ego_location[0][0],ego_location[1][0]]) < self.env.map_config['communication_distance_limit']:
+            if "neighbor_location" in robotState.robots[n_idx] and not (robotState.robots[n_idx]["neighbor_location"][0] == -1 and robotState.robots[n_idx]["neighbor_location"][1] == -1) and self.env.compute_real_distance([robotState.robots[n_idx]["neighbor_location"][0],robotState.robots[n_idx]["neighbor_location"][1]],[ego_location[0][0],ego_location[1][0]]) < self.env.map_config['communication_distance_limit']:
                 nearby_other_agents.append(n_idx)
                 
         return nearby_other_agents    
@@ -275,11 +293,13 @@ class LLMControl:
                 agent_idx = info['robot_key_to_index'][agent_id]
                 other_robot_location = robotState.robots[agent_idx]["neighbor_location"]
                 
-                if occMap[other_robot_location[0],other_robot_location[1]] != 5:
+                if not (other_robot_location[0] == -1 and other_robot_location[1] == -1) and occMap[other_robot_location[0],other_robot_location[1]] != 5:
                     occMap[other_robot_location[0],other_robot_location[1]] = 3
 
     def control(self,messages, robotState, info, next_observation):
         #print("Messages", messages)
+        
+        terminated = False
         
         self.occMap = np.copy(robotState.latest_map)
         
@@ -293,24 +313,29 @@ class LLMControl:
         if messages: #Process received messages
             self.message_processing(messages, robotState, info)
         
-        self.message_text += MessagePattern.exchange_sensing_info(robotState, info, self.nearby_other_agents, self.other_agents, self.env.convert_to_real_coordinates) #Exchange info about objects sensing measurements
+        self.message_text += MessagePattern.exchange_sensing_info(robotState, info, self.nearby_other_agents, self.other_agents, self.env.robot_id, self.env.convert_to_real_coordinates) #Exchange info about objects sensing measurements
         
         if not self.message_text:
         
             if self.action_index == self.State.llm_state or self.action_index == self.State.drop_object:
                 if not self.action_function or self.help_requests:
                     history_prompt,function_str = self.ask_llm(messages, robotState, info, [], self.nearby_other_agents, self.help_requests)
-                    print("Starting...")
-                
-                    #self.action_function = input("Next action > ").strip()
-                    #self.action_function = "scan_area()"
-                    self.action_function = "self." + function_str[:-1]
-            
-                    #if not ("drop" in self.action_function or "activate_sensor" in self.action_function or "scan_area" in self.action_function):
-                    if not ("explore" in self.action_function):
-                        self.action_function += ","
                     
-                    self.action_function += "robotState, next_observation, info)"
+                    if function_str:
+                    
+                        print("Starting...")
+                    
+                        #self.action_function = input("Next action > ").strip()
+                        #self.action_function = "scan_area()"
+                        self.action_function = "self." + function_str[:-1]
+                
+                        #if not ("drop" in self.action_function or "activate_sensor" in self.action_function or "scan_area" in self.action_function):
+                        if not ("explore" in self.action_function):
+                            self.action_function += ","
+                        
+                        self.action_function += "robotState, next_observation, info)"
+                    else:
+                        self.action_function = ""
 
                 action, action_finished,function_output = eval(self.action_function)
 
@@ -318,13 +343,18 @@ class LLMControl:
                     self.action_sequence = 0
                     self.top_action_sequence = 0
                     history_prompt,function_str = self.ask_llm(messages, robotState, info, function_output, self.nearby_other_agents, self.help_requests)
-                    self.action_function = "self." + function_str[:-1]
-            
-                    #if not ("drop" in self.action_function or "activate_sensor" in self.action_function or "scan_area" in self.action_function):
-                    if not ("explore" in self.action_function):
-                        self.action_function += ","
                     
-                    self.action_function += "robotState, next_observation, info)"
+                    if function_str:
+                    
+                        self.action_function = "self." + function_str[:-1]
+                
+                        #if not ("drop" in self.action_function or "activate_sensor" in self.action_function or "scan_area" in self.action_function):
+                        if not ("explore" in self.action_function):
+                            self.action_function += ","
+                        
+                        self.action_function += "robotState, next_observation, info)"
+                    else: #No function selected
+                        self.action_function = ""
             else:
                 action = self.sample_action_space
                 action["action"] = -1
@@ -377,9 +407,13 @@ class LLMControl:
             action["action"] = Action.get_occupancy_map.value
             print("STUCK")
 
-        print("action index:",self.action_index, "action:", Action(action["action"]), ego_location)
+        print("action index:",self.action_index, "action:", Action(action["action"]), ego_location, self.action_function)
+        
+        if "end_participation" in self.action_function:
+            terminated = True
+        
 
-        return action
+        return action,terminated
         
     """
     def compute_real_distance(self,neighbor_location,ego_location):
@@ -493,6 +527,12 @@ class LLMControl:
         finished = False
         
         if self.top_action_sequence == 0:
+        
+            chosen_location = robotState.items[info['object_key_to_index'][str(object_id)]]["item_location"]
+        
+            if (chosen_location[0] == -1 and chosen_location[1] == -1) or self.occMap[chosen_location[0],chosen_location[1]] != 2: #if there is no object in the correct place
+                finished = True
+        
             action, temp_finished, output = self.go_to_location(object_id, robotState, next_observation, info)
             if temp_finished:
                 self.top_action_sequence += 1
@@ -515,6 +555,12 @@ class LLMControl:
         self.chosen_object_idx = info['object_key_to_index'][str(object_id)]
         
         if self.top_action_sequence == 0:
+
+            chosen_location = robotState.items[info['object_key_to_index'][str(object_id)]]["item_location"]
+            
+            if (chosen_location[0] == -1 and chosen_location[1] == -1) or self.occMap[chosen_location[0],chosen_location[1]] != 2: #if there is no object in the correct place
+                finished = True
+            
             action, temp_finished, output = self.go_to_location(object_id, robotState, next_observation, info)
             if temp_finished:
                 self.top_action_sequence += 1
@@ -563,7 +609,9 @@ class LLMControl:
 
                     agent_idx = info['robot_key_to_index'][agent_id]
                     other_robot_location = robotState.robots[agent_idx]["neighbor_location"]
-                    self.occMap[other_robot_location[0],other_robot_location[1]] = 3
+                    
+                    if not (other_robot_location[0] == -1 and other_robot_location[1] == -1):
+                        self.occMap[other_robot_location[0],other_robot_location[1]] = 3
                             
                 
                 loop_done = False
@@ -761,12 +809,27 @@ class LLMControl:
   
         elif str(object_id).isalpha(): #Agent
             
-            x,y = robotState.robots[info['robot_key_to_index'][str(object_id)]]["neighbor_location"]
+            robot_idx = info['robot_key_to_index'][str(object_id)]
+            
+            if (robotState.robots[robot_idx]["neighbor_location"][0] == -1 and robotState.robots[robot_idx]["neighbor_location"][1] == -1):
+                action["action"] = Action.get_occupancy_map.value
+                return action,True,output
+            
+            x,y = robotState.robots[robot_idx]["neighbor_location"]
             
             
         else:
             try:
-                x,y = robotState.items[info['object_key_to_index'][str(object_id)]]["item_location"]
+            
+                item_idx = info['object_key_to_index'][str(object_id)]
+            
+                if (robotState.items[item_idx]["item_location"][0] == -1 and robotState.items[item_idx]["item_location"][1] == -1):
+                    action["action"] = Action.get_occupancy_map.value
+                    return action,True,output
+            
+                x,y = robotState.items[item_idx]["item_location"]
+                
+                
             except:
                 pdb.set_trace()
         
@@ -927,7 +990,7 @@ class LLMControl:
                 else:
                     location = robotState.items[ob_idx]["item_location"]
                     action["action"] = self.movement.position_to_action([ego_location[0][0],ego_location[1][0]],location,True)
-                    if action["action"] == -1:
+                    if action["action"] == -1 or (location[0] == -1 and location[1] == -1):
                         action["action"] = Action.get_occupancy_map.value
                         finished = True
                         output = -1
@@ -954,7 +1017,7 @@ class LLMControl:
                 action["action"] = self.movement.position_to_action([ego_location[0][0],ego_location[1][0]],location,True)
                 self.action_retry += 1
                 
-                if action["action"] == -1:
+                if action["action"] == -1 or (location[0] == -1 and location[1] == -1):
                     action["action"] = Action.get_occupancy_map.value
                     finished = True
                     output = -1
@@ -973,6 +1036,16 @@ class LLMControl:
         output = self.held_objects
         
         action["action"] = Action.drop_object.value
+
+        return action,finished,output
+        
+    def end_participation(self,robotState, next_observation, info):
+
+        action = self.sample_action_space
+        action["action"] = -1
+        finished = True
+
+        output = []
 
         return action,finished,output
         
@@ -1009,6 +1082,28 @@ class LLMControl:
         
         return action,finished,output
         
+    def ask_info(self, object_id, robotState, next_observation, info):
+    
+        action = self.sample_action_space
+        
+        finished = False
+        
+        output = []
+        
+        if self.action_sequence == 0:
+            self.message_text += MessagePattern.sensing_help(object_id)
+            self.message_info[0] = False
+            self.message_info[1] = object_id
+            self.message_info[2] = time.time()
+            
+            self.action_sequence += 1 
+            
+        elif (self.action_sequence == 1 and self.message_info[0]) or time.time() - self.message_info[2] > self.ask_info_time_limit:
+            finished = True
+        
+        action["action"] = Action.get_occupancy_map.value
+        
+        return action,finished,output
         
     def ask_llm(self,messages, robotState, info, output, nearby_other_agents, help_requests):
 
@@ -1019,6 +1114,7 @@ class LLMControl:
         last_action = ""
         action_output_prompt = ""
         possible_actions = {}
+        ego_location = np.where(robotState.latest_map == 5)
 
         '''
         if "pick_up" in self.action_function:
@@ -1102,7 +1198,18 @@ class LLMControl:
         
             object_id = list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(ob_idx)]
             
-            prompt += "{'object_id': " + object_id + ", 'location': (" + str(ob["item_location"][0]) + "," + str(ob['item_location'][1]) + ')'
+            #prompt += "{'object_id': " + object_id + ", 'location': (" + str(ob["item_location"][0]) + "," + str(ob['item_location'][1]) + ')'
+            
+            if ob["item_location"][0] == -1 and ob["item_location"][1] == -1:
+                distance = "inf"
+            else:
+                _, next_locs, _, _ = self.movement.go_to_location(ob["item_location"][0], ob["item_location"][1], self.occMap, robotState, info, ego_location, self.action_index, checking=True)
+                distance = len(next_locs)
+                
+                if not distance:
+                    distance = "inf"
+            
+            prompt += "{'object_id': " + object_id + ", 'distance': " + str(distance)
             #prompt += "Object " + object_id + " at location (" + str(ob["item_location"][0]) + "," + str(ob['item_location'][1]) + ')'
             
             if ob['item_weight']:
@@ -1119,16 +1226,16 @@ class LLMControl:
                     
                 prompt += ", 'confidence': " + str(round(ob["item_danger_confidence"][0]*100,2)) + "%"
                 
-                if tuple(ob["item_location"]) not in self.env.goal_coords:
+                if not (ob["item_location"][0] == -1 and ob["item_location"][1] == -1) and tuple(ob["item_location"]) not in self.env.goal_coords:
                     
-                    if len(nearby_other_agents) + 1 >= ob['item_weight']:
+                    if len(nearby_other_agents) + 1 >= ob['item_weight'] and distance != "inf":
                         if ob['item_weight'] == 1:
                             possible_actions["Collect object " + object_id] = "collect_object(" + object_id + ")"
                         elif not help_requests:
                             possible_actions["Ask for help to collect object " + object_id] = "ask_for_help(" + object_id + ")" 
                     
             else:
-                if tuple(ob["item_location"]) not in self.env.goal_coords:
+                if not (ob["item_location"][0] == -1 and ob["item_location"][1] == -1) and tuple(ob["item_location"]) not in self.env.goal_coords and distance != "inf":
                     possible_actions["Sense object " + object_id] = "sense_object(" + object_id + ")"
                 
             """    
@@ -1143,6 +1250,10 @@ class LLMControl:
             """
                 
             prompt += "}"
+            
+            
+            if nearby_other_agents and tuple(ob["item_location"]) not in self.env.goal_coords:
+                possible_actions["Ask information about object " + object_id] = "ask_info(" + object_id + ")"
             
         prompt += "]. "
         
@@ -1198,11 +1309,22 @@ class LLMControl:
             
             agent_id = list(info['robot_key_to_index'].keys())[list(info['robot_key_to_index'].values()).index(a_idx)]
         
-            prompt += "{'agent_id': " + agent_id + ", 'location': (" + str(ag["neighbor_location"][0]) + "," + str(ag['neighbor_location'][1]) + ')'
+            #prompt += "{'agent_id': " + agent_id + ", 'location': (" + str(ag["neighbor_location"][0]) + "," + str(ag['neighbor_location'][1]) + ')'
+            
+            if ag["neighbor_location"][0] == -1 and ag["neighbor_location"][1] == -1:
+                distance = "inf"
+            else:
+                _, next_locs, _, _ = self.movement.go_to_location(ag["neighbor_location"][0], ag["neighbor_location"][1], self.occMap, robotState, info, ego_location, self.action_index, checking=True)
+                distance = len(next_locs)
+                
+                if not distance:
+                    distance = "inf"
+            
+            prompt += "{'agent_id': " + agent_id + ", 'distance': " + str(distance)
 
             prompt += "}"
             
-            if a_idx not in nearby_other_agents and not (not ag["neighbor_location"][0] and not ag["neighbor_location"][1]):
+            if a_idx not in nearby_other_agents and not (ag["neighbor_location"][0] == -1 and ag["neighbor_location"][1] == -1):
                 possible_actions["Go with agent " + agent_id] = "go_to_location('" + agent_id + "')"
             
         
@@ -1210,6 +1332,7 @@ class LLMControl:
             
         prompt += "]. "
         
+        #possible_actions["End participation"] = "end_participation()"
         
         action_status_prompt = prompt
         
@@ -1243,7 +1366,7 @@ class LLMControl:
         
         ego_location = np.where(robotState.latest_map == 5)
         
-        status_prompt += "Your current location is " + "(" + str(ego_location[0][0]) + "," + str(ego_location[1][0]) + "). "
+        #status_prompt += "Your current location is " + "(" + str(ego_location[0][0]) + "," + str(ego_location[1][0]) + "). "
         
         unexplored = np.where(robotState.latest_map == -2)
         
@@ -1280,11 +1403,24 @@ class LLMControl:
             self.action_history += last_action
 
         """
+        
+        if self.action_history:
+            status_prompt += "Action history: ["
+            for ah_index,ah in enumerate(self.action_history):
+                if ah_index:
+                    status_prompt += ", "
+                status_prompt += ah
+                
+            status_prompt += "]. "
+            
+            
+        
         prompt += status_prompt
         
         #prompt += "What will be your next action? Write a single function call."
         
-        prompt += "Output only a number indicating the action to perform from the next list of possible actions, do not output anything else:"
+        prompt += "Output only a number indicating the action to perform from the next list of possible actions and then give a short explanation:"
+        #prompt += "Output only a number indicating the action to perform from the next list of possible actions, do not output anything else:"
         
         
         
@@ -1372,7 +1508,7 @@ class LLMControl:
 
 
             response = openai.ChatCompletion.create(
-              model="gpt-3.5-turbo",
+              model= "gpt-3.5-turbo", #"gpt-4", #"gpt-3.5-turbo",
               messages=[
                     self.llm_messages[0],
                     {"role": "user", "content": prompt}
@@ -1389,18 +1525,26 @@ class LLMControl:
             message_content = response_message.get("content")
             
             function_output = ""
+            function_index = -1
             
             for p in possible_actions.keys():
                 if p in message_content:
                     function_output = possible_actions[p]
+                    function_index = p
                     break
                     
-            if not function_output:
+            if not function_output: #If given number only
                 rematch = re.search("\d+", message_content)
                 if rematch:
-                    function_output = possible_actions[list(possible_actions.keys())[int(rematch.group())-1]]
+                    possible_functions = list(possible_actions.keys())
+                    func_idx = int(rematch.group())-1
+                    if func_idx < len(possible_functions):
+                        function_index = possible_functions[func_idx]
+                        function_output = possible_actions[function_index]
+                        
                     
-                    
+            if function_output:
+                self.action_history.append(function_index)        
             
             """
             if response_message.get("function_call"):

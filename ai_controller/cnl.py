@@ -24,7 +24,7 @@ class MessagePattern:
         return "My goal is (\(-?\d+\.\d+,-?\d+\.\d+\)), I'm moving towards (\(-?\d+\.\d+,-?\d+\.\d+\)). My current location is (\(-?\d+\.\d+,-?\d+\.\d+\)).( Carrying object.)?( Helping (\w+))?"
         
     @staticmethod
-    def item(items,item_idx,object_id, convert_to_real_coordinates):
+    def item(robotState,item_idx,object_id, info, robot_id, convert_to_real_coordinates):
 
         """ Example
         Object 1 (weight: 1) Last seen in (5.5,5.5) at 00:57. Status Danger: benign, Prob. Correct: 88.1%
@@ -32,12 +32,12 @@ class MessagePattern:
     
         message_text = ""
                             
-        if items[item_idx]["item_weight"]:
+        if robotState.items[item_idx]["item_weight"]:
                             
-            item_loc = items[item_idx]['item_location']
+            item_loc = robotState.items[item_idx]['item_location']
         
             try:
-                mins, remainder = divmod(items[item_idx]["item_time"][0], 60)
+                mins, remainder = divmod(robotState.items[item_idx]["item_time"][0], 60)
             except:
                 pdb.set_trace()
             secs,millisecs = divmod(remainder,1)
@@ -45,21 +45,50 @@ class MessagePattern:
             
             time_formatted = '{:02d}:{:02d}'.format(int(mins), int(secs))
             
-            real_location = convert_to_real_coordinates(item_loc)
+            
+            if not (item_loc[0] == -1 and item_loc[1] == -1):
+                real_location = convert_to_real_coordinates(item_loc)
+            else:
+               real_location = [99.99,99.99]
         
-            message_text = "Object " + str(object_id) + " (weight: " +  str(items[item_idx]["item_weight"]) + ") Last seen in (" + str(real_location[0]) + "," + str(real_location[1]) + ") at " + time_formatted + ". "
-                                
-            if items[item_idx]['item_danger_level'] > 0:
-                                
-                message_text +=  "Status Danger: "
-                if items[item_idx]['item_danger_level'] == 1:
-                    message_text += "benign, "
-                else:
-                    message_text += "dangerous, "
+            message_text = "Object " + str(object_id) + " (weight: " +  str(robotState.items[item_idx]["item_weight"]) + ") Last seen in (" + str(real_location[0]) + "," + str(real_location[1]) + ") at " + time_formatted + ". "
+                
+            status_danger = ""
+            prob_correct = ""   
+            from_estimates = ""        
+            for robo_idx,roboestimate in enumerate(robotState.item_estimates[item_idx]):        
+                if roboestimate['item_danger_level'] > 0:
                     
-                message_text += "Prob. Correct: " + str(round(items[item_idx]["item_danger_confidence"][0]*100,1)) + "%. "
+                    if not status_danger:                
+                        status_danger +=  "Status Danger: ["
+                        prob_correct += "Prob. Correct: ["
+                        from_estimates += "From: ["
+                    else:
+                        status_danger += ","
+                        prob_correct += ","
+                        from_estimates += ","
+                        
+                    if roboestimate['item_danger_level'] == 1:
+                        status_danger += "benign"
+                    else:
+                        status_danger += "dangerous"
+                        
+                    prob_correct += str(round(roboestimate["item_danger_confidence"][0]*100,1)) + "%"
+                    
+                    if robo_idx == len(robotState.item_estimates[item_idx])-1:
+                        sensing_robot = robot_id
+                    else:
+                        sensing_robot = list(info['robot_key_to_index'].keys())[list(info['robot_key_to_index'].values()).index(robo_idx)]
+                    
+                    from_estimates += str(sensing_robot)
         
 
+            if status_danger:
+                status_danger += "], "
+                prob_correct += "], "
+                from_estimates += "]. "
+                
+            message_text += status_danger + prob_correct + from_estimates
 
         return message_text
         
@@ -68,7 +97,7 @@ class MessagePattern:
         return "Object (\d+) \(weight: (\d+)\) Last seen in (\(-?\d+\.\d+,-?\d+\.\d+\)) at (\d+:\d+)"
     @staticmethod
     def item_regex_full():
-        return "Object (\d+) \(weight: (\d+)\) Last seen in (\(-?\d+\.\d+,-?\d+\.\d+\)) at (\d+:\d+).( Status Danger: (\w+), Prob. Correct: (\d+\.\d+)%)?"
+        return "Object (\d+) \(weight: (\d+)\) Last seen in (\(-?\d+\.\d+,-?\d+\.\d+\)) at (\d+:\d+).( Status Danger: (\[\w+(,\w+)*\]), Prob. Correct: (\[\d+\.\d+%(,\d+\.\d+%)*\]), From: (\[\w+(,\w+)*\]))?"#"Object (\d+) \(weight: (\d+)\) Last seen in (\(-?\d+\.\d+,-?\d+\.\d+\)) at (\d+:\d+).( Status Danger: (\w+), Prob. Correct: (\d+\.\d+)%)?"
     
     @staticmethod
     def sensing_help(object_id):
@@ -319,7 +348,11 @@ class MessagePattern:
         item = {}
         
         last_seen = list(eval(rematch.group(3)))
-        item["item_location"] = convert_to_grid_coordinates(last_seen)
+        
+        if last_seen[0] == 99.99 and last_seen[1] == 99.99:
+            item["item_location"] = [-1,-1]
+        else:
+            item["item_location"] = convert_to_grid_coordinates(last_seen)
         last_time = rematch.group(4).split(":")
         item["item_time"] = [int(last_time[1]) + int(last_time[0])*60]
         item["item_weight"] = int(rematch.group(2))
@@ -327,40 +360,58 @@ class MessagePattern:
         item["item_danger_confidence"] = []
         
         
+        sender_agent_idx = info['robot_key_to_index'][rm[0]]
+
+        if object_id not in other_agents[sender_agent_idx].items.keys():
+            other_agents[sender_agent_idx].items[object_id] = [] #{"danger_level":0,"confidence":0}
+        
         if rematch.group(5):
+            danger_list = rematch.group(6).strip('][').split(',')
+            prob_list = rematch.group(8).strip('][').split(',')
+            from_list = rematch.group(10).strip('][').split(',')
             
-            if "benign" in rematch.group(6):
-                danger_level = 1
+            for lidx in range(len(danger_list)):
+            
+                if "benign" in danger_list[lidx]:
+                    danger_level = 1
+                    
+                else:
+                    danger_level = 2
+            
+                item["item_danger_level"] = danger_level
+                item["item_danger_confidence"] = [float(prob_list[lidx].strip('%'))/100]
+                print("update estimates", danger_level,item["item_danger_confidence"])
+        
+                if from_list[lidx] not in info['robot_key_to_index']: #This means it is you!
+                    agent_idx = -1
+                else:
+                    agent_idx = info['robot_key_to_index'][from_list[lidx]]
+                robotState.update_items(item,object_idx,agent_idx) #Object gets updated based on higher confidence estimates
                 
-            else:
-                danger_level = 2
+                if from_list[lidx] not in other_agents[sender_agent_idx].items[object_id]:
+                    other_agents[sender_agent_idx].items[object_id].append(from_list[lidx])
         
-            item["item_danger_level"] = danger_level
-            item["item_danger_confidence"] = [float(rematch.group(7))/100]
-            print("update estimates", danger_level,item["item_danger_confidence"])
         
-
-        robotState.update_items(item,object_idx) #Object gets updated based on higher confidence estimates
-        
-        agent_idx = info['robot_key_to_index'][rm[0]]
-                
-        if object_id not in other_agents[agent_idx].items.keys():
-            other_agents[agent_idx].items[object_id] = {"danger_level":0,"confidence":0}
             
 
+        """
         other_agents[agent_idx].items[object_id]["danger_level"] = item["item_danger_level"] #Update estimates about what other robots know
         
         if item["item_danger_confidence"]:
             other_agents[agent_idx].items[object_id]["confidence"] = item["item_danger_confidence"][0]
         else:
             other_agents[agent_idx].items[object_id]["confidence"] = 0
+        """
+        
+        
     
     @staticmethod        
-    def exchange_sensing_info(robotState, info, nearby_other_agents, other_agents, convert_to_real_coordinates):
+    def exchange_sensing_info(robotState, info, nearby_other_agents, other_agents, robot_id, convert_to_real_coordinates):
     
         message_text = ""
         
         object_info_message = []
+        
         
         for noa in nearby_other_agents:   
             
@@ -375,7 +426,27 @@ class MessagePattern:
                     object_id = list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(item_idx)]
                     
                     if object_id not in other_agents[noa].items.keys():
-                        other_agents[noa].items[object_id] = {"danger_level":0,"confidence":0}
+                        other_agents[noa].items[object_id] = [] #{"danger_level":0,"confidence":0}
+                        
+                    
+                    robot_estimates = []
+                    send_message = False
+                    for rie_idx,rie in enumerate(robotState.item_estimates[item_idx]):
+                        if rie["item_danger_level"] > 0:
+                            if rie_idx == len(robotState.item_estimates[item_idx])-1: #This is the robot itself:
+                                sensing_robot = robot_id
+                            else:
+                                sensing_robot = list(info['robot_key_to_index'].keys())[list(info['robot_key_to_index'].values()).index(rie_idx)]
+                            
+                            if sensing_robot not in other_agents[noa].items[object_id]:
+                                other_agents[noa].items[object_id].append(sensing_robot)
+                                send_message = True
+                    
+                    if send_message:            
+                        message_text += MessagePattern.item(robotState,item_idx,object_id, info, robot_id, convert_to_real_coordinates)
+                    
+                        
+                    """
                     
                     if not (other_agents[noa].items[object_id]["danger_level"] == danger_level and other_agents[noa].items[object_id]["confidence"] == confidence):
                     
@@ -385,5 +456,6 @@ class MessagePattern:
                             
                         other_agents[noa].items[object_id]["danger_level"] = danger_level
                         other_agents[noa].items[object_id]["confidence"] = confidence
+                    """
                         
         return message_text

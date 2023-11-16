@@ -1,17 +1,26 @@
 let peerConnection;
+
+
 const config = {
   iceServers: [
-      { 
-        "urls": "stun:stun.l.google.com:19302",
-      },
-      // { 
-      //   "urls": "turn:TURN_IP?transport=tcp",
-      //   "username": "TURN_USERNAME",
-      //   "credential": "TURN_CREDENTIALS"
-      // }
+    //{ 
+    //  urls: ["stun:stun.l.google.com:19302"]
+    //},
+    { 
+       "urls": "turn:54.85.22.234:3478?transport=tcp",
+       "username": config_api.username,
+       "credential": config_api.password
+    }
   ]
 };
-
+/*
+var config = {};
+(async() => {
+  const response = await fetch("https://nesl.metered.live/api/v1/turn/credentials?apiKey=" + config_api.API_KEY);
+  const iceServers = await response.json();
+  config.iceServers = iceServers
+})();
+*/
 const socket = io.connect(window.location.origin);
 const video = document.querySelectorAll("video");
 
@@ -107,13 +116,15 @@ chat_input_text.addEventListener("keydown", (event) => {
 
 let pass_input_text = document.getElementById("pass-text");
 
-pass_input_text.addEventListener("keydown", (event) => {
+pass_input_text.addEventListener("keydown", process_input_code);
 
-	if( event.key.includes("Enter")){
+function process_input_code(event){
+
+	if(event.key.includes("Enter")){
 		submitCode();
 	}
 
-});
+}
 
 function removeTags(str) {
     if ((str===null) || (str===''))
@@ -303,7 +314,7 @@ socket.on("stats", (stats_dict, final) => {
     const key_to_text = {"distance_traveled": "Distance traveled (m):",
         "grabbed_objects": "Number of grabbed objects:",
         "grab_attempts":"Number of grab attempts:", 
-        "forced_dropped_objects": "Number of times forced to drop object:",
+        "dropped_outside_goal": "Number of times forced to drop object:",
         "objects_sensed":"Number of objects sensed:",
         "objects_in_goal":"Number of objects brought to goal area:",
         "dangerous_objects_in_goal":"Truly dangerous objects brought to goal area (list of object IDs):",
@@ -312,16 +323,17 @@ socket.on("stats", (stats_dict, final) => {
         "failed": "Picked Up/Dropped Heavy Dangerous Object:",
         "time_with_teammates":"Time passed next to teammates:",
         "end_time":"End time:",
-        "sensor_activation":"Number of times sensor was used:"};
+        "sensor_activation":"Number of times sensor was used:",
+        "quality_work":"Quality of work:",
+        "effort": "Effort:",
+        "individual_payment": "Payment ($):"};
     
     Object.keys(stats_dict).forEach(function(key) {
         
-        const tr1 = tbl.insertRow();
-        var td1 = tr1.insertCell();
+        if(key == "objects_in_goal" || key == "dropped_outside_goal"){
         
-        
-        
-        if(key == "objects_in_goal"){
+            const tr1 = tbl.insertRow();
+            var td1 = tr1.insertCell();
         
             td1.appendChild(document.createTextNode(key_to_text[key]));
             var td1 = tr1.insertCell();
@@ -329,6 +341,9 @@ socket.on("stats", (stats_dict, final) => {
             td1.appendChild(document.createTextNode(String(stats_dict[key].length)));
         } else if(key == "dangerous_objects_in_goal") {
         
+            const tr1 = tbl.insertRow();
+            var td1 = tr1.insertCell();
+            
             td1.appendChild(document.createTextNode(key_to_text[key]));
             var td1 = tr1.insertCell();
         
@@ -347,11 +362,19 @@ socket.on("stats", (stats_dict, final) => {
             final_string = stats_dict[key].toString();
             td1.appendChild(document.createTextNode(final_string));
         } else if(key == "failed"){
+        
+            const tr1 = tbl.insertRow();
+            var td1 = tr1.insertCell();
+        
             td1.appendChild(document.createTextNode(key_to_text[key]));
             var td1 = tr1.insertCell();
             
             td1.appendChild(document.createTextNode(Boolean(stats_dict[key]).toString()));
         } else if(key == "time_with_teammates"){
+        
+            const tr1 = tbl.insertRow();
+            var td1 = tr1.insertCell();
+        
             td1.appendChild(document.createTextNode(key_to_text[key]));
             var td1 = tr1.insertCell();
         
@@ -374,6 +397,9 @@ socket.on("stats", (stats_dict, final) => {
             
         } else if(key == "end_time"){
         
+            const tr1 = tbl.insertRow();
+            var td1 = tr1.insertCell();
+        
             td1.appendChild(document.createTextNode(key_to_text[key]));
             var td1 = tr1.insertCell();
         
@@ -384,11 +410,19 @@ socket.on("stats", (stats_dict, final) => {
             
             final_string = pad(String(divmod_results[0]),2) + ":" + pad(String(divmod_results2[0]),2);
             td1.appendChild(document.createTextNode(final_string));
-        } else if(key == "distance_traveled"){
+        } else if(key == "distance_traveled" || key == "individual_payment" || key == "effort" || key == "quality_work"){
+        
+            const tr1 = tbl.insertRow();
+            var td1 = tr1.insertCell();
+        
             td1.appendChild(document.createTextNode(key_to_text[key]));
             var td1 = tr1.insertCell();
-            td1.appendChild(document.createTextNode(String(stats_dict[key].toFixed(1))));
+            td1.appendChild(document.createTextNode(String(stats_dict[key].toFixed(2))));
         } else if(Object.keys(key_to_text).includes(key)){
+        
+            const tr1 = tbl.insertRow();
+            var td1 = tr1.insertCell();
+        
             td1.appendChild(document.createTextNode(key_to_text[key]));
             var td1 = tr1.insertCell();
             td1.appendChild(document.createTextNode(String(stats_dict[key])));
@@ -412,17 +446,20 @@ socket.on("stats", (stats_dict, final) => {
         const key_to_text_team = {"team_dangerous_objects_in_goal":"Number of dangerous objects brought to goal area: ",
         "team_end_time": "End Time: ",
         "team_failure_reasons": "Final Team Status: ",
-        "total_dangerous_objects": "Total number of dangerous objects: "
+        "total_dangerous_objects": "Total number of dangerous objects: ",
+        "human_team_effort": "Team effort: ",
+        "team_quality_work": "Team quality of work: ",
+        "team_speed_work": "Team speed of work: ",
+        "team_achievement": "Team achievement: ",
+        "team_payment": "Team total payment ($): "
         };
         
         Object.keys(stats_dict).forEach(function(key) {
             
-            const tr1 = tbl_team.insertRow();
-            var td1 = tr1.insertCell();
-            
-            
-            
             if(key == "team_dangerous_objects_in_goal"){
+            
+                const tr1 = tbl_team.insertRow();
+                var td1 = tr1.insertCell();
             
                 td1.appendChild(document.createTextNode(key_to_text_team[key]));
                 var td1 = tr1.insertCell();
@@ -430,6 +467,10 @@ socket.on("stats", (stats_dict, final) => {
                 td1.appendChild(document.createTextNode(String(stats_dict[key])));
             
             } else if(key == "team_failure_reasons"){
+            
+                const tr1 = tbl_team.insertRow();
+                var td1 = tr1.insertCell();
+            
                 td1.appendChild(document.createTextNode(key_to_text_team[key]));
                 var td1 = tr1.insertCell();
             
@@ -457,6 +498,9 @@ socket.on("stats", (stats_dict, final) => {
                 
             } else if(key == "team_end_time"){
             
+                const tr1 = tbl_team.insertRow();
+                var td1 = tr1.insertCell();
+            
                 td1.appendChild(document.createTextNode(key_to_text_team[key]));
                 var td1 = tr1.insertCell();
             
@@ -468,24 +512,45 @@ socket.on("stats", (stats_dict, final) => {
                 final_string = pad(String(divmod_results[0]),2) + ":" + pad(String(divmod_results2[0]),2);
                 td1.appendChild(document.createTextNode(final_string));
             } else if (key == "total_dangerous_objects"){
+               
+                const tr1 = tbl_team.insertRow();
+                var td1 = tr1.insertCell();
+            
             	td1.appendChild(document.createTextNode(key_to_text_team[key]));
                 var td1 = tr1.insertCell();
                 
                 td1.appendChild(document.createTextNode(String(stats_dict[key])));
+            } else if(key == "human_team_effort" || key == "team_quality_work" || key == "team_speed_work" || key == "team_achievement" || key == "team_payment"){
+            
+                    const tr1 = tbl_team.insertRow();
+                    var td1 = tr1.insertCell();
+            
+                    console.log(key, stats_dict[key])	    
+            
+		    td1.appendChild(document.createTextNode(key_to_text_team[key]));
+		    var td1 = tr1.insertCell();
+		    td1.appendChild(document.createTextNode(String(stats_dict[key].toFixed(2))));
             } else if(Object.keys(key_to_text_team).includes(key)){
+            
+                const tr1 = tbl_team.insertRow();
+                var td1 = tr1.insertCell();
+            
                 td1.appendChild(document.createTextNode(key_to_text_team[key]));
                 var td1 = tr1.insertCell();
                 td1.appendChild(document.createTextNode(String(stats_dict[key])));
-            }
+           }
+            
         });
         
         
         popup_content.appendChild(tbl_team);
+        /*
         const bt = document.createElement('button');
         bt.setAttribute("id", "reset_button");
         bt.textContent = "Reset Game";
         bt.onclick = resetGame;
         popup_content.appendChild(bt);
+        */
     } else{
         const p_waiting = document.createElement('p');
         p_waiting.textContent = "Waiting for other players...";
@@ -499,6 +564,8 @@ socket.on("stats", (stats_dict, final) => {
 var map_config = {};
 
 socket.on("watcher", (robot_id_r, config_options) => {
+
+    pass_input_text.removeEventListener("keydown", process_input_code);
 
     document.getElementById("popup-pass").classList.toggle("active");
     togglePopup("popup-1");

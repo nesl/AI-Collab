@@ -152,8 +152,9 @@ class HeuristicControl:
                 agent_idx = info['robot_key_to_index'][agent_id]
                 other_robot_location = robotState.robots[agent_idx]["neighbor_location"]
                 
-                if occMap[other_robot_location[0],other_robot_location[1]] != 5:
-                    occMap[other_robot_location[0],other_robot_location[1]] = 3
+                if not (other_robot_location[0] == -1 and other_robot_location[1] == -1):
+                    if occMap[other_robot_location[0],other_robot_location[1]] != 5:
+                        occMap[other_robot_location[0],other_robot_location[1]] = 3
                     
 
     
@@ -252,10 +253,16 @@ class HeuristicControl:
                     
                     if return_value == 1:
                         
-                        self.target_location = robotState.items[self.heavy_objects["index"][self.chosen_heavy_object]]['item_location']
-                        self.target_object_idx = self.heavy_objects["index"][self.chosen_heavy_object]
+                        item_idx = self.heavy_objects["index"][self.chosen_heavy_object]
                         
-                        self.action_index = self.State.move_and_pickup
+                        if not (robotState.items[item_idx]['item_location'][0] == -1 and robotState.items[item_idx]['item_location'][1] == -1):
+                        
+                            self.target_location = robotState.items[item_idx]['item_location']
+                            self.target_object_idx = item_idx
+                            
+                            self.action_index = self.State.move_and_pickup
+                        else: #Where is the object?
+                            self.message_text += MessagePattern.carry_help_reject(rm[0])
                         
                 else: #Something happened with the object
                     self.message_text += MessagePattern.carry_help_reject(rm[0])
@@ -298,11 +305,13 @@ class HeuristicControl:
                 template_match = True
                 
                 object_id = rematch.group(1) #rm[1].strip().split()[-1] 
-                object_idx = info['object_key_to_index'][object_id]
                 
-                self.message_text += MessagePattern.item(robotState.items,object_idx,object_id, self.env.convert_to_real_coordinates)
+                if object_id in info['object_key_to_index']:
+                    object_idx = info['object_key_to_index'][object_id]
+                    
+                    self.message_text += MessagePattern.item(robotState,object_idx,object_id, info, self.robot_id, self.env.convert_to_real_coordinates)
                 
-                if not self.message_text:
+                else:
                      self.message_text += MessagePattern.sensing_help_negative_response(object_id)
             if re.search(MessagePattern.item_regex_full(),rm[1]):
             
@@ -367,7 +376,14 @@ class HeuristicControl:
                 for rematch in re.finditer(MessagePattern.order_collect_regex(),rm[1]):
                     if rematch.group(1) == self.robot_id:
                         object_idx = info['object_key_to_index'][rematch.group(2)]
+                        
+                        if (robotState.items[object_idx]["item_location"][0] == -1 and robotState.items[object_idx]["item_location"][1] == -1):
+                            pdb.set_trace()
+                        
                         self.target_location = robotState.items[object_idx]["item_location"] #Check assignment
+                        
+                        
+                        
                         self.target_object_idx = object_idx
                         self.role = "lifter"
                         self.action_index = self.State.move_and_pickup
@@ -387,6 +403,8 @@ class HeuristicControl:
                         if rematch.group(3):
                             self.movement.being_helped.extend(rematch.group(3).split(",")[1:])
                     
+                        if (robotState.items[object_idx]["item_location"][0] == -1 and robotState.items[object_idx]["item_location"][1] == -1):
+                            pdb.set_trace()
                         
                         self.target_location = robotState.items[object_idx]['item_location']
                         self.target_object_idx = object_idx
@@ -506,7 +524,7 @@ class HeuristicControl:
         nearby_other_agents = []
         #Get number of neighboring robots at communication range
         for n_idx in range(len(robotState.robots)):
-            if "neighbor_location" in robotState.robots[n_idx] and self.env.compute_real_distance([robotState.robots[n_idx]["neighbor_location"][0],robotState.robots[n_idx]["neighbor_location"][1]],[ego_location[0][0],ego_location[1][0]]) < self.env.map_config['communication_distance_limit']:
+            if "neighbor_location" in robotState.robots[n_idx] and not (robotState.robots[n_idx]["neighbor_location"][0] == -1 and robotState.robots[n_idx]["neighbor_location"][1] == -1) and self.env.compute_real_distance([robotState.robots[n_idx]["neighbor_location"][0],robotState.robots[n_idx]["neighbor_location"][1]],[ego_location[0][0],ego_location[1][0]]) < self.env.map_config['communication_distance_limit']:
                 nearby_other_agents.append(n_idx)
                 
         return nearby_other_agents
@@ -534,7 +552,7 @@ class HeuristicControl:
             for ho in order_heavy_objects_ind: #Select the object closest to ego
             
                 try:    
-                    if self.heavy_objects["index"][ho] in self.sensed_items and self.heavy_objects['weight'][ho] <= num_neighbors+1 - unavailable_robots and self.check_team_arrangement(robotState.items[self.heavy_objects["index"][ho]]['item_location'],robotState.latest_map, self.heavy_objects['weight'][ho], ego_location): #Heavy object should have been sensed by robot, there should be enough nearby robots, and it should be feasible
+                    if self.heavy_objects["index"][ho] in self.sensed_items and self.heavy_objects['weight'][ho] <= num_neighbors+1 - unavailable_robots and not (robotState.items[self.heavy_objects["index"][ho]]['item_location'][0] == -1 and robotState.items[self.heavy_objects["index"][ho]]['item_location'][1] == -1) and self.check_team_arrangement(robotState.items[self.heavy_objects["index"][ho]]['item_location'],robotState.latest_map, self.heavy_objects['weight'][ho], ego_location): #Heavy object should have been sensed by robot, there should be enough nearby robots, and it should be feasible
                     
                         if chosen_object == -1 or (chosen_object > -1 and self.env.compute_real_distance(robotState.items[self.heavy_objects["index"][ho]]['item_location'],[ego_location[0][0],ego_location[1][0]]) < self.env.compute_real_distance(robotState.items[self.heavy_objects["index"][chosen_object]]['item_location'],[ego_location[0][0],ego_location[1][0]])):
                             chosen_object = ho
@@ -659,6 +677,10 @@ class HeuristicControl:
             all_missing_objects = []
             
             for i_idx in range(len(robotState.items)):
+            
+                if (robotState.items[i_idx]["item_location"][0] == -1 and robotState.items[i_idx]["item_location"][1] == -1):
+                    pdb.set_trace()
+            
                 item_location = robotState.items[i_idx]["item_location"]
                 
                 object_id = list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(i_idx)]
@@ -735,7 +757,7 @@ class HeuristicControl:
 
             other_robot_location = robotState.robots[self.wait_requester]["neighbor_location"]
             
-            if self.env.compute_real_distance(other_robot_location,[ego_location[0][0],ego_location[1][0]]) >= self.env.map_config['communication_distance_limit'] or time.time() - self.movement.asked_time > self.movement.help_time_limit: #Until the other robot is out of range we can move
+            if (other_robot_location[0] == -1 and other_robot_location[1] == -1) or self.env.compute_real_distance(other_robot_location,[ego_location[0][0],ego_location[1][0]]) >= self.env.map_config['communication_distance_limit'] or time.time() - self.movement.asked_time > self.movement.help_time_limit: #Until the other robot is out of range we can move
                 self.action_index = self.movement.last_action_index
             
             if self.movement.pending_location and self.movement.pending_location != [ego_location[0][0],ego_location[1][0]]:
@@ -860,7 +882,7 @@ class HeuristicControl:
             #        break
                                 
 
-        self.message_text += MessagePattern.exchange_sensing_info(robotState, info, nearby_other_agents, self.other_agents, self.env.convert_to_real_coordinates) #Exchange info about objects sensing measurements
+        self.message_text += MessagePattern.exchange_sensing_info(robotState, info, nearby_other_agents, self.other_agents, self.robot_id, self.env.convert_to_real_coordinates) #Exchange info about objects sensing measurements
             
             
         if not self.message_text: #if going to send message, skip normal execution of actions
@@ -1082,7 +1104,7 @@ class HeuristicControl:
                         if robotState.items[self.item_index-1]['item_danger_level'] == 1: #If not dangerous
                             if self.item_index-1 not in self.sensed_items:
                                 self.not_dangerous_objects.append(self.item_index-1) #tuple(robotState.items[self.item_index-1]['item_location']))
-                        elif robotState.items[self.item_index-1]['item_weight'] == 1 and tuple(robotState.items[self.item_index-1]['item_location']) not in self.extended_goal_coords: #If dangerous and their weight is 1
+                        elif robotState.items[self.item_index-1]['item_weight'] == 1 and tuple(robotState.items[self.item_index-1]['item_location']) not in self.extended_goal_coords and not (robotState.items[self.item_index-1]['item_location'][0] == -1 and robotState.items[self.item_index-1]['item_location'][1] == -1): #If dangerous and their weight is 1
                             self.target_location = robotState.items[self.item_index-1]['item_location']
                             self.target_object_idx = self.item_index-1
                         else: #If dangerous and heavy
@@ -1263,7 +1285,9 @@ class HeuristicControl:
 
                             agent_idx = info['robot_key_to_index'][agent_id]
                             other_robot_location = robotState.robots[agent_idx]["neighbor_location"]
-                            occMap[other_robot_location[0],other_robot_location[1]] = 3
+                            
+                            if not (other_robot_location[0] == -1 and other_robot_location[1] == -1):
+                                occMap[other_robot_location[0],other_robot_location[1]] = 3
                                     
                         
                         loop_done = False

@@ -37,6 +37,7 @@ class Movement:
         self.being_helped = []
         self.being_helped_locations = []
         self.being_helped_combinations = []
+        self.follow_location = []
 
 
     class State(Enum):
@@ -265,7 +266,9 @@ class Movement:
             if self.helping:
                 agent_idx = info['robot_key_to_index'][self.helping[0]]
                 helping_robot_location = robotState.robots[agent_idx]["neighbor_location"]
-                occMap_clean[helping_robot_location[0],helping_robot_location[1]] = 1
+                
+                if not (helping_robot_location[0] == -1 and helping_robot_location[1] == -1):
+                    occMap_clean[helping_robot_location[0],helping_robot_location[1]] = 1
         
             if self.ignore_robots: #Modify the occMap by removing the robots, to see if that works
             
@@ -273,12 +276,13 @@ class Movement:
                 for rb_idx in self.ignore_robots:
                     rb = robotState.robots[rb_idx]["neighbor_location"]
                     
-                    if self.helping and rb == helping_robot_location: #Do not ignore the robot you are helping out
-                        continue
-                        
-                    occMap_clean[rb[0],rb[1]] = 0
-                    if self.env.compute_real_distance(rb,[ego_location[0][0],ego_location[1][0]]) < self.env.map_config['communication_distance_limit']:
-                        nearby_robots.append(rb)
+                    if not (rb[0] == -1 and rb[1] == -1):
+                        if self.helping and rb == helping_robot_location: #Do not ignore the robot you are helping out
+                            continue
+                            
+                        occMap_clean[rb[0],rb[1]] = 0
+                        if self.env.compute_real_distance(rb,[ego_location[0][0],ego_location[1][0]]) < self.env.map_config['communication_distance_limit']:
+                            nearby_robots.append(rb)
                     
                 
                 path_to_follow = self.findPath(np.array([ego_location[0][0],ego_location[1][0]]),np.array([x,y]),occMap_clean,ignore=self.ignore_go_location, all_movements=all_movements)
@@ -304,11 +308,11 @@ class Movement:
                     
                     for rb_idx in self.ignore_robots:
                         rb = robotState.robots[rb_idx]["neighbor_location"]
-                        if (allowed_robots_blocking[0] == -1 or (allowed_robots_blocking[0] > -1 and rb not in robot_combinations[allowed_robots_blocking[0]])) and not (self.helping and rb == helping_robot_location): #If the robot is not in the combination, move it
+                        if not (rb[0] == -1 and rb[1] == -1) and (allowed_robots_blocking[0] == -1 or (allowed_robots_blocking[0] > -1 and rb not in robot_combinations[allowed_robots_blocking[0]])) and not (self.helping and rb == helping_robot_location): #If the robot is not in the combination, move it
                             #order_robots.append(rb)
                             for nrobot_idx in range(len(robotState.robots)):
 
-                                if robotState.robots[nrobot_idx]["neighbor_location"] == rb:
+                                if not (robotState.robots[nrobot_idx]["neighbor_location"][0] == -1 and robotState.robots[nrobot_idx]["neighbor_location"][1] == -1) and robotState.robots[nrobot_idx]["neighbor_location"] == rb:
                                     robot_id = robot_index_to_key[list(info['robot_key_to_index'].values()).index(nrobot_idx)] #Get the id of the robot 
                                     break
 
@@ -437,7 +441,7 @@ class Movement:
             other_robot_location = robotState.robots[self.ignore_robots[rob_loc_idx]]["neighbor_location"]
       
 
-            if self.env.compute_real_distance([other_robot_location[0],other_robot_location[1]],[ego_location[0][0],ego_location[1][0]]) >= self.env.map_config['communication_distance_limit']:
+            if (other_robot_location[0] == -1 and other_robot_location[1] == -1) or self.env.compute_real_distance([other_robot_location[0],other_robot_location[1]],[ego_location[0][0],ego_location[1][0]]) >= self.env.map_config['communication_distance_limit']:
                 del self.ignore_robots[rob_loc_idx]
             elif occMap[other_robot_location[0],other_robot_location[1]] != 5:
                 occMap[other_robot_location[0],other_robot_location[1]] = 1
@@ -913,13 +917,15 @@ class Movement:
         
             template_match = True
             
-            if not robotState.object_held and not self.being_helped and (not self.helping or (self.helping and self.helping[0] == rm[0])): #This condition is true only when robots have no teams and are not carrying any object
+            agent_idx = info['robot_key_to_index'][rm[0]]
+            other_robot_location = robotState.robots[agent_idx]["neighbor_location"]
+            
+            if not (other_robot_location[0] == -1 and other_robot_location[1] == -1) and not robotState.object_held and not self.being_helped and (not self.helping or (self.helping and self.helping[0] == rm[0])): #This condition is true only when robots have no teams and are not carrying any object
                         
                 print("MOVING")
                 
                 #last_move_request = rm[0]
-                agent_idx = info['robot_key_to_index'][rm[0]]
-                other_robot_location = robotState.robots[agent_idx]["neighbor_location"]
+                
                 possible_locations = [[1,0],[0,1],[-1,0],[0,-1]] #,[1,1],[1,-1],[-1,1],[-1,-1]]
                 ego_location = np.where(robotState.latest_map == 5)
                 
@@ -971,6 +977,9 @@ class Movement:
         agent_id = self.being_helped[help_idx]
         agent_idx = info['robot_key_to_index'][agent_id]
         agent_location = robotState.robots[agent_idx]["neighbor_location"]
+            
+        if (agent_location[0] == -1 and agent_location[1] == -1):
+            return []
             
         limited_occ_map_copy = np.copy(limited_occ_map)
         limited_occ_map_copy[agent_location[0],agent_location[1]] = 3
@@ -1092,7 +1101,8 @@ class Movement:
 
                     agent_idx = info['robot_key_to_index'][agent_id]
                     other_robot_location = robotState.robots[agent_idx]["neighbor_location"]
-                    limited_occ_map[other_robot_location[0],other_robot_location[1]] = 1
+                    if not (other_robot_location[0] == -1 and other_robot_location[1] == -1):
+                        limited_occ_map[other_robot_location[0],other_robot_location[1]] = 1
 
             
                 possible_permutations = list(itertools.permutations(list(range(len(self.being_helped)))))
@@ -1148,7 +1158,8 @@ class Movement:
 
                         agent_idx = info['robot_key_to_index'][agent_id]
                         other_robot_location = robotState.robots[agent_idx]["neighbor_location"]
-                        limited_occ_map[other_robot_location[0],other_robot_location[1]] = 1
+                        if not (other_robot_location[0] == -1 and other_robot_location[1] == -1):
+                            limited_occ_map[other_robot_location[0],other_robot_location[1]] = 1
 
             
                     possible_permutations = list(itertools.permutations(list(range(len(self.being_helped)))))
@@ -1267,7 +1278,7 @@ class Movement:
             other_robot_location = robotState.robots[self.wait_requester]["neighbor_location"]
             #if not (self.next_loc and (occMap[self.next_loc[0][0],self.next_loc[0][1]] == 3 or (len(self.next_loc) > 1 and occMap[self.next_loc[1][0],self.next_loc[1][1]] == 3))): #Wait until there is no one in your next location
             
-            if self.env.compute_real_distance(other_robot_location,[ego_location[0][0],ego_location[1][0]]) >= self.env.map_config['communication_distance_limit'] or time.time() - self.asked_time > self.help_time_limit: #Until the other robot is out of range we can move
+            if (other_robot_location[0] == -1 and other_robot_location[1] == -1) or self.env.compute_real_distance(other_robot_location,[ego_location[0][0],ego_location[1][0]]) >= self.env.map_config['communication_distance_limit'] or time.time() - self.asked_time > self.help_time_limit: #Until the other robot is out of range we can move
                 action_index = self.last_action_index
             
             if self.pending_location and self.pending_location != [ego_location[0][0],ego_location[1][0]]:
@@ -1304,7 +1315,11 @@ class Movement:
         elif action_index == self.State.follow:
             
             agent_idx = info['robot_key_to_index'][self.helping[0]]
-            target_location = robotState.robots[agent_idx]["neighbor_location"]
+            
+            if not (robotState.robots[agent_idx]["neighbor_location"][0] == -1 and robotState.robots[agent_idx]["neighbor_location"][1] == -1): 
+                self.follow_location = robotState.robots[agent_idx]["neighbor_location"]
+            
+            target_location = self.follow_location
             
 
             action,next_loc,message_text,action_index = self.go_to_location(target_location[0],target_location[1],occMap,robotState,info,ego_location,action_index)
@@ -1331,7 +1346,8 @@ class Movement:
            
             helping_location = robotState.robots[agent_idx]["neighbor_location"]
             
-            occMap[helping_location[0],helping_location[1]] = 1
+            if not (helping_location[0] == -1 and helping_location[1] == -1):
+                occMap[helping_location[0],helping_location[1]] = 1
             
             action,next_loc,message_text,action_index = self.go_to_location(target_location[0],target_location[1],occMap,robotState,info, ego_location, action_index,end=True)
             if (not action and isinstance(action, list)):

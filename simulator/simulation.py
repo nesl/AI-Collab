@@ -128,8 +128,7 @@ class Stats():
         self.distance_traveled = 0
         self.grabbed_objects = 0
         self.grab_attempts = 0
-        self.forced_dropped_objects = 0
-        self.dropped_outside_goal = 0
+        self.dropped_outside_goal = []
         self.objects_sensed = 0
         self.sensor_activation = 0
         self.objects_in_goal = []
@@ -142,9 +141,16 @@ class Stats():
         self.team_dangerous_objects_in_goal = 0
         self.total_dangerous_objects = 0
         self.quality_work = 0
+        self.effort = 0
+        self.human_team_effort = 0
         self.team_end_time = 0
         self.team_failure_reasons = {}
         self.team_quality_work = 0
+        self.team_speed_work = 0
+        self.team_achievement = 0
+        self.team_payment = 0
+        self.individual_payment = 0
+        
         
 
 #This class inherits the magnebot class, we just add a number of attributes over it
@@ -166,6 +172,7 @@ class Enhanced_Magnebot(Magnebot):
         self.refresh_sensor = global_refresh_sensor
         self.messages = []
         self.grasping = False
+        self.grasping_time = 0
         self.past_status = ActionStatus.ongoing
         self.view_radius = 0
         self.centered_view = 0
@@ -176,8 +183,9 @@ class Enhanced_Magnebot(Magnebot):
         self.last_position = np.array([])
         self.stats = Stats()
         self.skip_frames = 0
-        self.p11 = float(random.uniform(0.4, 0.9)) #Binary channel
-        self.p22 = float(random.uniform(0.4, 0.9))
+        self.p11 = float(random.uniform(0.5, 0.9)) #Binary channel
+        self.p22 = float(random.uniform(0.5, 0.9))
+        self.current_teammates = {}
         
         
     def reset(self,position):
@@ -186,6 +194,7 @@ class Enhanced_Magnebot(Magnebot):
         self.past_status = ActionStatus.ongoing
         self.messages = []
         self.grasping = False
+        self.grasping_time = 0
         self.screen_positions = {"position_ids":[],"positions":[],"duration":[]}
         self.focus_object = ""
         self.item_info = {}
@@ -194,8 +203,9 @@ class Enhanced_Magnebot(Magnebot):
         self.last_output = False
         self.stats = Stats()
         self.last_position = np.array([])
-        self.p11 = float(random.uniform(0.4, 0.9)) #Binary channel
-        self.p22 = float(random.uniform(0.4, 0.9))
+        self.p11 = float(random.uniform(0.5, 0.9)) #Binary channel
+        self.p22 = float(random.uniform(0.5, 0.9))
+        self.current_teammates = {}
 
 #Main class
 class Simulation(Controller):
@@ -220,7 +230,7 @@ class Simulation(Controller):
         self.real_timer = time.time()
         self.timer_start = self.timer
         self.reset_number = 0
-        
+        self.payment = 7
         
 
         """
@@ -464,8 +474,16 @@ class Simulation(Controller):
                             ai_agent.drop(object_id, arm)
                             self.object_dropping.append([int(ai_agent.dynamic.held[arm][0]),time.time(),ai_agent,arm])
                             
+                            """
                             if self.danger_level[object_id] == 2 and np.linalg.norm(self.object_manager.transforms[object_id].position[[0,2]]) >= float(self.cfg["goal_radius"]):
-                                ai_agent.stats.dropped_outside_goal += 1
+                            
+                                robot_ids,sort_indices = self.get_involved_teammates(ai_agent.current_teammates)
+                            
+                                for sidx in range(int(self.required_strength[object_id])-1):
+                                    all_magnebots[robot_ids[sort_indices[sidx]]].stats.dropped_outside_goal.append(self.object_names_translate[object_id])
+                            
+                                ai_agent.stats.dropped_outside_goal.append(self.object_names_translate[object_id])
+                            """
                                 
                         elif actions[0] == 'reset_arm':
                             ai_agent.reset_arm(Arm(int(actions[1])))
@@ -886,7 +904,7 @@ class Simulation(Controller):
         
         self.object_names_translate = {}
         
-        self.already_collected_dangerous = []
+        self.already_collected = []
         
         self.timer = 0 #time.time()
         self.real_timer = time.time()
@@ -1218,6 +1236,20 @@ class Simulation(Controller):
                 pdb.set_trace()
     
 
+    def get_involved_teammates(self, current_teammates, object_id): #Assign contributions to each teammate
+    
+        robot_ids = []
+        total_time_spent = []
+    
+        for robot in current_teammates[object_id].keys():
+            robot_ids.append(robot)
+            total_time_spent.append(current_teammates[object_id][robot])
+            
+        sort_indices = np.argsort(np.array(total_time_spent)).tolist()
+        sort_indices.reverse()
+        
+        return robot_ids, sort_indices
+
     #Process raycasting
     def raycast_output(self, resp, all_ids):
 
@@ -1342,7 +1374,7 @@ class Simulation(Controller):
     #Process keyboard presses
     def keyboard_output(self, key_pressed, key_hold, extra_commands, duration, keys_time_unheld, all_ids, messages, fps):
     
-        max_time_unheld = 10#5 #3
+        max_time_unheld = 10#10#5 #3
 
 
         #print(keys_time_unheld, key_pressed)
@@ -1444,8 +1476,18 @@ class Simulation(Controller):
                     self.user_magnebots[idx].drop(target=object_id, arm=arm, wait_for_object=False)
                     self.user_magnebots[idx].grasping = False
                     
+                    """
                     if self.danger_level[object_id] == 2 and np.linalg.norm(self.object_manager.transforms[object_id].position[[0,2]]) >= float(self.cfg["goal_radius"]):
-                        self.user_magnebots[idx].stats.dropped_outside_goal += 1
+                        robot_ids,sort_indices = self.get_involved_teammates(self.user_magnebots[idx].current_teammates)
+                            
+                        all_magnebots = [*self.user_magnebots,*self.ai_magnebots]
+                            
+                        for sidx in range(int(self.required_strength[object_id])-1):
+                            all_magnebots[robot_ids[sort_indices[sidx]]].stats.dropped_outside_goal.append(self.object_names_translate[object_id])
+                    
+                        self.user_magnebots[idx].stats.dropped_outside_goal.append(self.object_names_translate[object_id])
+                    """
+                    
                     
                     print("dropping", self.user_magnebots[idx].dynamic.held[arm], arm, self.required_strength[self.user_magnebots[idx].dynamic.held[arm][0]], self.danger_level[self.user_magnebots[idx].dynamic.held[arm][0]])
                     
@@ -1486,6 +1528,7 @@ class Simulation(Controller):
                         
                         if self.user_magnebots[idx].strength < self.required_strength[grasp_object]:
                         
+                            '''
                             if grasp_object in self.dangerous_objects:
 
                                 pass
@@ -1506,12 +1549,13 @@ class Simulation(Controller):
                                 
                                 #self.reset_message = True
                             else:
-                                txt = self.user_magnebots[idx].ui.add_text(text="Too heavy!!",
-                                 position={"x": 0, "y": 0},
-                                 color={"r": 0, "g": 0, "b": 1, "a": 1},
-                                 font_size=20
-                                 )
-                                messages.append([idx,txt,0])
+                            '''
+                            txt = self.user_magnebots[idx].ui.add_text(text="Too heavy!!",
+                             position={"x": 0, "y": 0},
+                             color={"r": 1, "g": 0, "b": 0, "a": 1},
+                             font_size=20
+                             )
+                            messages.append([idx,txt,0])
                         else:
                         
                             object_recently_dropped = False
@@ -1531,6 +1575,7 @@ class Simulation(Controller):
 
                             self.user_magnebots[idx].grasp(target=grasp_object, arm=arm)
                             self.user_magnebots[idx].grasping = True
+                            self.user_magnebots[idx].grasping_time = time.time()
                             self.user_magnebots[idx].resetting_arm = True
                             
                             
@@ -1965,6 +2010,7 @@ class Simulation(Controller):
                 all_magnebots[all_idx].item_info[object_id_translated]["time"] = self.timer
                 all_magnebots[all_idx].item_info[object_id_translated]["location"] = self.object_manager.transforms[object_id].position.tolist()
                 all_magnebots[all_idx].item_info[object_id_translated]["weight"] = int(self.required_strength[object_id])
+                
 
                 if object_id not in all_magnebots[all_idx].stats.objects_in_goal and np.linalg.norm(self.object_manager.transforms[object_id].position[[0,2]]) < float(self.cfg["goal_radius"]):
                     if "sensor" not in all_magnebots[all_idx].item_info[object_id_translated]:
@@ -1978,12 +2024,29 @@ class Simulation(Controller):
                     all_magnebots[all_idx].item_info[object_id_translated]["sensor"][robot_id_translated]['value'] = int(self.danger_level[object_id])
                     all_magnebots[all_idx].item_info[object_id_translated]["sensor"][robot_id_translated]['confidence'] = 1
                         
-                    if self.object_names_translate[object_id] not in all_magnebots[all_idx].stats.objects_in_goal:
-                        all_magnebots[all_idx].stats.objects_in_goal.append(self.object_names_translate[object_id])
+                    if self.object_names_translate[object_id] not in self.already_collected and self.object_names_translate[object_id] not in all_magnebots[all_idx].stats.objects_in_goal:
                     
-                    if self.danger_level[object_id] == 2 and self.object_names_translate[object_id] not in all_magnebots[all_idx].stats.dangerous_objects_in_goal and self.object_names_translate[object_id] not in self.already_collected_dangerous:
-                        all_magnebots[all_idx].stats.dangerous_objects_in_goal.append(self.object_names_translate[object_id])
-                        self.already_collected_dangerous.append(self.object_names_translate[object_id])
+                        all_magnebots[all_idx].stats.objects_in_goal.append(self.object_names_translate[object_id])
+                        self.already_collected.append(self.object_names_translate[object_id])
+                        
+                        
+                        
+                        if int(self.required_strength[object_id]) > 1: #Add teammates contribution
+                        
+                            robot_ids,sort_indices = self.get_involved_teammates(all_magnebots[all_idx].current_teammates, self.object_names_translate[object_id])
+                            
+                            for sidx in range(int(self.required_strength[object_id])-1):
+                                all_magnebots[robot_ids[sort_indices[sidx]]].stats.objects_in_goal.append(self.object_names_translate[object_id])
+                    
+                        if self.danger_level[object_id] == 2 and self.object_names_translate[object_id] not in all_magnebots[all_idx].stats.dangerous_objects_in_goal:
+                            all_magnebots[all_idx].stats.dangerous_objects_in_goal.append(self.object_names_translate[object_id])
+                            
+                            
+                            if int(self.required_strength[object_id]) > 1: #Add teammates contribution
+                            
+                                for sidx in range(int(self.required_strength[object_id])-1):
+                                    all_magnebots[robot_ids[sort_indices[sidx]]].stats.dangerous_objects_in_goal.append(self.object_names_translate[object_id])
+                            
                       
 
 
@@ -2226,10 +2289,35 @@ class Simulation(Controller):
                     for object_id_translated in all_magnebots[idx].item_info.keys():
                         if "sensor" in all_magnebots[idx].item_info[object_id_translated] and robot_id_translated in all_magnebots[idx].item_info[object_id_translated]["sensor"]:
                             all_magnebots[idx].stats.objects_sensed += 1
+                            
+                            #len(list(all_magnebots[idx].item_info[object_id_translated]["sensor"].keys()))
+                            
                     
+                    
+                    number_dangerous_objects_in_goal = 0
+                    number_benign_objects_in_goal = 0
+                    number_dropped_objects = 0
+                    
+                    for ob in all_magnebots[idx].stats.objects_in_goal:
+                    
+                        object_id = list(self.object_names_translate.keys())[list(self.object_names_translate.values()).index(ob)]
+                    
+                        weight = self.required_strength[object_id]
+                    
+                        if ob in all_magnebots[idx].stats.dangerous_objects_in_goal:
+                            number_dangerous_objects_in_goal += 1/weight                            
+                        else:
+                            number_benign_objects_in_goal += 1/weight
+                            
+                            
+                    for ob in all_magnebots[idx].stats.dropped_outside_goal:
+                        object_id = list(self.object_names_translate.keys())[list(self.object_names_translate.values()).index(ob)]
+                        weight = self.required_strength[object_id]
+                        number_dropped_objects += 1/weight
+                        
                     
                     number_dangerous_objects_in_goal = len(all_magnebots[idx].stats.dangerous_objects_in_goal)
-                    all_magnebots[idx].stats.quality_work = max(0,(number_dangerous_objects_in_goal - (len(all_magnebots[idx].stats.objects_in_goal) - number_dangerous_objects_in_goal) - all_magnebots[idx].stats.dropped_outside_goal)/len(self.dangerous_objects))
+                    all_magnebots[idx].stats.quality_work = max(0,(number_dangerous_objects_in_goal - number_benign_objects_in_goal - number_dropped_objects)/len(self.dangerous_objects))
                     
                     #for k in all_magnebots[idx].stats.time_with_teammates.keys():
                     #    all_magnebots[idx].stats.time_with_teammates[k] = round(all_magnebots[idx].stats.time_with_teammates[k],1)
@@ -2247,14 +2335,73 @@ class Simulation(Controller):
                         team_quality_work = sum([am.stats.quality_work for am in all_magnebots])
                         
                         
+                        
+                        
+                        num_sensed = {}
+                        
+                        for go in self.graspable_objects:
+                            o = self.object_names_translate[go]
+                            
+                            for am in all_magnebots:
+                                robot_id_translated2 = self.robot_names_translate[str(am.robot_id)]
+                                if o in am.item_info and "sensor" in am.item_info[o] and robot_id_translated2 in am.item_info[o]["sensor"]:
+                                    if o not in num_sensed.keys():
+                                        num_sensed[o] = []
+                                    num_sensed[o].append(robot_id_translated2)
+                            
+                                  
+                        human_team_effort = 0               
+                        for um in self.user_magnebots:
+                        
+                            robot_id_translated2 = self.robot_names_translate[str(um.robot_id)]
+                            
+                            for o in num_sensed.keys():
+                                
+                                if o in um.item_info and "sensor" in um.item_info[o] and robot_id_translated2 in um.item_info[o]["sensor"]:
+                                
+                                    um.stats.effort += 1/len(num_sensed[o])
+                                    
+                            um.stats.effort /= len(self.graspable_objects)
+                            human_team_effort += um.stats.effort
+                            
+                                        
+                                
+                        
+                        max_human_team_payment = self.payment*len(self.user_magnebots)
+                        actual_human_team_payment = max_human_team_payment*(team_quality_work+human_team_effort)/2
+                        
                         all_stats = []
                         
+                        end_time = all_magnebots[idx].stats.end_time
+                            
+                        if end_time > self.timer_limit:
+                            end_time = self.timer_limit
+                        
+                        team_speed_work = self.timer_limit/(max(self.timer_limit/10,min(self.timer_limit,end_time)))
+                        team_achievement = team_speed_work * team_quality_work
+                        
                         for idx2 in range(len(all_magnebots)):
+                        
+                        
+                            if team_quality_work+human_team_effort > 0:
+                                individual_contribution = (all_magnebots[idx2].stats.quality_work + all_magnebots[idx2].stats.effort)/(team_quality_work+human_team_effort) #human quality work
+                            else:
+                                individual_contribution = 0
+                                
+                            individual_payment = actual_human_team_payment*individual_contribution
+                        
+                        
                             all_magnebots[idx2].stats.team_dangerous_objects_in_goal = goal_counter
                             all_magnebots[idx2].stats.total_dangerous_objects = len(self.dangerous_objects)
-                            all_magnebots[idx2].stats.team_end_time = all_magnebots[idx].stats.end_time
+                            all_magnebots[idx2].stats.team_end_time = end_time
                             all_magnebots[idx2].stats.team_failure_reasons = failure_reasons
                             all_magnebots[idx2].stats.team_quality_work = team_quality_work
+                            all_magnebots[idx2].stats.team_speed_work = team_speed_work
+                            all_magnebots[idx2].stats.team_achievement = team_achievement
+                            all_magnebots[idx2].stats.human_team_effort = human_team_effort
+                            all_magnebots[idx2].stats.team_payment = actual_human_team_payment
+                            all_magnebots[idx2].stats.individual_payment = individual_payment
+                            
                             
                             self.sio.emit("stats", (self.robot_names_translate[str(all_magnebots[idx2].robot_id)], all_magnebots[idx2].stats.__dict__, self.timer, True))
                             
@@ -2289,6 +2436,16 @@ class Simulation(Controller):
                             all_magnebots[idx].stats.time_with_teammates[robot2] = 0
                         all_magnebots[idx].stats.time_with_teammates[robot2] += float(sim_elapsed_time)
                         
+                        
+                        for arm in [Arm.left,Arm.right]:
+                            if all_magnebots[idx].dynamic.held[arm].size > 0:
+                                object_id = self.object_names_translate[all_magnebots[idx].dynamic.held[arm][0]]
+                                if object_id not in all_magnebots[idx].current_teammates:
+                                    all_magnebots[idx].current_teammates[object_id] = {}
+                                    
+                                if idx2 not in all_magnebots[idx].current_teammates[object_id]:
+                                    all_magnebots[idx].current_teammates[object_id][idx2] = 0
+                                all_magnebots[idx].current_teammates[object_id][idx2] += float(sim_elapsed_time)
                         
                         
                     if distance < int(self.cfg['communication_distance_limit']): #Check if robot is close enough to communicate
@@ -2401,7 +2558,7 @@ class Simulation(Controller):
 
                 for arm in [Arm.left,Arm.right]:
                 
-                    if all_magnebots[idx].action.status == ActionStatus.cannot_reach or all_magnebots[idx].action.status == ActionStatus.failed_to_grasp:
+                    if all_magnebots[idx].action.status == ActionStatus.cannot_reach or all_magnebots[idx].action.status == ActionStatus.failed_to_grasp or (all_magnebots[idx].controlled_by == "human" and all_magnebots[idx].resetting_arm and time.time() - all_magnebots[idx].grasping_time > 5):
                         all_magnebots[idx].grasping = False
                         all_magnebots[idx].resetting_arm = False
                         all_magnebots[idx].reset_arm(arm)
@@ -2437,11 +2594,18 @@ class Simulation(Controller):
                             all_magnebots[idx].drop(target=grasped_object, arm=arm)
                             all_magnebots[idx].grasping = False
                             
-                            all_magnebots[idx].stats.forced_dropped_objects += 1
+
                             
                             
-                            if self.danger_level[grasped_object] == 2 and np.linalg.norm(self.object_manager.transforms[grasped_object].position[[0,2]]) >= float(self.cfg["goal_radius"]):
-                                all_magnebots[idx].stats.dropped_outside_goal += 1
+                            if np.linalg.norm(self.object_manager.transforms[grasped_object].position[[0,2]]) >= float(self.cfg["goal_radius"]):
+                            
+                                robot_ids,sort_indices = self.get_involved_teammates(all_magnebots[idx].current_teammates, self.object_names_translate[grasped_object])
+                            
+                                for sidx in range(int(self.required_strength[grasped_object])-1):
+                                    all_magnebots[robot_ids[sort_indices[sidx]]].stats.dropped_outside_goal.append(self.object_names_translate[grasped_object])
+                            
+                                all_magnebots[idx].stats.dropped_outside_goal.append(self.object_names_translate[grasped_object])
+                            
                             
                             """
                             if grasped_object in self.dangerous_objects:

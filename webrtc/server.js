@@ -95,7 +95,7 @@ io.sockets.on("error", e => console.log(e));
 io.sockets.on("connection", socket => { //When a client connects
   socket.on("broadcaster_load", () => {
     console.log("broadcaster_log", video_idx_broadcaster, socket.id)
-    socket.emit("simulator", video_idx_broadcaster);
+    socket.emit("simulator", video_idx_broadcaster, map_config);
   });
 
   socket.on("broadcaster", () => { //When the broadcaster client connects
@@ -283,7 +283,7 @@ io.sockets.on("connection", socket => { //When a client connects
   
   socket.on("log_output", (location_map, timer) => {
 
-	if(command_line_options.log && (timer - past_timer2 > 0.25 || message_sent)){
+	if(command_line_options.log && (timer - past_timer2 > 0.1 || message_sent)){
 		past_timer2 = timer;
 		message_sent = false;
   		fs.appendFile(dir + dateTime + '.txt', String(timer.toFixed(2)) +',' + '0' + ',' + JSON.stringify(location_map) + '\n', err => {});
@@ -332,58 +332,82 @@ io.sockets.on("connection", socket => { //When a client connects
     
     console.log(timestamp,sim_id,message);
     
-
     
-    if(! disable_list.includes(sim_id)){
-		message_sent = true;
-		//console.log("not disabled 1")
-		
-		if(stats[sim_id]["average_message_length"] > 0){
-			stats[sim_id]["average_message_length"] = (stats[sim_id]["average_message_length"] + message.length)/2;
-		} else{
-			stats[sim_id]["average_message_length"] = message.length;
-		}
-		stats[sim_id]["num_messages_sent"] += 1;
-		if(all_ids.indexOf(socket.id) >= 0 && neighbors_list){
-		    //console.log("not disabled 2")
-		    let source_id = socket_to_simulator_id(socket.id)
-		    //console.log(source_id)
-		    //console.log(neighbors_list)
+    let source_id = socket_to_simulator_id(socket.id)
+    
+    
+    if(socket.id == broadcaster){
+        if(Object.keys(neighbors_list).length == 0){
+            for (let id_idx = 0; id_idx < clients_ids.length; id_idx++) {
+                socket.to(clients_ids[id_idx]).emit("message", message, timestamp, "ADMIN");
+            }
+        } else{
+            for (const [key, value] of Object.entries(neighbors_list)) {
+                if(value === 'human'){
+		            let c = clients_ids[user_ids_list.indexOf(key)]; 
+		            
+			        //console.log(c)
+			        socket.to(c).emit("message", message, timestamp, "ADMIN");
+		            
+		        }
+            }
+        }
+    } else{
+        socket.to(broadcaster).emit("message", message, timestamp, source_id);
+        
+    
+    
+        if(! disable_list.includes(sim_id)){
+		    message_sent = true;
+		    //console.log("not disabled 1")
 		    
-		    var keys_neighbors = '"';
-		    
-		    if (command_line_options.messageLoop){
-			    socket.emit("message", message, timestamp, source_id); //Emit message to itself
+		    if(stats[sim_id]["average_message_length"] > 0){
+			    stats[sim_id]["average_message_length"] = (stats[sim_id]["average_message_length"] + message.length)/2;
+		    } else{
+			    stats[sim_id]["average_message_length"] = message.length;
 		    }
-		    
-		    for (const [key, value] of Object.entries(neighbors_list)) {
-		        //console.log(key)
-		        //console.log(value)
+		    stats[sim_id]["num_messages_sent"] += 1;
+		    if(all_ids.indexOf(socket.id) >= 0 && neighbors_list){
+		        //console.log("not disabled 2")
 		        
-		        if(! disable_list.includes(key)){
-		            //console.log("not disabled 3")
-				    keys_neighbors += key + ',';
-				    if(value === 'human'){
-				        let c = clients_ids[user_ids_list.indexOf(key)]; 
-				        
-					    //console.log(c)
-					    socket.to(c).emit("message", message, timestamp, source_id);
-				        
-				    } else if(value === 'ai'){
-				        let c = ai_ids[ai_ids_list.indexOf(key)];
-				        socket.to(c).emit('message', message, timestamp, source_id);
-				    }
-			    }
+		        //console.log(source_id)
+		        //console.log(neighbors_list)
 		        
+		        var keys_neighbors = '"';
+		        
+		        if (command_line_options.messageLoop){
+			        socket.emit("message", message, timestamp, source_id); //Emit message to itself
+		        }
+		        
+		        for (const [key, value] of Object.entries(neighbors_list)) {
+		            //console.log(key)
+		            //console.log(value)
+		            
+		            if(! disable_list.includes(key)){
+		                //console.log("not disabled 3")
+				        keys_neighbors += key + ',';
+				        if(value === 'human'){
+				            let c = clients_ids[user_ids_list.indexOf(key)]; 
+				            
+					        //console.log(c)
+					        socket.to(c).emit("message", message, timestamp, source_id);
+				            
+				        } else if(value === 'ai'){
+				            let c = ai_ids[ai_ids_list.indexOf(key)];
+				            socket.to(c).emit('message', message, timestamp, source_id);
+				        }
+			        }
+		            
+		        }
+		        
+		        keys_neighbors += '"';
+		        
+		        
+		        if(command_line_options.log){
+		            fs.appendFile(dir + dateTime + '.txt', String(timestamp.toFixed(2)) +',' + '2' + ',' + socket_to_simulator_id(socket.id) + ',' + '"'+message.replace(/"/g, '\\"')+'"'+','+keys_neighbors+'\n', err => {});
+		        }
 		    }
-		    
-		    keys_neighbors += '"';
-		    
-		    
-		    if(command_line_options.log){
-		        fs.appendFile(dir + dateTime + '.txt', String(timestamp.toFixed(2)) +',' + '2' + ',' + socket_to_simulator_id(socket.id) + ',' + '"'+message.replace(/"/g, '\\"')+'"'+','+keys_neighbors+'\n', err => {});
-		    }
-		}
+        }
     }
 
   });

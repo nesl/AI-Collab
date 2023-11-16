@@ -28,7 +28,8 @@ import gymnasium as gym
 from gymnasium import spaces
 
 from .action import Action
-from cnl import MessagePattern
+
+from .cnl import MessagePattern
 
 class AICollabEnv(gym.Env):
 
