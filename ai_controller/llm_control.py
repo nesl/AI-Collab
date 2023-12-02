@@ -132,6 +132,7 @@ class LLMControl:
         self.previous_next_loc = []
         self.nearby_other_agents = []
         self.help_requests = []
+        self.object_of_interest = ""
         self.help_time_limit2 = 30
        
     class Other_Agent:
@@ -146,6 +147,7 @@ class LLMControl:
             self.carrying = False
             self.items = {}
             self.assignment = "None"
+            self.observations = deque(maxlen=5)
             
     class State(Enum):
         llm_state = 0
@@ -153,15 +155,27 @@ class LLMControl:
        
     def message_processing(self,received_messages, robotState, info):
     
+        time_log = info["time"]
+        
+        objects_str = {}
+    
         for rm in received_messages:
             
             print("Received message:", rm)
             template_match = False
             
+            agent_idx = info['robot_key_to_index'][rm[0]]
+            
+            
             if MessagePattern.carry_help_accept(self.env.robot_id) in rm[1]:
             
                 template_match = True
                 
+                object_id = list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(self.chosen_object_idx)]
+                
+                obs_string = "Offered me help to carry object " + str(object_id)
+                
+                self.other_agents[agent_idx].observations.append(obs_string)
                     
                 return_value,self.message_text,_ = self.movement.message_processing_carry_help_accept(rm, {"weight": robotState.items[self.chosen_object_idx]["item_weight"], "index": self.chosen_object_idx}, self.message_text)
                 
@@ -170,6 +184,7 @@ class LLMControl:
                     
                     if not (robotState.items[self.chosen_object_idx]['item_location'][0] == -1 and robotState.items[self.chosen_object_idx]['item_location'][1] == -1):
                         self.target_location = robotState.items[self.chosen_object_idx]['item_location']
+                        self.object_of_interest = object_id
                         #self.target_object_idx = self.heavy_objects["index"][self.chosen_heavy_object]
                         
                         self.action_index = self.State.llm_state
@@ -181,33 +196,31 @@ class LLMControl:
 
             if re.search(MessagePattern.carry_help_regex(),rm[1]):
             
-            
-                template_match = False
-    
-                if re.search(MessagePattern.carry_help_regex(),rm[1]): # "I need help" in rm[1]:
-                    rematch = re.search(MessagePattern.carry_help_regex(),rm[1])
-                    
-                    template_match = True
-  
-                    """                  
-                    if re.search(MessagePattern.carry_help_regex(),message_text): #This means the robot is preparing to ask for help and reject the help request, we shouldn't allow this
-                        message_text = message_text.replace(re.search(MessagePattern.carry_help_regex(),message_text).group(), "")
-                        self.movement.asked_help = False
-                        self.movement.asked_time = time.time()
-                        action_index = self.last_action_index
-                    """
-                    
-                    if not robotState.object_held and not self.movement.helping and not self.movement.being_helped and not self.movement.accepted_help and not self.movement.asked_help: # accept help request
-                        #message_text += MessagePattern.carry_help_accept(rm[0])
-                        #self.movement.accepted_help = rm[0]
-                        self.help_requests.append(rm[0])
+                rematch = re.search(MessagePattern.carry_help_regex(),rm[1])
+                
+                template_match = True
+                
+                self.other_agents[agent_idx].observations.append("Asked me to help carry object " + rematch.group(2))
 
-                        #self.helping = rm[0]
-                        #self.action_index = self.State.check_neighbors
-                        
-                    else: #reject help request
-                        self.message_text += MessagePattern.carry_help_participant_reject(rm[0])
-                        print("Cannot help", not robotState.object_held, not self.movement.helping, not self.movement.being_helped, not self.movement.accepted_help, not self.movement.asked_help)
+                """                  
+                if re.search(MessagePattern.carry_help_regex(),message_text): #This means the robot is preparing to ask for help and reject the help request, we shouldn't allow this
+                    message_text = message_text.replace(re.search(MessagePattern.carry_help_regex(),message_text).group(), "")
+                    self.movement.asked_help = False
+                    self.movement.asked_time = time.time()
+                    action_index = self.last_action_index
+                """
+                
+                if not robotState.object_held and not self.movement.helping and not self.movement.being_helped and not self.movement.accepted_help and not self.movement.asked_help: # accept help request
+                    #message_text += MessagePattern.carry_help_accept(rm[0])
+                    #self.movement.accepted_help = rm[0]
+                    self.help_requests.append(rm[0])
+
+                    #self.helping = rm[0]
+                    #self.action_index = self.State.check_neighbors
+                    
+                else: #reject help request
+                    self.message_text += MessagePattern.carry_help_participant_reject(rm[0])
+                    print("Cannot help", not robotState.object_held, not self.movement.helping, not self.movement.being_helped, not self.movement.accepted_help, not self.movement.asked_help)
             
             
                 """
@@ -221,24 +234,125 @@ class LLMControl:
                 template_match = True
             
                 self.action_index,_ = self.movement.message_processing_help(rm, self.action_index, self.State.llm_state)
+                
+                    
+                if re.search(MessagePattern.follow_regex(),rm[1]):
+                    rematch = re.search(MessagePattern.follow_regex(),rm[1])
+                
+                    if rematch.group(1) == str(self.env.robot_id):
+                        self.other_agents[agent_idx].observations.append("Asked me to follow him")
+                    else:
+                        self.other_agents[agent_idx].observations.append("Asked " + rematch.group(1) + " to follow him")
+                        
+                elif MessagePattern.carry_help_cancel() in rm[1]:
+                    self.other_agents[agent_idx].observations.append("Cancelled his request for help")
+                    
+                elif MessagePattern.carry_help_finish() in rm[1]:
+                    self.other_agents[agent_idx].observations.append("Finished moving heavy object with help from others")
+                
+                elif MessagePattern.carry_help_complain() in rm[1]:
+                    self.other_agents[agent_idx].observations.append("Dismissed his team for not collaborating effectively")
+                    
+                    
+            if re.search(MessagePattern.carry_help_reject_regex(),rm[1]):
+                
+                template_match = True
+                
+                rematch = re.search(MessagePattern.carry_help_reject_regex(),rm[1])
+                
+                if rematch.group(1) == str(self.env.robot_id):
+                    self.other_agents[agent_idx].observations.append("Rejected my offer to help him")
+                else:
+                    self.other_agents[agent_idx].observations.append("Rejected " + rematch.group(1) + "'s offer to help him")    
+                      
             
-            
-            if re.search(MessagePattern.location_regex(),rm[1]) and not (self.movement.being_helped and rm[0] in self.movement.being_helped and self.action_index == self.State.drop_object):
+            if re.search(MessagePattern.location_regex(),rm[1]):
             
                 template_match = True
                 
-                self.message_text,self.action_index,_ = self.movement.message_processing_location(rm, robotState, info, self.other_agents, self.target_location, self.action_index, self.message_text, self.State.llm_state, self.next_loc)
+                carrying_variable = self.other_agents[agent_idx].carrying
+                team_variable = self.other_agents[agent_idx].team
                 
+                if not (self.movement.being_helped and rm[0] in self.movement.being_helped and self.action_index == self.State.drop_object):            
+                    self.message_text,self.action_index,_ = self.movement.message_processing_location(rm, robotState, info, self.other_agents, self.target_location, self.action_index, self.message_text, self.State.llm_state, self.next_loc)
+                    
+                
+                rematch = re.search(MessagePattern.location_regex(),rm[1])
+                
+                obs_string = ""
+                
+                if not self.other_agents[agent_idx].carrying and self.other_agents[agent_idx].carrying != carrying_variable:
+                    obs_string += "Dropped an object"
+                    
+                    
+                
+                if not self.other_agents[agent_idx].team and self.other_agents[agent_idx].team != team_variable:
+                    
+                    if obs_string:
+                        obs_string += ", "
+                
+                    if team_variable != str(self.env.robot_id):
+                        obs_string += "Stopped helping agent " + team_variable
+                    else:
+                        obs_string += "Helped me carry an object"
+                            
+                
+                
+                if rematch.group(1) != "location":
+                
+                    if obs_string:
+                        obs_string += ", "
+                
+                    obs_string += "Announced his current objective is " + rematch.group(1)
+                    
+                if rematch.group(5):
+                    if obs_string:
+                        obs_string += ", "
+                        
+                    obs_string += "Carried object " + rematch.group(6)
+                    
+                    
+                if rematch.group(7):
+                    
+                        
+                    if rematch.group(8) != str(self.env.robot_id):
+                        if obs_string:
+                            obs_string += ", "
+                            
+                        obs_string += "Is helping agent " + rematch.group(8)
+
+                
+                if obs_string and obs_string not in self.other_agents[agent_idx].observations:
+                    self.other_agents[agent_idx].observations.append(obs_string)
             
             if MessagePattern.wait(self.env.robot_id) in rm[1] or re.search(MessagePattern.move_order_regex(),rm[1]):
                 template_match = True
                 self.target_location, self.action_index, _ = self.movement.message_processing_wait(rm, info, self.target_location, self.action_index)
+                self.object_of_interest = ""
+                
+            if re.search(MessagePattern.wait_regex(),rm[1]):
+                template_match = True
+                rematch = re.search(MessagePattern.wait_regex(),rm[1])
+                
+                if rematch.group(1) == str(self.env.robot_id):
+                    self.other_agents[agent_idx].observations.append("Waited for me to pass")
+                else:
+                    self.other_agents[agent_idx].observations.append("Waited for " + rematch.group(1) + " to pass")
                 
             if MessagePattern.move_request(self.env.robot_id) in rm[1]:
                 template_match = True
                 
                 
                 self.message_text,self.action_index,_ = self.movement.message_processing_move_request(rm, robotState, info, self.action_index, self.message_text)
+                
+            if re.search(MessagePattern.move_request_regex(),rm[1]):
+                template_match = True
+                rematch = re.search(MessagePattern.move_request_regex(),rm[1])
+                
+                if rematch.group(1) == str(self.env.robot_id):
+                    self.other_agents[agent_idx].observations.append("Asked me to move")
+                else:
+                    self.other_agents[agent_idx].observations.append("Asked " + rematch.group(1) + " to move")
                     
             if re.search(MessagePattern.sensing_help_regex(),rm[1]): #"What do you know about object " in rm[1]:
                 rematch = re.search(MessagePattern.sensing_help_regex(),rm[1])
@@ -248,30 +362,59 @@ class LLMControl:
                 object_id = rematch.group(1) #rm[1].strip().split()[-1] 
                 object_idx = info['object_key_to_index'][object_id]
                 
+                self.other_agents[agent_idx].observations.append("Asked me for information about object " + str(object_id))
+                
                 self.message_text += MessagePattern.item(robotState,object_idx,object_id, info, self.env.robot_id, self.env.convert_to_real_coordinates)
                 
                 if not self.message_text:
                      self.message_text += MessagePattern.sensing_help_negative_response(object_id)
-            if re.search(MessagePattern.item_regex_full(),rm[1]):
+            if re.search(MessagePattern.item_regex_full(),rm[1]) or re.search(MessagePattern.item_regex_full_alt(),rm[1]):
             
+                template_match = True
                 
+                new_rm = list(rm)
+                new_rm[1] += MessagePattern.translate_item_message(new_rm[1],self.env.robot_id)
+            
+                obs_str = "Shared information with me of objects: ["
+            
+                if rm[1] not in objects_str:
+                    objects_str[rm[1]] = []
+                
+            
+                for ridx,rematch in enumerate(re.finditer(MessagePattern.item_regex_full(),new_rm[1])):
+                
+                    object_id = rematch.group(1)
+                
+                    if object_id == str(self.message_info[1]):
+                        self.message_info[0] = True
+                        
+                    MessagePattern.parse_sensing_message(rematch, new_rm, robotState, info, self.other_agents, self.env.convert_to_grid_coordinates)
+                    
+                    
+                        
+                    if object_id not in objects_str[rm[1]]:
+                        if objects_str[rm[1]]:
+                            obs_str += ", "
+                        obs_str += object_id
+                        objects_str[rm[1]].append(object_id)
+                    
+                obs_str += "]"
+                self.other_agents[agent_idx].observations.append(obs_str)
+                    
+            if re.search(MessagePattern.sensing_help_negative_response_regex(),rm[1]):
             
                 template_match = True
             
-                for rematch in re.finditer(MessagePattern.item_regex_full(),rm[1]):
-                
-                    if rematch.group(1) == str(self.message_info[1]):
-                        self.message_info[0] = True
-                        
-                    MessagePattern.parse_sensing_message(rematch, rm, robotState, info, self.other_agents, self.env.convert_to_grid_coordinates)
-                    
-                    
-            if re.search(MessagePattern.sensing_help_negative_response_regex(),rm[1]):
                 rematch = re.search(MessagePattern.sensing_help_negative_response_regex(),rm[1])
+                
+                self.other_agents[agent_idx].observations.append("Told me he doesn't have any information about object " + rematch.group(1))
                 
                 if rematch.group(1) == str(self.message_info[1]):
                     self.message_info[0] = True
-                template_match = True
+
+
+            if not template_match:
+                pass
    
     def get_neighboring_agents(self, robotState, ego_location):
     
@@ -363,6 +506,7 @@ class LLMControl:
                 previous_action_index = self.action_index
                 
                 self.message_text,self.action_index,self.target_location,self.next_loc, low_action = self.movement.movement_state_machine(self.occMap, info, robotState, self.action_index, self.message_text, self.target_location,self.State.llm_state, self.next_loc, ego_location, -1)
+                self.object_of_interest = ""
                 
                 if previous_action_index == self.movement.State.wait_message and not self.movement.asked_help:
                     self.action_function = ""
@@ -372,15 +516,15 @@ class LLMControl:
             
             if self.nearby_other_agents: #If there are nearby robots, announce next location and goal
 
-                self.message_text, self.next_loc = self.movement.send_state_info(action, self.next_loc, self.target_location, self.message_text, self.other_agents, self.nearby_other_agents, ego_location, robotState)    
+                self.message_text, self.next_loc = self.movement.send_state_info(action, self.next_loc, self.target_location, self.message_text, self.other_agents, self.nearby_other_agents, ego_location, robotState, self.object_of_interest, self.held_objects)    
                 
             if self.message_text: #Send message first before doing action
                 
 
                 if re.search(MessagePattern.location_regex(),self.message_text):
                     rematch = re.search(MessagePattern.location_regex(),self.message_text)
-                    target_goal = eval(rematch.group(1))
-                    target_loc = eval(rematch.group(2))
+                    target_goal = eval(rematch.group(2))
+                    target_loc = eval(rematch.group(3))
                     
                     if target_goal != target_loc and not (self.previous_message and self.previous_message[0] == target_goal and self.previous_message[1] == target_loc): #Only if there was a change of location do we prioritize this message
 
@@ -572,6 +716,7 @@ class LLMControl:
         
             if not wait_for_others:        
                 action, temp_finished, output = self.pick_up(object_id, robotState, next_observation, info)
+                self.held_object = object_id
                 if temp_finished:
                     self.top_action_sequence += 1
                     self.movement.being_helped_locations = []
@@ -582,6 +727,7 @@ class LLMControl:
                     for g_coord in self.env.goal_coords:
                         if not self.occMap[g_coord[0],g_coord[1]]:
                             self.target_location = g_coord
+                            self.object_of_interest = "goal"
                             break
                     
                     
@@ -663,6 +809,7 @@ class LLMControl:
                         action["action"] = Action.get_occupancy_map.value
                         self.top_action_sequence += 1
                         self.target_location = self.past_location
+                        self.object_of_interest = ""
 
                     else:
                         self.past_location = [ego_location[0][0],ego_location[1][0]]
@@ -1010,7 +1157,7 @@ class LLMControl:
                 if self.action_retry == 2 and not robotState.object_held:
                     output = -1
                 else:
-                    self.held_objects.append(str(object_id))
+                    self.held_objects = str(object_id)
             else:
                 ob_idx = info["object_key_to_index"][str(object_id)]
                 location = robotState.items[ob_idx]["item_location"]
@@ -1322,6 +1469,17 @@ class LLMControl:
             
             prompt += "{'agent_id': " + agent_id + ", 'distance': " + str(distance)
 
+            if self.other_agents[a_idx].observations:
+            
+                prompt += ", 'observations': ["
+
+                for obs_idx,obs_a in enumerate(self.other_agents[a_idx].observations):
+                    if obs_idx:
+                        prompt += ", "
+                    prompt += obs_a
+                     
+                prompt += "]"
+
             prompt += "}"
             
             if a_idx not in nearby_other_agents and not (ag["neighbor_location"][0] == -1 and ag["neighbor_location"][1] == -1):
@@ -1381,7 +1539,7 @@ class LLMControl:
         if help_requests:
             for _ in range(len(help_requests)):
                 hr = help_requests.pop(0)
-                status_prompt += hr + " is requesting help to carry an object. "
+                #status_prompt += hr + " is requesting help to carry an object. "
                 possible_actions["Help " + hr + " to carry an object"] = "help('" + hr + "')"
                 
         
@@ -1416,6 +1574,21 @@ class LLMControl:
             
         
         prompt += status_prompt
+        
+        
+        team_str = ""
+        for agent_idx in range(len(self.other_agents)):
+            
+            if self.other_agents[agent_idx].team == self.env.robot_id:
+                agent_id = list(info['robot_key_to_index'].keys())[list(info['robot_key_to_index'].values()).index(agent_idx)]
+                
+                if not team_str:
+                    team_str += "Agents currently helping me: " + agent_id
+                else:
+                    team_str += ", " + agent_id
+                    
+        prompt += team_str
+                
         
         #prompt += "What will be your next action? Write a single function call."
         
@@ -1508,7 +1681,7 @@ class LLMControl:
 
 
             response = openai.ChatCompletion.create(
-              model= "gpt-3.5-turbo", #"gpt-4", #"gpt-3.5-turbo",
+              model= "gpt-4", #"gpt-4", #"gpt-3.5-turbo",
               messages=[
                     self.llm_messages[0],
                     {"role": "user", "content": prompt}

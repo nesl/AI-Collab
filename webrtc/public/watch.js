@@ -1,6 +1,38 @@
 let peerConnection;
 
 
+//RECORDING EVENTS
+
+let events = [];
+let key_events = [];
+
+rrwebRecord({
+  emit(event, isCheckout) {
+    // push event into the events array
+    events.push(event);
+    
+    if (isCheckout){
+    	save();
+    }
+  },
+  checkoutEveryNms: 5 * 1000,
+});
+
+// this function will send events to the backend and reset the events array
+function save() {
+  const body = JSON.stringify({"events": events, "key_events": key_events });
+  events = [];
+  key_events = [];
+  socket.emit("log_user_events", body);
+  
+}
+
+// save events every 10 seconds
+//const saving_events = setInterval(save, 5 * 1000);
+
+
+//WEBRTC CONFIG
+
 const config = {
   iceServers: [
     //{ 
@@ -723,6 +755,14 @@ play_area.addEventListener("keydown", (evt) => {
     socket.emit("key", kkey, simulator_timer);
 });
 
+document.body.addEventListener("keydown", (evt) => {
+    
+    var kkey = evt.key;
+    key_events.push({"key":kkey, "time": Date.now()});
+    
+    
+});
+
 
 
 play_area.addEventListener('mouseover', function() {
@@ -1296,4 +1336,9 @@ function resetGame(){
     document.getElementById("reset_button").textContent = "Waiting for other players...";
     socket.emit("reset");
 }
+
+socket.on("ping", () => {
+    socket.emit("pong", Date.now());
+
+});
 

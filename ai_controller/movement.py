@@ -497,7 +497,7 @@ class Movement:
         return action,message_text,initial_state
         
         
-    def send_state_info(self, action, next_loc, target_location, message_text, other_agents, nearby_other_agents, ego_location, robotState):
+    def send_state_info(self, action, next_loc, target_location, message_text, other_agents, nearby_other_agents, ego_location, robotState, object_of_interest, object_held):
     
         if action in [Action.move_up.value, Action.move_down.value, Action.move_left.value, Action.move_right.value, Action.move_up_right.value, Action.move_up_left.value, Action.move_down_right.value, Action.move_down_left.value]: #If it is going to move
                 
@@ -553,7 +553,17 @@ class Movement:
                     changed = True
             
         if changed:
-            message_text +=  MessagePattern.location(target_loc[0],target_loc[1],next_loc[0][0],next_loc[0][1], self.env.convert_to_real_coordinates, [ego_location[0][0],ego_location[1][0]], robotState.object_held, helping)
+        
+            if not object_of_interest:
+                object_of_interest = "location"
+        
+            carrying_object = ""
+            if robotState.object_held:
+                carrying_object = object_held
+                if not carrying_object: #Sometimes the agent doesn't know what it is carrying
+                    carrying_object = "NA"
+        
+            message_text +=  MessagePattern.location(target_loc[0],target_loc[1],next_loc[0][0],next_loc[0][1], self.env.convert_to_real_coordinates, [ego_location[0][0],ego_location[1][0]], carrying_object, helping, object_of_interest)
             
         
         return message_text,next_loc    
@@ -588,7 +598,7 @@ class Movement:
                 
                 match_pattern = re.search(MessagePattern.location_regex(),message_text)
                 
-                if match_pattern and not match_pattern.group(6):
+                if match_pattern and not match_pattern.group(7):
                     message_text = message_text.replace(match_pattern.group(), match_pattern.group() + " Helping " + self.env.robot_id + ". ")
                     
                 message_text += MessagePattern.follow(rm[0])
@@ -685,30 +695,30 @@ class Movement:
             print("location_regex", self.being_helped)
 
             #pdb.set_trace()
-            other_target_location = self.env.convert_to_grid_coordinates(eval(match_pattern.group(1)))
-            other_next_step = self.env.convert_to_grid_coordinates(eval(match_pattern.group(2)))
+            other_target_location = self.env.convert_to_grid_coordinates(eval(match_pattern.group(2)))
+            other_next_step = self.env.convert_to_grid_coordinates(eval(match_pattern.group(3)))
 
             agent_idx = info['robot_key_to_index'][rm[0]]
             
-            if match_pattern.group(6): #Register whether other agents have already a team
-                other_agents[agent_idx].team = match_pattern.group(6)
+            if match_pattern.group(7): #Register whether other agents have already a team
+                other_agents[agent_idx].team = match_pattern.group(8)
             else:
                 other_agents[agent_idx].team = ""
                 
-            if match_pattern.group(4):
+            if match_pattern.group(5):
                 other_agents[agent_idx].carrying = True
             else:
                 other_agents[agent_idx].carrying = False
                 
                 
-            if self.helping and self.helping[0] == rm[0] and not match_pattern.group(6): #This means the team leader disbanded the team without us knowing
+            if self.helping and self.helping[0] == rm[0] and not match_pattern.group(7): #This means the team leader disbanded the team without us knowing
                 self.helping = []
                 self.accepted_help = ""
                 action_index = initial_state
                 print("Changed -2")
                 
                 
-            curr_loc = self.env.convert_to_grid_coordinates(eval(match_pattern.group(3)))
+            curr_loc = self.env.convert_to_grid_coordinates(eval(match_pattern.group(4)))
                 
             other_agents[agent_idx].other_location["ego_location"] = curr_loc
             other_agents[agent_idx].other_location["goal_location"] = other_target_location
@@ -735,7 +745,7 @@ class Movement:
                 if target_location == other_target_location:
                 
                 
-                    if not match_pattern.group(4) and not robotState.object_held and not match_pattern.group(5) and not self.helping and not self.being_helped: #Possible change !!!!
+                    if not match_pattern.group(5) and not robotState.object_held and not match_pattern.group(7) and not self.helping and not self.being_helped: #Possible change !!!!
                 
                  
                 
@@ -764,9 +774,9 @@ class Movement:
                                 print("changing going location!!!")
                                 
 
-                    elif (match_pattern.group(5) and (self.helping or self.being_helped)) or (match_pattern.group(4) and robotState.object_held) or (match_pattern.group(4) and (self.helping or self.being_helped)) or (match_pattern.group(5) and robotState.object_held):
-                        if match_pattern.group(5):
-                            other_id = match_pattern.group(6)
+                    elif (match_pattern.group(7) and (self.helping or self.being_helped)) or (match_pattern.group(5) and robotState.object_held) or (match_pattern.group(5) and (self.helping or self.being_helped)) or (match_pattern.group(7) and robotState.object_held):
+                        if match_pattern.group(7):
+                            other_id = match_pattern.group(8)
                         else:
                             other_id = rm[0]
                             
@@ -786,7 +796,7 @@ class Movement:
                                 self.being_helped_locations = []
                                 message_text += MessagePattern.carry_help_finish()
                     
-                    elif match_pattern.group(5) or match_pattern.group(4):
+                    elif match_pattern.group(7) or match_pattern.group(5):
                         self.ignore_object.append(other_target_location)
                         action_index = initial_state
                         print("Changed 3")
@@ -808,7 +818,7 @@ class Movement:
             
                     if (other_next_step == next_loc[0].tolist() or (len(next_loc) > 1 and other_next_step == next_loc[1].tolist())):
                     
-                        if not match_pattern.group(4) and not robotState.object_held and not match_pattern.group(5) and not self.helping and not self.being_helped: #Message arrive at the same time or previous than this robot sent its message. This condition is true only when robots have no teams and are not carrying any object
+                        if not match_pattern.group(5) and not robotState.object_held and not match_pattern.group(7) and not self.helping and not self.being_helped: #Message arrive at the same time or previous than this robot sent its message. This condition is true only when robots have no teams and are not carrying any object
                         
                             #if rm[2] == self.message_send_time: #If helping the one who send the message, automatically wait
 
@@ -825,10 +835,10 @@ class Movement:
                                 print(rm[2],self.message_send_time)
                                 self.wait_movement(agent_idx,rm[0])
                             """
-                        elif (match_pattern.group(5) and (self.helping or self.being_helped)) or (match_pattern.group(4) and robotState.object_held) or (match_pattern.group(4) and (self.helping or self.being_helped)) or (match_pattern.group(5) and robotState.object_held): #Priority given to robot teamleader or robot carrying object with robot id that appears first in alphabetic order
+                        elif (match_pattern.group(7) and (self.helping or self.being_helped)) or (match_pattern.group(5) and robotState.object_held) or (match_pattern.group(5) and (self.helping or self.being_helped)) or (match_pattern.group(7) and robotState.object_held): #Priority given to robot teamleader or robot carrying object with robot id that appears first in alphabetic order
                         
-                            if match_pattern.group(5):
-                                other_id = match_pattern.group(6)
+                            if match_pattern.group(7):
+                                other_id = match_pattern.group(8)
                             else:
                                 other_id = rm[0]
                                 
@@ -844,15 +854,15 @@ class Movement:
                                 message_text_tmp, action_index = self.wait_movement(agent_idx,rm[0],action_index)
                                 message_text += message_text_tmp
 
-                        elif match_pattern.group(5) or match_pattern.group(4): #If we are not carrying an object while the other is, or we are not part of a team while the other is
+                        elif match_pattern.group(7) or match_pattern.group(5): #If we are not carrying an object while the other is, or we are not part of a team while the other is
                             #print(rm[2],self.message_send_time)
                             message_text_tmp, action_index = self.wait_movement(agent_idx,rm[0],action_index)
                             message_text += message_text_tmp
                             
                     else:
 
-                        if match_pattern.group(5):
-                            other_id = match_pattern.group(6)
+                        if match_pattern.group(7):
+                            other_id = match_pattern.group(8)
                         else:
                             other_id = rm[0]
                             
@@ -866,7 +876,7 @@ class Movement:
                             
                         previous_index = -1
                         
-                        if match_pattern.group(5) or match_pattern.group(4) or (ord(other_id) < ord(our_id) and (((match_pattern.group(5) and (self.helping or self.being_helped)) or (match_pattern.group(4) and robotState.object_held) or (match_pattern.group(4) and (self.helping or self.being_helped)) or (match_pattern.group(5) and robotState.object_held)) or not match_pattern.group(4) and not robotState.object_held and not match_pattern.group(5) and not self.helping and not self.being_helped)):
+                        if match_pattern.group(7) or match_pattern.group(5) or (ord(other_id) < ord(our_id) and (((match_pattern.group(7) and (self.helping or self.being_helped)) or (match_pattern.group(5) and robotState.object_held) or (match_pattern.group(5) and (self.helping or self.being_helped)) or (match_pattern.group(7) and robotState.object_held)) or not match_pattern.group(5) and not robotState.object_held and not match_pattern.group(7) and not self.helping and not self.being_helped)):
                         
                             for s_idx,s in enumerate(self.potential_occupied_locations):
                                 if s[0] == other_next_step:

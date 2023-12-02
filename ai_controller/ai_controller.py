@@ -36,6 +36,8 @@ parser.add_argument("--control", default="heuristic", type=str, help="Type of co
 parser.add_argument("--message-loop", action="store_true", help="Use to allow messages to be sent back to sender")
 parser.add_argument("--role", default="general", help="Choose a role for the agent: general, scout, lifter")
 parser.add_argument("--planning", default="equal", help="Choose a planning role for the agent: equal, coordinator, coordinated")
+parser.add_argument('--webcam', action="store_true", help="Use images from virtual webcam")
+parser.add_argument('--video-index', type=int, default=0, help='index of the first /dev/video device to capture frames from')
 #parser.add_argument("--openai", action='store_true', help="Use openai.")
 #parser.add_argument("--llm", action='store_true', help="Use LLM.")
 
@@ -165,7 +167,7 @@ def print_map(occupancy_map): #Occupancy maps require special printing so that t
 
 device = "cuda"
 
-env = gym.make('gym_collab/AICollabWorld-v0', use_occupancy=args.use_occupancy, view_radius=args.view_radius, skip_frames=10, client_number=int(args.robot_number), host=args.host, port=args.port, address=args.address, cert_file=args.cert_file, key_file=args.key_file)
+env = gym.make('gym_collab/AICollabWorld-v0', use_occupancy=args.use_occupancy, view_radius=args.view_radius, skip_frames=10, client_number=int(args.robot_number), host=args.host, port=args.port, address=args.address, cert_file=args.cert_file, key_file=args.key_file, webcam=args.webcam, video_index=args.video_index)
 
 
 
@@ -192,26 +194,63 @@ class RobotState:
     def update_items(self,item_output, item_idx, robot_idx): #Updates items
 
 
+        if item_idx >= len(self.items):
+            diff_len = item_idx - len(robotState.items)-1
+            self.items.extend([{'item_weight': 0, 'item_danger_level': 0, 'item_danger_confidence': np.array([0.]), 'item_location': np.array([-1, -1], dtype=np.int16), 'item_time': np.array([0], dtype=np.int16)} for d in range(diff_len)])
+
         if item_idx not in self.item_estimates:
             self.item_estimates[item_idx] = [{"item_danger_level": 0, "item_danger_confidence": 0, "item_location": [-1,-1], "item_time": 0} for n in range(len(self.robots)+1)]
             
         self.item_estimates[item_idx][robot_idx]["item_location"] = [int(item_output["item_location"][0]),int(item_output["item_location"][1])]
         self.item_estimates[item_idx][robot_idx]["item_time"] = item_output["item_time"]
         self.item_estimates[item_idx][robot_idx]["item_danger_level"] = item_output["item_danger_level"]
-        self.item_estimates[item_idx][robot_idx]["item_danger_confidence"] = item_output["item_danger_confidence"]
+        if item_output["item_danger_confidence"]:
+            self.item_estimates[item_idx][robot_idx]["item_danger_confidence"] = item_output["item_danger_confidence"][0]
+
 
 
         print(item_output)
+        """
         if not self.items[item_idx]["item_danger_level"] or  (item_output["item_danger_level"] and round(self.items[item_idx]["item_danger_confidence"][0],3) == round(item_output["item_danger_confidence"][0],3) and self.items[item_idx]["item_time"][0] < item_output["item_time"][0]) or (item_output["item_danger_level"] and self.items[item_idx]["item_danger_confidence"][0] < item_output["item_danger_confidence"][0]):
             
             self.items[item_idx] = item_output
             self.items[item_idx]["item_location"] = [int(item_output["item_location"][0]),int(item_output["item_location"][1])]
-            
-        elif self.items[item_idx]["item_time"][0] < item_output["item_time"][0]:
+        """    
+        if not self.items[item_idx]["item_danger_level"]:
+            self.items[item_idx] = item_output
+            self.items[item_idx]["item_location"] = [int(item_output["item_location"][0]),int(item_output["item_location"][1])]
+        
+        if self.items[item_idx]["item_time"][0] < item_output["item_time"][0]:
         
             self.items[item_idx]["item_location"] = [int(item_output["item_location"][0]),int(item_output["item_location"][1])]
             self.items[item_idx]["item_time"] = item_output["item_time"]
             
+        self.items[item_idx]["item_weight"] = item_output["item_weight"]
+        
+        
+        benign = 0
+        dangerous = 0
+        num_samples = 0
+        for ie in self.item_estimates[item_idx]:
+            if ie["item_danger_level"] == 2:
+                benign += 1-ie["item_danger_confidence"]
+                dangerous += ie["item_danger_confidence"]
+                num_samples += 1
+            elif ie["item_danger_level"] == 1:
+                benign += ie["item_danger_confidence"]
+                dangerous += 1-ie["item_danger_confidence"]
+                num_samples += 1
+                
+        if num_samples:
+            benign /= num_samples
+            dangerous /= num_samples
+            
+            if dangerous > benign:
+                self.items[item_idx]["item_danger_level"] = 2
+                self.items[item_idx]["item_danger_confidence"] = [dangerous]
+            else:
+                self.items[item_idx]["item_danger_level"] = 1
+                self.items[item_idx]["item_danger_confidence"] = [benign]
         
         
 '''
@@ -368,10 +407,9 @@ while True:
                             m_key_xy = m_key.split('_')
                             if isinstance(map_object, list): #Object information
 
-                                try:
-                                    ob_key = info["object_key_to_index"][map_object[0]]
-                                except:
-                                    pdb.set_trace()                                
+
+                                ob_key = info["object_key_to_index"][map_object[0]]
+                             
                                 
                                 robotState.items[ob_key]["item_location"] = [int(m_key_xy[0]), int(m_key_xy[1])]
 
@@ -430,9 +468,12 @@ while True:
                     robotState.robots[ob_key]["neighbor_location"] = [-1,-1]
                     
             for ob_key in range(len(robotState.items)): #If the agent is not where it was last seen, mark it
-                item_location = robotState.latest_map[robotState.items[ob_key]["item_location"][0],robotState.items[ob_key]["item_location"][1]]
-                if item_location == 0:
-                    robotState.items[ob_key]["item_location"] = [-1,-1]
+                try:
+                    item_location = robotState.latest_map[robotState.items[ob_key]["item_location"][0],robotState.items[ob_key]["item_location"][1]]
+                    if item_location == 0:
+                        robotState.items[ob_key]["item_location"] = [-1,-1]
+                except:
+                    pdb.set_trace()
             	
             
             

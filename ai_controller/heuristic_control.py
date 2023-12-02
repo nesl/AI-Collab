@@ -115,6 +115,8 @@ class HeuristicControl:
 
         
         self.target_location = []
+        self.object_of_interest = []
+        self.held_object = []
         self.chosen_heavy_object = -1
         self.message_send_time = float('inf')
         self.next_loc = []
@@ -258,6 +260,7 @@ class HeuristicControl:
                         if not (robotState.items[item_idx]['item_location'][0] == -1 and robotState.items[item_idx]['item_location'][1] == -1):
                         
                             self.target_location = robotState.items[item_idx]['item_location']
+                            self.object_of_interest = list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(item_idx)]
                             self.target_object_idx = item_idx
                             
                             self.action_index = self.State.move_and_pickup
@@ -292,6 +295,8 @@ class HeuristicControl:
             if MessagePattern.wait(self.env.robot_id) in rm[1] or re.search(MessagePattern.move_order_regex(),rm[1]):
                 template_match = True
                 self.target_location, self.action_index, _ = self.movement.message_processing_wait(rm, info, self.target_location, self.action_index)
+                self.object_of_interest = ""
+                
                 
             if MessagePattern.move_request(self.env.robot_id) in rm[1]:
                 template_match = True
@@ -313,13 +318,16 @@ class HeuristicControl:
                 
                 else:
                      self.message_text += MessagePattern.sensing_help_negative_response(object_id)
-            if re.search(MessagePattern.item_regex_full(),rm[1]):
+            if re.search(MessagePattern.item_regex_full(),rm[1]) or re.search(MessagePattern.item_regex_full_alt(),rm[1]):
             
                 template_match = True
-            
-                for rematch in re.finditer(MessagePattern.item_regex_full(),rm[1]):
                 
-                    MessagePattern.parse_sensing_message(rematch, rm, robotState, info, self.other_agents, self.env.convert_to_grid_coordinates)
+                new_rm = list(rm)
+                new_rm[1] += MessagePattern.translate_item_message(new_rm[1],self.robot_id)
+            
+                for rematch in re.finditer(MessagePattern.item_regex_full(),new_rm[1]):
+                
+                    MessagePattern.parse_sensing_message(rematch, new_rm, robotState, info, self.other_agents, self.env.convert_to_grid_coordinates)
                     
                     object_id = rematch.group(1)
         
@@ -381,6 +389,7 @@ class HeuristicControl:
                             pdb.set_trace()
                         
                         self.target_location = robotState.items[object_idx]["item_location"] #Check assignment
+                        self.object_of_interest = list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(object_idx)]
                         
                         
                         
@@ -407,6 +416,7 @@ class HeuristicControl:
                             pdb.set_trace()
                         
                         self.target_location = robotState.items[object_idx]['item_location']
+                        self.object_of_interest = list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(object_idx)]
                         self.target_object_idx = object_idx
                         
                         self.action_index = self.State.move_and_pickup
@@ -415,7 +425,7 @@ class HeuristicControl:
                     
                         match_pattern = re.search(MessagePattern.location_regex(),self.message_text)
                         
-                        if match_pattern and not match_pattern.group(6):
+                        if match_pattern and not match_pattern.group(7):
                             self.message_text = self.message_text.replace(match_pattern.group(), match_pattern.group() + " Helping " + self.robot_id + ". ")
                             
                     elif rematch.group(2) == self.robot_id or (rematch.group(3) and self.robot_id in rematch.group(3).split(",")):
@@ -807,6 +817,7 @@ class HeuristicControl:
                     closest_idx = se_idx
                     
             self.target_location = [still_to_explore[0][closest_idx],still_to_explore[1][closest_idx]]
+            self.object_of_interest = "exploring"
             
             print("Point chosen is ", self.target_location)
                           
@@ -826,6 +837,7 @@ class HeuristicControl:
             elif occMap[self.target_location[0],self.target_location[1]] == 3 or occMap[self.target_location[0],self.target_location[1]] == 2 or occMap[self.target_location[0],self.target_location[1]] == 1:
                 self.target_location = random.choice(true_ending_locations)
             
+            self.object_of_interest = "finishing"
             action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info,ego_location)
             
             if self.role == "scout":
@@ -955,9 +967,11 @@ class HeuristicControl:
                                 previous_target_location = self_location
                             
                             self.target_location = [item_locations[0][item_location_idx],item_locations[1][item_location_idx]]
+                            self.object_of_interest = "sensing"
                         else:
                             previous_target_location = []
                             self.target_location = self.assigned_target_location
+                            self.object_of_interest = "sensing"
                             self.assigned_target_location = []
                         
 
@@ -981,6 +995,7 @@ class HeuristicControl:
                                 if obj_idx in self.sensed_items and obj["item_location"][0] == self.target_location[0] and obj["item_location"][1] == self.target_location[1]:
                                     self.action_index = self.State.move_and_pickup
                                     self.target_object_idx = obj_idx
+                                    self.object_of_interest = list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(obj_idx)]
                                     already_scanned = True
                                     
                                     print("Scanned", robotState.items[obj_idx],heavy_objects_location, self.heavy_objects)
@@ -994,6 +1009,7 @@ class HeuristicControl:
                                 action = Action.danger_sensing.value
                                 print("Object:", self.target_location, robotState.items)
                                 self.target_location = []
+                                self.object_of_interest = "sensing"
                                 self.action_index = self.State.init_check_items 
                             elif self.role == "scout" and (previous_target_location and np.linalg.norm(np.array(previous_target_location) - np.array(self.target_location)) > self.room_distance): #Whenever it finishes sensing a room return to meeting location. CHECK THIS!!!
                                 action = self.return_to_meeting_point(occMap, robotState, info, ego_location)
@@ -1006,6 +1022,7 @@ class HeuristicControl:
                                 self.movement.being_helped_locations = []
                                 if not wait_for_others:
                                     action = self.pick_up(occMap, self.target_location, ego_location)
+                                    self.held_object = self.object_of_interest
                                     self.action_index = self.State.pickup_and_move_to_goal
                                     
                                     if action < 0:
@@ -1078,6 +1095,7 @@ class HeuristicControl:
                     if not action and isinstance(action, list):
                         action = Action.danger_sensing.value
                         self.target_location = []
+                        self.object_of_interest = "sensing"
                         self.action_index = self.State.init_check_items
 
                        
@@ -1086,6 +1104,7 @@ class HeuristicControl:
                     self.movement.ignore_object = []
                     self.item_index = 0
                     self.target_location = []
+                    self.object_of_interest = "sensing"
                     action,item = self.process_sensor(robotState, next_observation)
                     if action < 0: #No new sensing measurements
 
@@ -1106,6 +1125,7 @@ class HeuristicControl:
                                 self.not_dangerous_objects.append(self.item_index-1) #tuple(robotState.items[self.item_index-1]['item_location']))
                         elif robotState.items[self.item_index-1]['item_weight'] == 1 and tuple(robotState.items[self.item_index-1]['item_location']) not in self.extended_goal_coords and not (robotState.items[self.item_index-1]['item_location'][0] == -1 and robotState.items[self.item_index-1]['item_location'][1] == -1): #If dangerous and their weight is 1
                             self.target_location = robotState.items[self.item_index-1]['item_location']
+                            self.object_of_interest = list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(self.item_index-1)]
                             self.target_object_idx = self.item_index-1
                         else: #If dangerous and heavy
                             if self.item_index-1 not in self.sensed_items and self.item_index-1 not in self.heavy_objects["index"]:
@@ -1153,6 +1173,7 @@ class HeuristicControl:
                                     
                                     if not wait_for_others:
                                         action = self.pick_up(occMap, self.target_location, ego_location)
+                                        self.held_object = self.object_of_interest
                                         #ego_location = np.where(occMap == 5)
                                         if action < 0:
                                             action = self.movement.position_to_action([ego_location[0][0],ego_location[1][0]],self.past_location,False) 
@@ -1189,6 +1210,7 @@ class HeuristicControl:
                         
                         if not wait_for_others and not robotState.object_held: #pickup if next to object already
                             action = self.pick_up(occMap, self.target_location, ego_location)
+                            self.held_object = self.object_of_interest
                             if action < 0:
                                 action = self.movement.position_to_action([ego_location[0][0],ego_location[1][0]],self.past_location,False) 
                             
@@ -1217,6 +1239,7 @@ class HeuristicControl:
                                 break
                         
                         self.target_location = g_coord
+                        self.object_of_interest = "goal"
                         
                         action,self.next_loc = self.go_to_location(self.target_location[0],self.target_location[1],occMap,robotState,info,ego_location)
                         self.action_index = self.State.drop_object
@@ -1230,6 +1253,7 @@ class HeuristicControl:
                             #pdb.set_trace()
                             action = self.drop()
                             self.target_location = self.past_location
+                            self.object_of_interest = ""
                             self.action_index = self.State.move_end
                         else:
                             action = Action.get_occupancy_map.value #Wait for the next state in order to start moving
@@ -1247,6 +1271,7 @@ class HeuristicControl:
                             if not wait_for_others:
                                 
                                 action = self.pick_up(occMap, self.target_location, ego_location)
+                                self.held_object = self.object_of_interest
                                 
                                 if self.retries == 3: #If can't pickup object just try with another
 
@@ -1335,6 +1360,7 @@ class HeuristicControl:
                             if not action and isinstance(action, list): #If already next to drop location
                                 action = self.drop()
                                 self.target_location = self.past_location
+                                self.object_of_interest = ""
                                 self.action_index = self.State.move_end
                             else:
                                 self.past_location = [ego_location[0][0],ego_location[1][0]]
@@ -1451,6 +1477,7 @@ class HeuristicControl:
                         
                 else:
                     self.message_text,self.action_index,self.target_location,self.next_loc, action = self.movement.movement_state_machine(occMap, info, robotState, self.action_index, self.message_text, self.target_location,self.State.get_closest_object, self.next_loc, ego_location, action)
+                    self.object_of_interest = ""
                         
             else:
                 action = self.central_planning(robotState, info, occMap, ego_location, nearby_other_agents)
@@ -1458,7 +1485,7 @@ class HeuristicControl:
             if nearby_other_agents: #If there are nearby robots, announce next location and goal
             
             
-                self.message_text, self.next_loc = self.movement.send_state_info(action, self.next_loc, self.target_location, self.message_text, self.other_agents, nearby_other_agents, ego_location, robotState)
+                self.message_text, self.next_loc = self.movement.send_state_info(action, self.next_loc, self.target_location, self.message_text, self.other_agents, nearby_other_agents, ego_location, robotState, self.object_of_interest, self.held_object)
                 
             
             
@@ -1468,8 +1495,8 @@ class HeuristicControl:
                 if re.search(MessagePattern.location_regex(),self.message_text):
                     self.message_send_time = info['time']
                     rematch = re.search(MessagePattern.location_regex(),self.message_text)
-                    target_goal = eval(rematch.group(1))
-                    target_loc = eval(rematch.group(2))
+                    target_goal = eval(rematch.group(2))
+                    target_loc = eval(rematch.group(3))
                     
                     #pdb.set_trace()
                     if target_goal != target_loc and not (self.previous_message and self.previous_message[0] == target_goal and self.previous_message[1] == target_loc): #Only if there was a change of location do we prioritize this message

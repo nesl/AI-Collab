@@ -11,6 +11,8 @@ commander
   .option('--log', 'Log everything')
   .option('--message-loop', 'Send back messages sent')
   .option('--password <value>', 'Specify passwords separated by comma')
+  .option('--logdir <value>', 'Specify alternate directory to write logs')
+  .option('--replay <value>', 'Replay session using log file')
   .parse(process.argv);
 
 const command_line_options = commander.opts();
@@ -25,7 +27,18 @@ const https = require("https");
 
 const fs = require("fs");
 
-var dir = './log/';
+const replay_file = command_line_options.replay;
+
+var dir;
+
+if(! command_line_options.logdir){
+    dir = './log/';
+}
+else{
+    dir = command_line_options.logdir + '/';
+}
+
+
 
 if (!fs.existsSync(dir)){
     fs.mkdirSync(dir);
@@ -52,7 +65,13 @@ const server = https.createServer(options, app)
 //const server = https.createServer(app);
 
 const io = require("socket.io")(server);
+
+app.use("/rrweb",express.static( __dirname + "/node_modules/rrweb/dist/"));
+
 app.use(express.static(__dirname + "/public"));
+
+
+
 
 var Filter = require('bad-words'),
     filter = new Filter();
@@ -61,7 +80,7 @@ const { exec } = require("child_process");
 var window_name = '';
 
 var char_replacement = [{'Up':'Up','Down':'Down','Left':'Left','Right':'Right'},{'Up':'W','Down':'S','Left':'A','Right':'D'}];
-var clients_ids = [], user_ids_list = [], ai_ids_list = [], ai_ids = [], all_ids = [], all_ids_list = [], stats = {};
+var clients_ids = [], user_ids_list = [], ai_ids_list = [], ai_ids = [], all_ids = [], all_ids_list = [], stats = {}, saved_events = [], saved_key_strokes = [];
 var init_xdotool = false;
 var video_idx_broadcaster = 0;
 var past_timer = 0, past_timer2 = 0;
@@ -130,6 +149,9 @@ io.sockets.on("connection", socket => { //When a client connects
 		
 		
 			socket.emit("watcher", user_ids_list[client_number-1], map_config);
+			
+			time_sync[client_number-1] = {"offset":Date.now(), "latency":0};
+			socket.emit("ping");
 	    }
     } else{
     	socket.emit("passcode-rejected");
@@ -143,6 +165,13 @@ io.sockets.on("connection", socket => { //When a client connects
     }
     */
   });
+  
+  socket.on("pong", (client_time) => {
+    client_number = all_ids.indexOf(socket.id);
+    time_sync[client_number]["latency"] = Date.now() - time_sync[client_number]["offset"];
+    time_sync[client_number]["offset"] = time_sync[client_number]["offset"] - (client_time - time_sync[client_number]["latency"]/2)
+  });
+  
   socket.on("watcher_ai", (client_number, use_occupancy, server_address, view_radius, centered, skip_frames) => { //When an ai client connects
     console.log("watcher_ai")
     
@@ -176,7 +205,7 @@ io.sockets.on("connection", socket => { //When a client connects
     }
   });
 
-  socket.on("simulator", (user_ids, ai_agents_ids, video_idx, config, log_file_name) => { //When simulator connects
+  socket.on("simulator", (user_ids, ai_agents_ids, video_idx, config, log_file_name, timer, true_time) => { //When simulator connects
     simulator = socket.id;
     user_ids_list = user_ids;
     ai_ids_list = ai_agents_ids;
@@ -184,6 +213,8 @@ io.sockets.on("connection", socket => { //When a client connects
     clients_ids = Array.apply(null, Array(user_ids_list.length));
     ai_ids = Array.apply(null, Array(ai_ids_list.length));
     all_ids = Array.apply(null, Array(ai_ids_list.length+user_ids_list.length));
+    saved_events = Array.apply(null, Array(user_ids_list.length));
+    time_sync = Array.apply(null, Array(ai_ids_list.length+user_ids_list.length));
 
     dateTime = log_file_name;
     
@@ -193,6 +224,10 @@ io.sockets.on("connection", socket => { //When a client connects
     
     video_idx_broadcaster = video_idx;
     map_config = config;
+    
+    if(command_line_options.log){
+    	fs.appendFile(dir + dateTime + '.txt', String(timer.toFixed(2)) + ',4,0,' + String(true_time.toFixed(3)) + '\n', err => {});
+    }
 
   });
   
@@ -290,7 +325,7 @@ io.sockets.on("connection", socket => { //When a client connects
 	}
   });
   
-  socket.on("agent_reset", (magnebot_id, timer, object_names_translate) => {
+  socket.on("agent_reset", (magnebot_id, timer, true_time) => {
   
   	reset_count = 0;
   	
@@ -308,7 +343,7 @@ io.sockets.on("connection", socket => { //When a client connects
     
     
     if(command_line_options.log){
-    	fs.appendFile(dir + dateTime + '.txt', String(timer.toFixed(2)) + ',4,' + magnebot_id + '\n', err => {});
+    	fs.appendFile(dir + dateTime + '.txt', String(timer.toFixed(2)) + ',4,' + magnebot_id + ',' + String(true_time.toFixed(3)) + '\n', err => {});
     }
   });
   
@@ -485,6 +520,47 @@ io.sockets.on("connection", socket => { //When a client connects
     	fs.appendFile(dir + dateTime + '.txt', String(timer.toFixed(2)) + ',6\n', err => {});
     }
 
+  });
+  
+  socket.on("log_user_events", (events) => {
+  
+    const arr_idx = clients_ids.indexOf(socket.id);
+  
+    if(command_line_options.log && arr_idx >= 0){
+
+        const next_events = JSON.parse(events);
+        
+        if(saved_events[arr_idx]){
+            saved_events[arr_idx] = saved_events[arr_idx].concat(next_events["events"]);
+            saved_key_strokes[arr_idx] = saved_key_strokes[arr_idx].concat(next_events["key_events"]);
+        } else{
+            saved_events[arr_idx] = next_events["events"];
+            saved_key_strokes[arr_idx] = next_events["key_events"];
+        }
+        
+        save_json = JSON.stringify({"events": saved_events, "key_events": saved_key_strokes, "time": time_sync});
+        fs.writeFile(dir + dateTime + '_events.txt', save_json, err => {});
+    }
+    
+  });
+  
+  socket.on("replay_user_events", (client_number) => {
+  
+  
+    if(replay_file){
+    
+        fs.readFile(replay_file, (err,data) => {
+        
+        
+            const contents = JSON.parse(data);
+            arr_idx = client_number-1;
+          
+            string_events = JSON.stringify({"events": contents["events"][arr_idx], "key_events": contents["key_events"][arr_idx]});
+          
+            socket.emit("replay_user_events", string_events);
+        });
+    }
+    
   });
   
 });

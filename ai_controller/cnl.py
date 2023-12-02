@@ -1,16 +1,16 @@
 import pdb
-
+import re
 
 class MessagePattern:
     @staticmethod
-    def location(goal_x,goal_y,next_loc_x,next_loc_y,convert_to_real_coordinates, current_location, carrying, helping):
+    def location(goal_x,goal_y,next_loc_x,next_loc_y,convert_to_real_coordinates, current_location, carrying, helping, object_id):
         real_goal = convert_to_real_coordinates([goal_x,goal_y])
         real_next_location = convert_to_real_coordinates([next_loc_x,next_loc_y])
         real_current_location = convert_to_real_coordinates(current_location)
-        output_string = "My goal is (" + str(real_goal[0]) + "," + str(real_goal[1]) + "), I'm moving towards (" + str(real_next_location[0]) + "," + str(real_next_location[1]) + "). My current location is (" + str(real_current_location[0]) + "," + str(real_current_location[1]) + "). "
+        output_string = "My goal is " + str(object_id) + " (" + str(real_goal[0]) + "," + str(real_goal[1]) + "), I'm moving towards (" + str(real_next_location[0]) + "," + str(real_next_location[1]) + "). My current location is (" + str(real_current_location[0]) + "," + str(real_current_location[1]) + "). "
         
         if carrying:
-            output_string += "Carrying object. "
+            output_string += "Carrying object " + str(carrying) + ". "
             
         if helping:
             output_string += "Helping " + str(helping[0]) + ". "
@@ -21,7 +21,7 @@ class MessagePattern:
         
     @staticmethod
     def location_regex():
-        return "My goal is (\(-?\d+\.\d+,-?\d+\.\d+\)), I'm moving towards (\(-?\d+\.\d+,-?\d+\.\d+\)). My current location is (\(-?\d+\.\d+,-?\d+\.\d+\)).( Carrying object.)?( Helping (\w+))?"
+        return "My goal is (\w+) (\(-?\d+\.\d+,-?\d+\.\d+\)), I'm moving towards (\(-?\d+\.\d+,-?\d+\.\d+\)). My current location is (\(-?\d+\.\d+,-?\d+\.\d+\)).( Carrying object (\w+).)?( Helping (\w+))?"
         
     @staticmethod
     def item(robotState,item_idx,object_id, info, robot_id, convert_to_real_coordinates):
@@ -73,7 +73,7 @@ class MessagePattern:
                     else:
                         status_danger += "dangerous"
                         
-                    prob_correct += str(round(roboestimate["item_danger_confidence"][0]*100,1)) + "%"
+                    prob_correct += str(round(roboestimate["item_danger_confidence"]*100,1)) + "%"
                     
                     if robo_idx == len(robotState.item_estimates[item_idx])-1:
                         sensing_robot = robot_id
@@ -91,13 +91,33 @@ class MessagePattern:
             message_text += status_danger + prob_correct + from_estimates
 
         return message_text
+    
+    @staticmethod
+    def translate_item_message(message,robot_id):
+    
+        message_text = ""
+        
+        for rematch in re.finditer(MessagePattern.item_regex_full_alt(),message):
+
+            if rematch.group(5):
+                old_string = rematch.group()
+                new_string = " Status Danger: [" + rematch.group(6) + "], Prob. Correct: [" + rematch.group(7) + "%], From: [" + robot_id + "]"
+                message_text += old_string.replace(rematch.group(5), new_string)
+                
+        
+        return message_text
         
     @staticmethod
     def item_regex_partial():
         return "Object (\d+) \(weight: (\d+)\) Last seen in (\(-?\d+\.\d+,-?\d+\.\d+\)) at (\d+:\d+)"
+        
     @staticmethod
     def item_regex_full():
         return "Object (\d+) \(weight: (\d+)\) Last seen in (\(-?\d+\.\d+,-?\d+\.\d+\)) at (\d+:\d+).( Status Danger: (\[\w+(,\w+)*\]), Prob. Correct: (\[\d+\.\d+%(,\d+\.\d+%)*\]), From: (\[\w+(,\w+)*\]))?"#"Object (\d+) \(weight: (\d+)\) Last seen in (\(-?\d+\.\d+,-?\d+\.\d+\)) at (\d+:\d+).( Status Danger: (\w+), Prob. Correct: (\d+\.\d+)%)?"
+        
+    @staticmethod
+    def item_regex_full_alt():
+        return "Object (\d+) \(weight: (\d+)\) Last seen in (\(-?\d+\.\d+,-?\d+\.\d+\)) at (\d+:\d+).( Status Danger: (\w+), Prob. Correct: (\d+\.\d+)%)?"
     
     @staticmethod
     def sensing_help(object_id):

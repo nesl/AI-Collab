@@ -36,7 +36,7 @@ class AICollabEnv(gym.Env):
     # MAIN & SETUP OF HTTP SERVER #########################################
 
     def __init__(self, use_occupancy, view_radius, client_number, address, skip_frames,
-                 host=None, port=None, cert_file=None, key_file=None, record_to=None):
+                 host=None, port=None, cert_file=None, key_file=None, record_to=None, webcam=False, video_index=0):
 
         self.pcs = set()
         self.relay = MediaRelay()
@@ -204,8 +204,8 @@ class AICollabEnv(gym.Env):
             """
             
             #Whenever we get a message saying an object exists, we just make sure that is reflected here
-            if re.search(MessagePattern.item_regex_full(),message):
-                for rematch in re.finditer(MessagePattern.item_regex_full(),message):
+            if re.search(MessagePattern.item_regex_partial(),message):
+                for rematch in re.finditer(MessagePattern.item_regex_partial(),message):
                     object_id = rematch.group(1)
                     
                     if object_id not in list(self.object_key_to_index.keys()):

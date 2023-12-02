@@ -606,7 +606,7 @@ class Simulation(Controller):
         
         translated_user_magnebots_ids = [self.robot_names_translate[robot_id] for robot_id in self.user_magnebots_ids]
         translated_ai_magnebots_ids = [self.robot_names_translate[robot_id] for robot_id in self.ai_magnebots_ids]
-        self.sio.emit("simulator", (translated_user_magnebots_ids,translated_ai_magnebots_ids, self.options.video_index, extra_config, dateTime))#[*self.user_magnebots_ids, *self.ai_magnebots_ids])
+        self.sio.emit("simulator", (translated_user_magnebots_ids,translated_ai_magnebots_ids, self.options.video_index, extra_config, dateTime, self.timer, self.real_timer))#[*self.user_magnebots_ids, *self.ai_magnebots_ids])
 
     def create_agents(self):
     
@@ -1035,6 +1035,7 @@ class Simulation(Controller):
                     possible_weights = list(range(1,num_users+num_ais+1)) #[1] #list(range(1,num_users+num_ais+1))
                     weights_probs = [100]*len(possible_weights)
                     
+                    """
                     for p_idx in range(len(possible_weights)):
                         if not p_idx:
                             weights_probs[p_idx] /= 2
@@ -1042,6 +1043,9 @@ class Simulation(Controller):
                             weights_probs[p_idx] = weights_probs[p_idx-1]
                         else:
                             weights_probs[p_idx] = weights_probs[p_idx-1]/2
+                    """
+                    
+                    weights_probs = [int(100/len(possible_weights))]*len(possible_weights)
                     
                     if len(possible_weights) == 1:
                         weight = 1
@@ -3138,7 +3142,7 @@ class Simulation(Controller):
     def reset_agents(self):
         all_magnebots = [*self.user_magnebots,*self.ai_magnebots]
         for am in all_magnebots:
-            self.sio.emit("agent_reset", (self.robot_names_translate[str(am.robot_id)],self.timer))
+            self.sio.emit("agent_reset", (self.robot_names_translate[str(am.robot_id)],self.timer,self.real_timer))
 
     def reset_world(self):
         
@@ -3238,6 +3242,7 @@ if __name__ == "__main__":
     parser.add_argument('--save-map', action='store_true', help="Save the occupancy map")
     parser.add_argument('--no-launch-build', action='store_true', help="Do not launch build")
     parser.add_argument('--sim-binary', default='', help="Location of binary if not auto-launched")
+    
     
     
     
