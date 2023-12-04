@@ -67,6 +67,13 @@ class AICollabEnv(gym.Env):
         self.objects_in_goal = []
         self.last_sensed = []
         self.extra = {}
+        self.disabled = False
+        
+        if webcam:
+            self.cap = cv2.VideoCapture(video_index) 
+        else:
+            self.cap = None
+        
         
         #For debugging webrtc
         self.logger = logging.getLogger("pc")
@@ -233,6 +240,11 @@ class AICollabEnv(gym.Env):
 
 
             self.map = json_numpy.loads(object_type_coords_map)
+            
+            if self.cap:
+                _, frame = self.cap.read() 
+            else:
+                frame = None
 
             if self.waiting_output and any(
                     extra_status):  # If the robot is requesting information, save it until the next step
@@ -244,7 +256,8 @@ class AICollabEnv(gym.Env):
                     ActionStatus(ai_status),
                     extra_status,
                     strength,
-                    timer)
+                    timer,
+                    frame)
                 self.waiting_output = False
                 #print("Waiting output", self.waiting_output)
 
@@ -257,12 +270,15 @@ class AICollabEnv(gym.Env):
                 ActionStatus(ai_status),
                 extra_status,
                 strength,
-                timer)
+                timer,
+                frame)
+                
                 
             self.truncated = disable
             
             if disable:
                 print("Robot disabled")
+                self.disabled = True
 
         # Receive status updates of our agent
         self.action_status = -1
@@ -562,6 +578,7 @@ class AICollabEnv(gym.Env):
         info['object_key_to_index'] = self.object_key_to_index
         info['last_sensed'] = self.last_sensed
         info['time'] = float(world_state[7])
+        info['frame'] = world_state[8]
         
 
         
@@ -573,7 +590,6 @@ class AICollabEnv(gym.Env):
         
         if not self.truncated:
             reward = self.reward(world_state,sensing_output)
-
         else:
             reward = 0
         
@@ -722,13 +738,16 @@ class AICollabEnv(gym.Env):
         self.map = np.array([], dtype=np.int16)
         
         print("Waiting for location")
-        while self.map.size == 0:
+        #while self.map.size == 0:
+        while not (self.new_output and np.array(self.new_output[0]).size > 0) or self.map.size == 0 or self.disabled:
             continue
+        self.disabled = False
 
+        #print(self.map, self.new_output[0])
         self.old_output = self.new_output
         print("Got location")
 
-        observation["frame"] = self.map
+        observation["frame"] = self.new_output[0] #self.map
 
         self.messages = []
         self.goal_count = 0
@@ -828,6 +847,7 @@ class AICollabEnv(gym.Env):
         while not self.new_output:  # Sync with simulator
             pass
 
+        #print(self.new_output[0])
         #if action_message and any(self.new_output[5]):
         #    print(self.new_output[5])
 
@@ -882,7 +902,10 @@ class AICollabEnv(gym.Env):
         # print(state, sensing_state)
 
         ego_location = np.where(occupancy_map == 5)
+        
+
         ego_location = np.array([ego_location[0][0], ego_location[1][0]])
+
         
 
         self.own_neighbors_info_entry[2] = float(ego_location[0])

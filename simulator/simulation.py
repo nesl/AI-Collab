@@ -617,21 +617,28 @@ class Simulation(Controller):
         
         self.ai_spawn_positions = self.ai_original_spawn_positions.copy()
         self.user_spawn_positions = self.user_original_spawn_positions.copy()
-        random.shuffle(self.ai_spawn_positions)
-        random.shuffle(self.user_spawn_positions)
+        
+        if self.scenario == 1:
+            random.shuffle(self.ai_spawn_positions)
+            random.shuffle(self.user_spawn_positions)
+            ai_spawn_positions = self.ai_spawn_positions
+            user_spawn_positions = self.user_spawn_positions
+        else:
+            for um in range(num_users):
+                pass
 
     
         #Create ai magnebots
         for ai_idx in range(num_ais):  
             robot_id = self.get_unique_id()                                 
-            self.ai_magnebots.append(Enhanced_Magnebot(robot_id=robot_id, position=self.ai_spawn_positions[ai_idx],image_frequency=ImageFrequency.never, controlled_by='ai'))
-            #self.ai_magnebots.append(Enhanced_Magnebot(robot_id=robot_id, position=self.ai_spawn_positions[ai_idx],image_frequency=ImageFrequency.always, pass_masks=['_img'], controlled_by='ai'))
+            #self.ai_magnebots.append(Enhanced_Magnebot(robot_id=robot_id, position=self.ai_spawn_positions[ai_idx],image_frequency=ImageFrequency.never, controlled_by='ai'))
+            self.ai_magnebots.append(Enhanced_Magnebot(robot_id=robot_id, position=ai_spawn_positions[ai_idx],image_frequency=ImageFrequency.always, pass_masks=['_img'], controlled_by='ai'))
             self.robot_names_translate[str(robot_id)] = chr(ord('A') + ai_idx)
         
         #Create user magnebots
         for us_idx in range(num_users):
             robot_id = self.get_unique_id()
-            self.user_magnebots.append(Enhanced_Magnebot(robot_id=robot_id, position=self.user_spawn_positions[us_idx], image_frequency=ImageFrequency.always, pass_masks=['_img'],key_set=self.proposed_key_sets[us_idx], controlled_by='human'))
+            self.user_magnebots.append(Enhanced_Magnebot(robot_id=robot_id, position=user_spawn_positions[us_idx], image_frequency=ImageFrequency.always, pass_masks=['_img'],key_set=self.proposed_key_sets[us_idx], controlled_by='human'))
             self.robot_names_translate[str(robot_id)] = chr(ord('A') + us_idx + num_ais)
 
 
@@ -868,17 +875,66 @@ class Simulation(Controller):
             #commands = [{"$type": "create_interior_walls", "walls": [{"x": 14, "y": 19}, {"x": 14, "y": 18},{"x": 14, "y": 17},{"x": 14, "y": 16},{"x": 14, "y": 15},{"x": 19, "y": 14},{"x": 18, "y": 14},{"x": 17, "y": 14},{"x": 16, "y": 14},{"x": 15, "y": 14}]}]
             
             
-        number_angles = int(float(self.cfg["goal_radius"])*2*np.pi)
-        
-        for n in range(number_angles):
-            angle_side = 2*n*np.pi/number_angles
-            xn = float(self.cfg["goal_radius"])*np.cos(angle_side)
-            zn = float(self.cfg["goal_radius"])*np.sin(angle_side)
-        
-            commands.append({"$type": "add_position_marker",
-                                     "position": {"x": xn, "y": 0.01, "z": zn},
-                                     "scale": 0.2,
-                                     "shape":"circle"})
+            number_angles = int(float(self.cfg["goal_radius"])*2*np.pi)
+            
+            for n in range(number_angles):
+                angle_side = 2*n*np.pi/number_angles
+                xn = float(self.cfg["goal_radius"])*np.cos(angle_side)
+                zn = float(self.cfg["goal_radius"])*np.sin(angle_side)
+            
+                commands.append({"$type": "add_position_marker",
+                                         "position": {"x": xn, "y": 0.01, "z": zn},
+                                         "scale": 0.2,
+                                         "shape":"circle"})
+                                         
+        elif self.scenario == 2: #Tutorial
+            
+            self.wall_length = [5,10]
+            cell_size = self.cfg['cell_size']
+            wall_width = 0.5
+            
+
+            self.scenario_size = [self.wall_length[0]*num_users,self.wall_length[1]]
+            
+            commands = [#{'$type': 'add_scene','name': 'building_site','url': 'https://tdw-public.s3.amazonaws.com/scenes/linux/2019.1/building_site'}, 
+                        {"$type": "load_scene", "scene_name": "ProcGenScene"},
+                        TDWUtils.create_empty_room(self.scenario_size[0], self.scenario_size[1]),
+                        self.get_add_material("parquet_long_horizontal_clean",
+                                              library="materials_high.json"),
+                        {"$type": "set_screen_size",
+                         "width": width, #640,
+                         "height": height}, #480},
+                        {"$type": "rotate_directional_light_by",
+                         "angle": 30,
+                         "axis": "pitch"}]
+            
+            tutorial_walls = []
+            for um in range(num_users):
+                tutorial_walls.append([[],[]])
+                tutorial_walls[-1][0] = [{"x": self.wall_length[0], "y": idx+1} for idx in range(self.wall_length[1])]
+                tutorial_walls[-1][1] = [{"x": idx+1, "y": self.wall_length[1]} for idx in range(self.wall_length[0])]
+                commands.append({"$type": "create_interior_walls", "walls": [*tutorial_walls[-1][0],*tutorial_walls[-1][1]]})
+                
+                
+            self.walls = [[[wall[0]['x']+wall_width-self.scenario_size[0]/2,wall[0]['y']+wall_width-self.scenario_size[1]/2],[wall[-1]['x']+wall_width-self.scenario_size[0]/2,wall[-1]['y']+wall_width-self.scenario_size[1]/2]] for room in tutorial_walls for wall in room]
+
+            
+            commands.extend([
+                        {"$type": "set_floor_color", "color": {"r": 1, "g": 1, "b": 1, "a": 1}},
+                        {"$type": "set_proc_gen_walls_color", "color": {"r": 1, "g": 1, "b": 0, "a": 1.0}}])
+                
+            tutorial_goal_radius = 1
+            number_angles = int(tutorial_goal_radius*2*np.pi)
+            
+            for n in range(number_angles):
+                angle_side = 2*n*np.pi/number_angles
+                xn = tutorial_goal_radius*np.cos(angle_side)
+                zn = tutorial_goal_radius*np.sin(angle_side)
+            
+                commands.append({"$type": "add_position_marker",
+                                         "position": {"x": xn, "y": 0.01, "z": zn},
+                                         "scale": 0.2,
+                                         "shape":"circle"})
                   
                   
         commands.append({"$type": "send_framerate", "frequency": "always"})                             
@@ -1133,6 +1189,25 @@ class Simulation(Controller):
                                              scale_mass=False,
                                              rotation={"x": 0, "y": 0, "z": 0}))
         
+        
+        elif self.scenario == 2: #Tutorial
+        
+        
+            cell_size = self.cfg['cell_size']
+            
+            for um in range(num_users):
+                c1 = [self.wall_length[0]*um + cell_size*1.5 - self.scenario_size[0]/2, cell_size*1.5 - self.scenario_size[1]/2]
+                c2 = [self.wall_length[0]*um + cell_size*2.5 - self.scenario_size[0]/2, cell_size*7.5 - self.scenario_size[1]/2]
+                c3 = [self.wall_length[0]*um + cell_size*4.5 - self.scenario_size[0]/2, cell_size*7.5 - self.scenario_size[1]/2]
+                
+                commands.extend(self.instantiate_object('iron_box',{"x": c1[0], "y": 0, "z": c1[1]},{"x": 0, "y": 0, "z": 0},1000,2,2, 0))
+                commands.extend(self.instantiate_object('iron_box',{"x": c2[0], "y": 0, "z": c2[1]},{"x": 0, "y": 0, "z": 0},1000,2,1, 1))
+                commands.extend(self.instantiate_object('iron_box',{"x": c3[0], "y": 0, "z": c3[1]},{"x": 0, "y": 0, "z": 0},1000,1,1, 2))
+            
+            
+
+        
+            
         
             
         # Add post-processing.
