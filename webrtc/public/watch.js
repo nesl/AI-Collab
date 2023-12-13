@@ -1,11 +1,19 @@
 let peerConnection;
 
+//TODO: popup x float
+
+var isAtMaxWidth = screen.availWidth - window.innerWidth === 0;
+
+if(! isAtMaxWidth){
+    alert("MAke sure this window is maximized before continuing with the game session, otherwise you may experience difficulties");
+}
 
 //RECORDING EVENTS
 
 let events = [];
 let key_events = [];
 
+/*
 rrwebRecord({
   emit(event, isCheckout) {
     // push event into the events array
@@ -17,6 +25,7 @@ rrwebRecord({
   },
   checkoutEveryNms: 5 * 1000,
 });
+*/
 
 // this function will send events to the backend and reset the events array
 function save() {
@@ -35,9 +44,9 @@ function save() {
 
 const config = {
   iceServers: [
-    //{ 
-    //  urls: ["stun:stun.l.google.com:19302"]
-    //},
+    { 
+      urls: ["stun:stun.l.google.com:19302"]
+    },
     { 
        "urls": "turn:54.85.22.234:3478?transport=tcp",
        "username": config_api.username,
@@ -102,6 +111,9 @@ socket.on("candidate", (id, candidate) => {
 });
 
 
+socket.on('disconnect', function (reason) {
+    console.log('Socket disconnected because of ' + reason);
+});
 
 
 function submitCode(){
@@ -113,7 +125,6 @@ function submitCode(){
 }
 
 socket.on("connect", () => {
-  
   document.getElementById("popup-pass").classList.toggle("active");
 });
 
@@ -123,6 +134,69 @@ socket.on("passcode-rejected", () => {
 
 socket.on("broadcaster", () => {
   socket.emit("watcher", client_number);
+});
+
+var tutorial_client_side = "wait";
+var tutorial_object = "";
+var tutorial_mode = false;
+
+socket.on("tutorial", (state) => {
+  
+  tutorial_mode = true;
+  var popup_text = document.getElementById("popup_text");
+  
+  switch(state){
+    case "move":
+    
+        popup_text.innerHTML = "<h1>Tutorial</h1><span class='br'></span>Welcome to this Tutorial! Throughout the length of this tutorial you will learn how to control a robot so that you can then participate effectively in the collaboration task with your teammates. The objective in this game is to collect only those objects that are dangerous.<ol><li>To move around use the <b>arrow keys</b> in your keyboard.<span class='br'></span><img src='/arrow_keys.png' style='width:20%;height:auto;'/></li><li>Try moving to the middle of the room highlighted by the fire.<span class='br'></span><img src='/fire.gif' style='width:10%;height:auto;'/></li><li>If you ever want to reopen this window just click on the top-right question mark button.<span class='br'></span><img src='/question_mark.png' style='width:10%;height:auto;'/></li></ol>";
+                
+        break;
+    case "move_to_object":
+        
+        popup_text.innerHTML = "<h1>Tutorial</h1><ol><li>Good job! Notice how while moving you may loose balance and fall if you are not careful.<span class='br'></span><img src='/fall.gif' style='width:20%;height:auto;'/></li><li>Also be careful with walls, as you may get stuck if you move too closely to them.<span class='br'></span><img src='/stuck.jpg' style='width:20%;height:auto;'/></li><li>Now let's move to the next highlighted area, we are now to teach you how to sense objects!</li></ol>";
+        break;
+    case "activate_sensor":
+        popup_text.innerHTML = "<h1>Tutorial</h1>Now we are going to activate our sensor to see if the objects next to us are dangerous or not.<ol><li>Use the key <b>W</b> to move up your camera, and <b>S</b> to move down your camera, this will help you see the objects in question.<span class='br'></span><img src='/keyW.png' style='width:5%;height:auto;'/><img src='/headup.gif' style='width:30%;height:auto;'/><img src='/keyS.png' style='width:5%;height:auto;'/><img src='/headdown.gif' style='width:30%;height:auto;'/></li><li>Use now the key <b>Q</b> to sense objects around you. Currently you will obtain measurements of all objects in a radius of " + sensing_distance_limit + " meters of you. The ID of the sensed objects will appear next to each object, if the text is in red, it means your sensor estimates it is dangerous, if it's blue, your sensor estimates such object is benign.<span class='br'></span><img src='/keyQ.png' style='width:5%;height:auto;'/><img src='/sensor.gif' style='width:30%;height:auto;'/></li></ol>";
+        break;
+    case "pickup_object":
+        popup_text.innerHTML = "<h1>Tutorial</h1>Perfect, you should have now information about three objects.<ol><li>You should have that information reflected in your left sidebar.<span class='br'></span><img src='/object_info.png' style='width:20%;height:auto;'/></li><li>Each object has an ID, a weight and a danger status assigned to it. Unfortunately the dangerness sensors each robot has are faulty, and you can only obtain an estimate of the true danger status of such object with a given probability of being correct. In the previous image, this means that while object 2 is detected as benign with a probability of 73.4%, there is a small chance it could be dangerous instead. Each agent has different sensors, so the best approach is to share estimates with each other to identify correctly the dangerous objects.</li><li>For now let's try picking up the object highlighted with the fire whatever is the result of your sensor. For this you will first need to focus on that object and then pick it up. To focus on an object, align the white dot in the middle of your view and press <b>E</b>. If you do it correctly, the ID of the object should appear. You can focus on an object you haven't sensed, but you won't know if it's dangerous or not.<span class='br'></span><img src='/keyE.png' style='width:5%;height:auto;'/><img src='/scan.gif' style='width:30%;height:auto;'/></li><li>Now, you should get close to the object and use either the key <b>A</b> to pick up the object with your left arm, or <b>D</b> to pick up the object with your right arm.<span class='br'></span><img src='/keyA.png' style='width:5%;height:auto;'/><img src='/pickup.gif' style='width:30%;height:auto;'/><img src='/keyD.png' style='width:5%;height:auto;'/></li><li>If you are too far away from the object you want to pick up or in a position where it is not possible to pick up such object, a message will appear indicating such issue. The solution is just to try approaching the object or change your position with respect to the object in question.<span class='br'></span><img src='/fail_pick.gif' style='width:30%;height:auto;'/></li><li>In summary, align the white dot in the middle of your view with the object in question, press <b>E</b>, and then press either <b>A</b> or <b>D</b></li></ol>";
+        break;
+    case "move_to_goal":
+        popup_text.innerHTML = "<h1>Tutorial</h1>Great, now you should move to the goal location.<ol><li>The goal location will always be represented by an area surrounded by red circles.<span class='br'></span><img src='/goal.png' style='width:20%;height:auto;'/></li></ol>";
+        break;
+    case "drop_object":
+        popup_text.innerHTML = "<h1>Tutorial</h1>Now let's just drop the object.<ol><li>You should use the same key you used to pick up the object: if it was the left arm, press the key <b>A</b>, if it was the right arm, press the key <b>D</b>.<span class='br'></span><img src='/keyA.png' style='width:5%;height:auto;'/><img src='/drop.gif' style='width:30%;height:auto;'/><img src='/keyD.png' style='width:5%;height:auto;'/></li></ol>";
+        break;
+    case "move_to_heavy_object":
+        popup_text.innerHTML = "<h1>Tutorial</h1>Oh it seems this object was indeed benign! We should only try collecting dangerous objects. Now let's move to the next highlighted area."
+        break; 
+    case "activate_sensor_heavy":
+        popup_text.innerHTML = "<h1>Tutorial</h1>Now activate your sensor with the key <b>Q</b>."
+        break; 
+    case "move_to_agent":
+        popup_text.innerHTML = "<h1>Tutorial</h1><ol><li>In your left hand sidebar, you will see that the object you just sensed, has a weight of 2, if you try carrying this object you will see that it is heavy for you to carry alone.</li><li>Objects have a weight, and for you to be able to carry an object, your strength needs to match the weight of such object. That strength will increase with the number of agents that are close to you.<span class='br'></span><img src='/strength2.gif' style='width:20%;height:auto;'/></li><li>Agents need to be within " + strength_distance_limit + " meters from you to contribute one unit in strength. You can check how far you are from other agents using the information displayed in the upper part of the left sidebar.<span class='br'></span><img src='/distance.gif' style='width:20%;height:auto;'/></li><li>In this panel you will also note that when agents are too far away even for communication, the entry in this table will be red colored. We will talk more about communication in a moment, now you should ask the other robot for help, so move next to it!</li></ol>"
+        Object.keys(object_html_store).forEach(function(object_key) {
+            if(object_html_store[object_key].style.borderWidth == "thick"){
+                tutorial_object = object_html_store[object_key].children[1].children[0].rows[0].cells[0].textContent;
+            }
+        });
+        
+        break; 
+    case "ask_sensor":
+        let object_num = tutorial_object.match(/Object ([0-9])+/)[1];
+        tutorial_client_side = "ask_for_sensing";
+        popup_text.innerHTML = "<h1>Tutorial</h1>You will now have to communicate with your teammate and see if they can help you right now.<ol><li>To make sure any message you send is received by the intended agent, you must be sure that agent is within " + communication_distance_limit + " meters.</li><li>Use the right sidebar chat to do this. Just write in the bottom input field and press <b>Enter</b> or click on the Send button.<span class='br'></span><img src='/chat.gif' style='width:30%;height:auto;'/></li><li>For now just write the following line of text: <b>Hey, what results did you get for object " + object_num + "?</b></li></ol>"
+        
+        break;    
+    case "end":
+    
+        popup_text.innerHTML = "<h1>Tutorial</h1>Well you finished before them time limit!. You can either play around until that happens or voluntarily end control. You should always end control before the time limit as you have to report all those objects that you found whose weight are greater than the maximum strength you woule ever be able to achieve.<ol><li>To voluntarily end control, just click the corresponding button at the bottom of the right hand sidebar. You will now loose control over your robot and a popup will appear. In the game you may end control at any time if you think you already completed all the objectives.<span class='br'></span><img src='/end_control.png' style='width:10%;height:auto;'/><img src='/end.gif' style='width:30%;height:auto;'/></li><li>The first popup that appears will show a list with all the objects that are heavier than the achievable maximum strength. You will have to select only those that are dangerous based on sensing measurements. If all your teammates choose a particular object and that object is benign, you will all be penalized as if you had carried the object to the goal. If all your teammates choose a particular object that is dangerous, you will all be awarded as if you had carried such object to the goal area. Choose wisely and then submit!<span class='br'></span><img src='/select.png' style='width:30%;height:auto;'/></li><li>After you report the heaviest dangerous objects, or if the time limit arrives, a popup will appear with the results of the game session. Some of the fields will only be updated when all teammates end, so wait for that to happen!<span class='br'></span><img src='/results.png' style='width:30%;height:auto;'/></li><li>You are ready now for the actual game session! Please wait for all your teammates to end the tutorial.</li></ol>"
+    
+        break;                     
+  }
+  
+  document.getElementById("popup-1").classList.add("active");
+  
 });
 
 
@@ -158,6 +232,19 @@ function process_input_code(event){
 
 }
 
+
+let popup_window = document.getElementById("popup-1");
+
+popup_window.addEventListener("keydown", (event) => {
+
+    if(event.key.includes("Enter")){
+		document.getElementById("popup-1").classList.remove("active");
+	}
+
+});
+
+
+
 function removeTags(str) {
     if ((str===null) || (str===''))
         return false;
@@ -170,17 +257,58 @@ function removeTags(str) {
     return str.replace( /(<([^>]+)>)/ig, '');
 }
 
-function reset(){
+//TODO: use the communication distance limit for something
+var map_config = {};
+var communication_distance_limit, strength_distance_limit, sensing_distance_limit;
+var heaviest_objects;
+
+function reset(config_options){
+
+
+    map_config = config_options;
+    tutorial_mode = false;
+    
+    document.getElementById("agent_name").innerText = "Agent " + client_id;
+    for(ob_idx = 0; ob_idx < map_config['all_robots'].length; ob_idx++){ //Remove self
+        if(map_config['all_robots'][ob_idx][0] === client_id){
+            map_config['all_robots'].splice(ob_idx,1);
+            break;
+        }
+    }
+    
+    heaviest_objects = [];
+    
+    communication_distance_limit = removeTags(String(map_config['communication_distance_limit']));
+    
+    communication_distance = document.getElementById("comms_text");
+    if(communication_distance){
+        communication_distance.innerHTML = "Maximum distance for communication: " + communication_distance_limit + ' m';
+    }
+    
+    
+    strength_distance_limit = removeTags(String(map_config['strength_distance_limit']));
+    
+    strength_distance = document.getElementById("distance_text");
+    if(strength_distance){
+        strength_distance.innerHTML = "Maximum distance for carrying objects: " + strength_distance_limit + ' m';
+    }
+    
+    sensing_distance_limit = removeTags(String(map_config['sensing_distance_limit']));
 
     object_list_store = [];
     neighbors_list_store = [];
     object_html_store = {};
     own_neighbors_info_entry = [client_id, 0, 0, 0, -1];
     
+    document.getElementById("popup-report").classList.remove("active");
     document.getElementById("popup-stats").classList.remove("active");
     document.getElementById("popup-stats-content").innerHTML = ""; //"<h1>Stats</h1><br>";
     document.getElementById("command_text").disabled = false;
     document.getElementById("send_command_button").disabled = false;
+    
+    document.getElementById("report-button").disabled = false;
+    document.getElementById("report-button").innerText = "Submit";
+    document.getElementById('report-list').innerHTML = "";
     
     //document.getElementById("reset_button").disabled = false;
     //document.getElementById("reset_button").innerText = "Reset Game";
@@ -277,12 +405,12 @@ function reset(){
         
         const tbl = document.createElement('table');
         const tr1 = tbl.insertRow();
-	const td1 = tr1.insertCell();
-	td1.appendChild(document.createTextNode("Agent " + String(map_config['all_robots'][um_idx][0]) + " (type: " + map_config['all_robots'][um_idx][1] + ")"));
-	
-	const tr2 = tbl.insertRow();
-	const td2 = tr2.insertCell();
-	td2.appendChild(document.createTextNode("(location: Out of Range)"));
+	    const td1 = tr1.insertCell();
+	    td1.appendChild(document.createTextNode("Agent " + String(map_config['all_robots'][um_idx][0]) + " (type: " + map_config['all_robots'][um_idx][1] + ")"));
+	    
+	    const tr2 = tbl.insertRow();
+	    const td2 = tr2.insertCell();
+	    td2.appendChild(document.createTextNode("(location: Out of Range)"));
 	
         label_element.appendChild(tbl);
         
@@ -301,19 +429,19 @@ function reset(){
 
 }
 
-socket.on("agent_reset", () => {
-    reset();
+socket.on("agent_reset", (config_options) => {
+    reset(config_options);
 });
 
 socket.on("sim_crash", () => {
     document.getElementById("popup-warning").classList.add("active");
-    reset();
+    reset(map_config);
 });
 
 
 socket.on("stats", (stats_dict, final) => {
 
-
+    document.getElementById("popup-report").classList.remove("active");
     document.getElementById("popup-stats").classList.add("active");
 
     
@@ -593,8 +721,6 @@ socket.on("stats", (stats_dict, final) => {
 });
 
 
-var map_config = {};
-
 socket.on("watcher", (robot_id_r, config_options) => {
 
     pass_input_text.removeEventListener("keydown", process_input_code);
@@ -603,26 +729,9 @@ socket.on("watcher", (robot_id_r, config_options) => {
     togglePopup("popup-1");
 
     client_id = robot_id_r;
-    map_config = config_options;
-    
-    document.getElementById("agent_name").innerText = "Agent " + client_id;
-    for(ob_idx = 0; ob_idx < map_config['all_robots'].length; ob_idx++){ //Remove self
-        if(map_config['all_robots'][ob_idx][0] === client_id){
-            map_config['all_robots'].splice(ob_idx,1);
-            break;
-        }
-    }
-    
-    var communication_distance_limit = document.getElementById("comms_text");
-    
-    communication_distance_limit.innerHTML = "Maximum distance for communication: " + removeTags(String(map_config['communication_distance_limit'])) + ' m';
-    
-    var strength_distance_limit = document.getElementById("distance_text");
-    
-    strength_distance_limit.innerHTML = "Maximum distance for carrying objects: " + removeTags(String(map_config['strength_distance_limit'])) + ' m';
     
     
-    reset();
+    reset(config_options);
 });
 
 simulator_timer  = -1;
@@ -847,10 +956,14 @@ function update_objects_info(object_key, timer, danger_data, position, weight, c
 	
  	var object_info_div = document.getElementById("object_entries");
 
-        var collapsible_tag = document.getElementById("collapsible_object_tag");
+    var collapsible_tag = document.getElementById("collapsible_object_tag");
 	
 	if(convert_coordinates){
 		position = convert_to_real_coordinates(position);
+	}
+	
+	if((weight >= map_config['all_robots'].length+2 || (tutorial_mode && weight >= 3)) && ! heaviest_objects.includes(object_key)){
+    	heaviest_objects.push(object_key);
 	}
 	
 	var danger_changed = false;
@@ -890,17 +1003,19 @@ function update_objects_info(object_key, timer, danger_data, position, weight, c
  			    
  			    danger_changed = false;
  			    
-                const x = Math.pow(position[0],2);
-                const y = Math.pow(position[1],2);
-            
-                var distance = Math.sqrt(x+y);
- 			    
  			    label_element.children[0].rows[0].cells[0].textContent = "";
  			    
- 			    if(distance < parseFloat(map_config["goal_radius"])){
- 			        label_element.children[0].rows[0].cells[0].textContent = "*";
+ 			    for(let midx in map_config["goal_radius"]){
+                    const x = Math.pow(position[0]-map_config["goal_radius"][midx][1][0],2);
+                    const y = Math.pow(position[1]-map_config["goal_radius"][midx][1][1],2);
+                
+                    var distance = Math.sqrt(x+y);
+     			    
+     			    if(distance < map_config["goal_radius"][midx][0]){
+     			        label_element.children[0].rows[0].cells[0].textContent = "*";
+     			        break;
+     			    }
  			    }
- 			    
  			    label_element.children[0].rows[0].cells[0].textContent += "Object " + removeTags(String(object_list_store[ob_idx][0]) + " (weight: " + String(object_list_store[ob_idx][1]) + ")");
  			    const divmod_results = divmod(object_list_store[ob_idx][5], 60);
 	            const divmod_results2 = divmod(divmod_results[1],1);
@@ -948,18 +1063,19 @@ function update_objects_info(object_key, timer, danger_data, position, weight, c
 	    const tbl = document.createElement('table');
 	    const tr1 = tbl.insertRow();
 	    const td1 = tr1.insertCell();
+        td1.innerHTML = "";  
  			    
- 			    
-	    const x = Math.pow(position[0],2);
-        const y = Math.pow(position[1],2);
-    
-        var distance = Math.sqrt(x+y);
-        
-        td1.innerHTML = "";
-        
-        if(distance < parseFloat(map_config["goal_radius"])){
-	        td1.innerHTML = "*";
-	    }
+	    for(let midx in map_config["goal_radius"]){
+            const x = Math.pow(position[0]-map_config["goal_radius"][midx][1][0],2);
+            const y = Math.pow(position[1]-map_config["goal_radius"][midx][1][1],2);
+                
+            var distance = Math.sqrt(x+y);
+     			    
+     		if(distance < map_config["goal_radius"][midx][0]){
+     		    td1.innerHTML = "*";
+  			    break;
+ 		    }
+        }
                 
 	    td1.innerHTML += "Object " + removeTags(String(object_key) + " (weight: " + String(weight) + ")");
 	    
@@ -1227,6 +1343,55 @@ function sendCommand() {
 	
 	
 	    newMessage(final_string, client_id);
+	    
+	    var popup_text = document.getElementById("popup_text");
+
+        switch(tutorial_client_side){
+        
+            case "ask_for_sensing":
+            
+                let object_num = tutorial_object.match(/Object ([0-9])+/)[1];
+                
+                if(final_string.includes("Hey, what results did you get for object " + object_num + "?")){
+                    tutorial_client_side = "send_object_info";
+                    
+                    popup_text.innerHTML = "<h1>Tutorial</h1>Good, we should also try exchanging our results with our teammate to get a better sense of the dangerness of the object. There is an easy way of changing information about objects:<ol><li>Select the desired object from the list in your left sidebar.<span class='br'></span><img src='/object_chosen.gif' style='width:30%;height:auto;'/></li><li>Now click on the pattern substitution button in the right hand sidebar and send the message<span class='br'></span><img src='/object_write.gif' style='width:30%;height:auto;'/></li></ol>";
+                    
+                    document.getElementById("popup-1").classList.add("active");
+                }
+                
+                break;
+            case "send_object_info":
+            
+                if(final_string.includes(tutorial_object)){
+                    tutorial_client_side = "ask_for_help";
+                    document.getElementById("popup-1").classList.add("active");
+                    popup_text.innerHTML = "<h1>Tutorial</h1>Now let's ask our teammate for help.<ol><li>Just send the next line of text: <b>Yes, can you help me carry that object?</b></li></ol>";
+                }
+                break;
+            case "ask_for_help":
+                if(final_string.includes("Yes, can you help me carry that object?")){
+                    document.getElementById("popup-1").classList.add("active");
+                    if(heaviest_objects){
+                        tutorial_client_side = "exchange_info";
+                        popup_text.innerHTML = "<h1>Tutorial</h1>Great, now your teammate should have expressed their willingness to help you, but before anything else, you should always be sharing with your teammates any information about those heavy objects that not even with the support of the entire team would you be able to carry them. Concretely for this tutorial, those would be all objects with a weight of 3. In the end you will have to report all those objects that are also dangerous.<ol><li>Use the object information exchange technique seen previously to communicate to your teammate about object " + String(heaviest_objects[0]) +  " that has a weight too heavy even for both of you.</li></ol>";
+                    } else{
+                        popup_text.innerHTML = "<h1>Tutorial</h1>Try using your sensor to first find the object with weight 3 and then repeat the last action:<ol><li>Just send the next line of text <b>Yes, can you help me carry that object?</b></li></ol>"
+                    }
+                }
+                
+                break;
+            case "exchange_info":
+                if(final_string.includes("Object " + String(heaviest_objects[0]))){
+                    tutorial_client_side = "end";
+                    document.getElementById("popup-1").classList.add("active");
+                    popup_text.innerHTML = "<h1>Tutorial</h1>Now let's try carrying object " + object_num + " with the help of our teammate.<ol><li>Move next to the location of that heavy object and wait there for your teammate</li><li>Pick up the object when your strength increases to 2 and move it to the goal area. Your teammate will follow you, but have patience as it may not move as fast as you.</li><li>If your strength decreases, you will automatically drop the object, so you will have to wait again for your teammate in order to carry it again.</li></ol>";
+                    break;
+                }
+            default:
+                break;
+            
+        }
 
 	    if(final_string.includes("I will help ")){
 		    console.log(help_requests)
@@ -1297,8 +1462,14 @@ function sendCommand() {
 socket.on("message", (message, timestamp, id) => {
 	console.log("Received message");
 	newMessage(message, id);
-
 	
+	let object_info = tutorial_object.match(/Object ([0-9]+) \(weight: ([0-9]+)\)/);
+	
+	if(object_info && (parseInt(object_info[2]) >= map_config['all_robots'].length+2 || (tutorial_mode && parseInt(object_info[2]) >= 3)) && ! heaviest_objects.includes(object_info[1])){
+	    heaviest_objects.push(object_info[1]);
+	}
+
+	/*
 	if(message.includes("I need help with ")){
 		help_requests[id] = message.substring(25);
 	}
@@ -1309,6 +1480,7 @@ socket.on("message", (message, timestamp, id) => {
 		socket.emit("neighbors_update", String(id), get_corrected_neighbors_info(String(id)));
 		
 	}
+	*/
 });
 
 function get_corrected_neighbors_info(target_id){
@@ -1327,6 +1499,57 @@ function get_corrected_neighbors_info(target_id){
     return corrected_neighbors_info;
 }
 
+function reportObjects(){
+    document.getElementById("popup-report").classList.add("active");
+    
+    const report_list = document.getElementById('report-list');
+    
+    for(ho_idx = 0; ho_idx < heaviest_objects.length; ho_idx++){
+        var div_element = document.createElement("div");
+        div_element.setAttribute("class", "wrapper");
+        var input_element = document.createElement("input");
+        input_element.setAttribute("type", "checkbox");
+        input_element.setAttribute("id", heaviest_objects[ho_idx]);
+        input_element.setAttribute("name", "report_objects");
+        input_element.setAttribute("value", heaviest_objects[ho_idx]);
+
+        var label_element = document.createElement("label");
+        label_element.setAttribute("for", heaviest_objects[ho_idx]);
+        label_element.style.color = "black";
+        label_element.appendChild(document.createTextNode(heaviest_objects[ho_idx]));
+        
+        
+        div_element.appendChild(input_element);	
+        div_element.appendChild(label_element);
+        report_list.appendChild(div_element);
+    	
+    }
+    
+}
+
+function submitReport(){
+
+    var report_objects = document.getElementsByName('report_objects');
+    
+    var report_array = [];
+	for(i = 0; i < report_objects.length; i++) {
+		if(report_objects[i].checked){
+			report_array.push(report_objects[i].value);
+		}
+	}
+	
+	document.getElementById("report-button").disabled = true;
+    document.getElementById("report-button").textContent = "Waiting for other players...";
+	
+	socket.emit("report", report_array)
+	
+	disableRobot();
+
+    
+
+}
+
+
 function disableRobot(){
     socket.emit("disable");
 }
@@ -1341,4 +1564,6 @@ socket.on("ping", () => {
     socket.emit("pong", Date.now());
 
 });
+
+
 

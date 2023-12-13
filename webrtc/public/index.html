@@ -78,7 +78,7 @@
 	
 		<p style="color:white;"> <b>Controls</b><br><b>Arrow Keys</b> to advance<br><b>A</b> to grab/drop object with left arm<br><b>D</b> to grab/drop object with right arm<br><b>S</b> to rotate camera downwards<br><b>W</b> to rotate camera upwards<br><b>Q</b> to take sensing action<br><b>E</b> to focus in object (you need this to then grab an object)</p>
 		
-	<button id="leave_button" class="end" style="margin-bottom: 150px;"  onclick="disableRobot()">End control</button>
+	<button id="leave_button" class="end" style="margin-bottom: 150px;"  onclick="reportObjects()">End control</button>
 	</div>
 	
 
@@ -100,6 +100,7 @@
 	        	<div class="overlay"></div>
 	        	<div class="content">
 	        		<div class="close-btn" onclick="togglePopup('popup-1')">&times;</div>
+	        		<div id="popup_text">
 	        		<h1> Instructions </h1> <br>
 	        		Sense objects and bring the dangerous objects into the middle of the room. When you sense an object you will see whether the object is dangerous or benign according to the color of the object ID, and in your sidebar you will be able to consult the object, as well as the accuracy of the prediction. Objects have a weight associated with them, and you will only be able to carry those that match your strength level. Strength level is modified by the amount of robots that are close to you and you may only be able to carry a heavy object when you have a given quantity of robots near you. The game will end if you try to carry a dangerous object without the required strength. You need to compare estimates of danger level in order to get the correct dangerous objects. You can talk with your fellow robots through the sidebar chat. <br>
 	        		<h1> Controls </h1> <br>
@@ -122,7 +123,7 @@
 	    			<h1>Sensor Measurements</h1><br>
 	    			Each object has a true danger status (either benign or dangerous). When a robot senses an object for the first time, it first samples a probability of being correct from a uniform distribution, and then applies that probability to a weighted choice between reporting the true danger status value and reporting a false value. This probability of being corrected is shown for each object, as well as the final result of the choice.
 	    			
-	    			
+	    			</div>
 	        		</div>
 	        		
 		
@@ -143,6 +144,20 @@
 	<div class="popup" id="popup-stats">
 				<div class="overlay"></div>
 	        	<div class="content" id="popup-stats-content">
+
+	        	
+	        	</div>
+	        	
+	
+	</div>
+	
+	<div class="popup" id="popup-report">
+				<div class="overlay"></div>
+	        	<div class="content" id="popup-report-content">
+	        	<h1>Dangerous Objects Report</h1>
+	        	<p>Select all those objects that are dangerous but you could not carry as a team (you can also select none). You will be awarded as a team for corect guesses and penalized for incorrect ones:</p>
+	        	<div id="report-list"></div>
+	        	<button onclick="submitReport()" id="report-button">Submit</button>
 
 	        	
 	        	</div>

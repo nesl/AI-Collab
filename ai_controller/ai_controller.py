@@ -15,6 +15,7 @@ from gym_collab.envs.action import Action
 from llm_control import LLMControl
 from deepq_control import DeepQControl
 from heuristic_control import HeuristicControl
+from tutorial_control import TutorialControl
 
 parser = argparse.ArgumentParser(
     description="AI Controller"
@@ -188,7 +189,7 @@ class RobotState:
         self.object_held = object_held
         self.items = []
         self.item_estimates = {}
-        self.robots = [{"neighbor_type": meta_robots[n][1], "neighbor_location": [-1,-1], "last_seen_location": []} for n in range(len(meta_robots))]
+        self.robots = [{"neighbor_type": meta_robots[n][1], "neighbor_location": [-1,-1], "last_seen_location": []} for n in range(len(meta_robots))] # 0 if human, 1 if ai
         self.strength = 1
         self.map_metadata = {}
         
@@ -288,6 +289,8 @@ while True:
             print("ROLE:", args.role, "PLANNING:", args.planning)
         elif args.control == 'deepq':
             deepq_control = DeepQControl(observation,device,num_steps)
+        elif args.control == 'tutorial':
+            t_control = TutorialControl(num_steps, env.robot_id, env)
         just_starting = False
     
     if args.message_loop:
@@ -295,6 +298,7 @@ while True:
     else:
         num_robots = env.action_space["robot"].n-1
     
+    print(env.neighbors_info)
     robotState = RobotState(observation['frame'].copy(), 0, env.neighbors_info)
     #observation, reward, terminated, truncated, info = env.step(17)
     done = False
@@ -331,6 +335,8 @@ while True:
         h_control.start()
     elif args.control == 'deepq':
         action["action"] = deepq_control.start(observation)
+    elif args.control == 'tutorial':
+        t_control.start(robotState)
 
     last_high_action = action["action"]
 
@@ -521,6 +527,13 @@ while True:
                         last_high_action = action["action"]
                         action["action"] = deepq_control.control(reward, terminated, truncated, robotState, action, step_count, ego_location)
 
+                        if action["action"] < 0:
+                            break
+                            
+                    elif args.control == 'tutorial':
+                        action["action"],action["message"],terminated_tmp = t_control.planner_sensing(robotState, process_reward, step_count, terminated or truncated, next_observation, info, messages)
+                        action["robot"] = 0
+                        
                         if action["action"] < 0:
                             break
                             

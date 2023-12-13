@@ -291,10 +291,11 @@ class AICollabEnv(gym.Env):
 
         self.agent_reset = False
         # Reset agent
-
         @self.sio.event
-        def agent_reset():
+        def agent_reset(config):
             self.agent_reset = True
+            self.map_config = config
+            self.disabled = False
             print("Agent reset")
             
         @self.sio.event
@@ -657,6 +658,16 @@ class AICollabEnv(gym.Env):
     def reset(self, seed=None, options=None):
 
         super().reset(seed=seed)
+        
+        self.sio.emit("disable")
+        self.sio.emit("reset") #self.sio.emit("reset_ai")
+        print("Reseting agent")
+        while not self.agent_reset:
+            continue
+
+        self.agent_reset = False
+        
+        
         map_size = self.map_config['num_cells'][0]
         
         self.truncated = False
@@ -699,7 +710,7 @@ class AICollabEnv(gym.Env):
             elif map_coordinates[mc_idx] < 0:
                 map_coordinates[mc_idx] -= half_cell 
         
-        self.goal_coords = [(x,y) for x,x_coord in enumerate(map_coordinates) for y,y_coord in enumerate(map_coordinates) if np.linalg.norm([x_coord,y_coord]) <= self.map_config['goal_radius']]
+        self.goal_coords = [(x,y) for x,x_coord in enumerate(map_coordinates) for y,y_coord in enumerate(map_coordinates) if any(np.linalg.norm(np.array([x_coord,y_coord]) - np.array(goal[1])) <= goal[0] for goal in self.map_config['goal_radius'])]
         
 
         
@@ -722,11 +733,12 @@ class AICollabEnv(gym.Env):
         self.internal_state = [self.State.take_action, self.State.take_sensing_action]
         self.internal_data = {}
         self.object_info = []
-        self.neighbors_info = [[um[0], 0 if um[1] == 'human' else 1,0,0,-1] for um in self.map_config['all_robots']]
+        self.neighbors_info = [[um[0], 0 if um[1] == 'human' else 1,0,0,-1] for um in self.map_config['all_robots'] if um[0] != self.robot_id]
         self.robot_key_to_index = {self.neighbors_info[i][0]:i for i in range(len(self.neighbors_info))}
         self.own_neighbors_info_entry = [self.robot_id, 1, 0, 0, -1]
         self.last_sensed = []
 
+        '''
         self.sio.emit("disable")
         self.sio.emit("reset") #self.sio.emit("reset_ai")
         print("Reseting agent")
@@ -734,14 +746,15 @@ class AICollabEnv(gym.Env):
             continue
 
         self.agent_reset = False
+        '''
 
         self.map = np.array([], dtype=np.int16)
-        
+        #pdb.set_trace()
         print("Waiting for location")
         #while self.map.size == 0:
         while not (self.new_output and np.array(self.new_output[0]).size > 0) or self.map.size == 0 or self.disabled:
             continue
-        self.disabled = False
+        
 
         #print(self.map, self.new_output[0])
         self.old_output = self.new_output

@@ -390,6 +390,10 @@ function manualReset(){
   socket.emit("reset");
 }
 
+function manualResetTutorial(){
+  socket.emit("reset_tutorial");
+}
+
 function removeTags(str) {
     if ((str===null) || (str===''))
         return false;

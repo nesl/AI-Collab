@@ -80,7 +80,7 @@ const { exec } = require("child_process");
 var window_name = '';
 
 var char_replacement = [{'Up':'Up','Down':'Down','Left':'Left','Right':'Right'},{'Up':'W','Down':'S','Left':'A','Right':'D'}];
-var clients_ids = [], user_ids_list = [], ai_ids_list = [], ai_ids = [], all_ids = [], all_ids_list = [], stats = {}, saved_events = [], saved_key_strokes = [];
+var clients_ids = [], user_ids_list = [], ai_ids_list = [], ai_ids = [], all_ids = [], all_ids_list = [], stats = {}, saved_events = [], saved_key_strokes = [], saved_tutorial_state = [];
 var init_xdotool = false;
 var video_idx_broadcaster = 0;
 var past_timer = 0, past_timer2 = 0;
@@ -112,6 +112,9 @@ function simulator_id_to_socket(simulator_id){
 
 io.sockets.on("error", e => console.log(e));
 io.sockets.on("connection", socket => { //When a client connects
+
+  //console.log("connected!!", socket.id);
+
   socket.on("broadcaster_load", () => {
     console.log("broadcaster_log", video_idx_broadcaster, socket.id)
     socket.emit("simulator", video_idx_broadcaster, map_config);
@@ -150,8 +153,14 @@ io.sockets.on("connection", socket => { //When a client connects
 		
 			socket.emit("watcher", user_ids_list[client_number-1], map_config);
 			
+			if(saved_tutorial_state[client_number-1]){
+			    socket.emit("tutorial", saved_tutorial_state[client_number-1]);
+			    saved_tutorial_state[client_number-1] = null;
+			}
+			
 			time_sync[client_number-1] = {"offset":Date.now(), "latency":0};
 			socket.emit("ping");
+			
 	    }
     } else{
     	socket.emit("passcode-rejected");
@@ -215,6 +224,7 @@ io.sockets.on("connection", socket => { //When a client connects
     all_ids = Array.apply(null, Array(ai_ids_list.length+user_ids_list.length));
     saved_events = Array.apply(null, Array(user_ids_list.length));
     time_sync = Array.apply(null, Array(ai_ids_list.length+user_ids_list.length));
+    saved_tutorial_state = Array.apply(null, Array(user_ids_list.length));
 
     dateTime = log_file_name;
     
@@ -246,6 +256,10 @@ io.sockets.on("connection", socket => { //When a client connects
 
     	socket.to(simulator).emit("reset"); //, socket_to_simulator_id(socket.id));
 	} 
+  });
+  
+  socket.on("reset_tutorial", () =>{
+    socket.to(simulator).emit("reset_tutorial");
   });
   
    socket.on("reset_ai", () => {
@@ -325,9 +339,11 @@ io.sockets.on("connection", socket => { //When a client connects
 	}
   });
   
-  socket.on("agent_reset", (magnebot_id, timer, true_time) => {
+  socket.on("agent_reset", (magnebot_id, timer, true_time, config) => {
   
   	reset_count = 0;
+  	
+  	map_config = config;
   	
     if(disable_list.includes(magnebot_id)){
 
@@ -335,7 +351,7 @@ io.sockets.on("connection", socket => { //When a client connects
 		disable_list.splice(disable_index, 1);
     }
 
-    socket.to(simulator_id_to_socket(magnebot_id)).emit("agent_reset");
+    socket.to(simulator_id_to_socket(magnebot_id)).emit("agent_reset", map_config);
     
     
 
@@ -522,6 +538,17 @@ io.sockets.on("connection", socket => { //When a client connects
 
   });
   
+  socket.on("tutorial", (magnebot_id, state) => {
+    if(simulator_id_to_socket(magnebot_id)){
+  	    socket.to(simulator_id_to_socket(magnebot_id)).emit("tutorial", state);
+  	} else{
+  	    uidx = user_ids_list.indexOf(magnebot_id);
+  	    saved_tutorial_state[uidx] = state;
+  	}
+  	
+
+  });
+  
   socket.on("log_user_events", (events) => {
   
     const arr_idx = clients_ids.indexOf(socket.id);
@@ -561,6 +588,11 @@ io.sockets.on("connection", socket => { //When a client connects
         });
     }
     
+  });
+  
+  socket.on("report", (object_list) => {
+  
+    socket.to(simulator).emit("report", object_list, socket_to_simulator_id(socket.id));
   });
   
 });
