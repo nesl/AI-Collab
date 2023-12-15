@@ -337,6 +337,7 @@ while True:
         action["action"] = deepq_control.start(observation)
     elif args.control == 'tutorial':
         t_control.start(robotState)
+        print("INITIALIAZED")
 
     last_high_action = action["action"]
 
@@ -531,6 +532,8 @@ while True:
                             break
                             
                     elif args.control == 'tutorial':
+                    
+                    
                         action["action"],action["message"],terminated_tmp = t_control.planner_sensing(robotState, process_reward, step_count, terminated or truncated, next_observation, info, messages)
                         action["robot"] = 0
                         

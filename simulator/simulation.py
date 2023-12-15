@@ -295,7 +295,7 @@ class Simulation(Controller):
         print("Creating scene")
         self.communicate(commands)
         print("Created scene")
-
+        
         self.static_occupancy_map.generate(cell_size=self.cfg['cell_size']) #Get occupancy map only with walls
         
         self.communicate([])
@@ -330,7 +330,6 @@ class Simulation(Controller):
         
         self.communicate(commands)
         print("Populated world")
-
 
         if self.options.log_state:
             log_dir = './log/'
@@ -962,6 +961,7 @@ class Simulation(Controller):
                                          
         elif self.scenario == 2: #Tutorial
             
+            #self.state_machine = [self.Tutorial_State.move_to_agent] * (num_users+num_ais)
             self.state_machine = [self.Tutorial_State.start] * (num_users+num_ais)
             self.wall_length = [5,10]
             cell_size = self.cfg['cell_size']
@@ -1280,10 +1280,10 @@ class Simulation(Controller):
                 c3 = [self.wall_length[0]*um + cell_size*3.5 - self.scenario_size[0]/2, cell_size*7.5 - self.scenario_size[1]/2]
                 c4 = [self.wall_length[0]*um + cell_size*3 - self.scenario_size[0]/2, cell_size*7.8 - self.scenario_size[1]/2]
                 
-                commands.extend(self.instantiate_object('iron_box',{"x": c1[0], "y": 0, "z": c1[1]},{"x": 0, "y": 0, "z": 0},1000,2,2, um*3))
-                commands.extend(self.instantiate_object('iron_box',{"x": c2[0], "y": 0, "z": c2[1]},{"x": 0, "y": 0, "z": 0},1000,2,1, 1 + um*3))
-                commands.extend(self.instantiate_object('iron_box',{"x": c3[0], "y": 0, "z": c3[1]},{"x": 0, "y": 0, "z": 0},1000,1,1, 2 + um*3))
-                commands.extend(self.instantiate_object('iron_box',{"x": c4[0], "y": 0, "z": c4[1]},{"x": 0, "y": 0, "z": 0},1000,2,3, 3 + um*3))
+                commands.extend(self.instantiate_object('iron_box',{"x": c1[0], "y": 0, "z": c1[1]},{"x": 0, "y": 0, "z": 0},1000,2,2, um*4))
+                commands.extend(self.instantiate_object('iron_box',{"x": c2[0], "y": 0, "z": c2[1]},{"x": 0, "y": 0, "z": 0},1000,2,1, 1 + um*4))
+                commands.extend(self.instantiate_object('iron_box',{"x": c3[0], "y": 0, "z": c3[1]},{"x": 0, "y": 0, "z": 0},1000,1,1, 2 + um*4))
+                commands.extend(self.instantiate_object('iron_box',{"x": c4[0], "y": 0, "z": c4[1]},{"x": 0, "y": 0, "z": 0},1000,2,3, 3 + um*4))
             
             
 
@@ -1535,7 +1535,7 @@ class Simulation(Controller):
     def keyboard_output(self, key_pressed, key_hold, extra_commands, duration, keys_time_unheld, all_ids, messages, fps):
     
         if len(self.user_magnebots) <= 2:
-            max_time_unheld = 3
+            max_time_unheld = 2
         else:
             max_time_unheld = 10#10#5 #3
 
@@ -2292,14 +2292,14 @@ class Simulation(Controller):
                         
                 elif self.state_machine[um_idx] == self.Tutorial_State.activate_sensor:
                 
-                    o_translated1 = str(1+um_idx*3)
-                    o_translated2 = str(2+um_idx*3)
+                    o_translated1 = str(1+um_idx*4)
+                    o_translated2 = str(2+um_idx*4)
                     
                     if o_translated1 in um.item_info and "sensor" in um.item_info[o_translated1] and o_translated2 in um.item_info and "sensor" in um.item_info[o_translated2]:
                     
                         self.state_machine[um_idx] = self.Tutorial_State.pickup_object
                         
-                        object_id = list(self.object_names_translate.keys())[list(self.object_names_translate.values()).index(str(2+um_idx*3))]
+                        object_id = list(self.object_names_translate.keys())[list(self.object_names_translate.values()).index(str(2+um_idx*4))]
                         xn = float(self.object_manager.transforms[object_id].position[0] + 0.5)
                         zn = float(self.object_manager.transforms[object_id].position[2])
                         
@@ -2311,7 +2311,7 @@ class Simulation(Controller):
                         
                 elif self.state_machine[um_idx] == self.Tutorial_State.pickup_object:
                 
-                    object_id = list(self.object_names_translate.keys())[list(self.object_names_translate.values()).index(str(2+um_idx*3))]
+                    object_id = list(self.object_names_translate.keys())[list(self.object_names_translate.values()).index(str(2+um_idx*4))]
                             
                     for arm in [Arm.left,Arm.right]:
                         if object_id in um.dynamic.held[arm]:
@@ -2332,7 +2332,7 @@ class Simulation(Controller):
                     xn = self.wall_length[0]*um_idx + self.wall_length[0]/2 -self.scenario_size[0]/2
                     zn = self.wall_length[1]/2 -self.scenario_size[1]/2
                     
-                    object_id = list(self.object_names_translate.keys())[list(self.object_names_translate.values()).index(str(2+um_idx*3))]
+                    object_id = list(self.object_names_translate.keys())[list(self.object_names_translate.values()).index(str(2+um_idx*4))]
                     
                     for arm in [Arm.left,Arm.right]:
                         if object_id in um.dynamic.held[arm]:
@@ -2346,7 +2346,7 @@ class Simulation(Controller):
                 
                     still_carrying = False
                     
-                    object_id = list(self.object_names_translate.keys())[list(self.object_names_translate.values()).index(str(2+um_idx*3))]
+                    object_id = list(self.object_names_translate.keys())[list(self.object_names_translate.values()).index(str(2+um_idx*4))]
                     
                     for arm in [Arm.left,Arm.right]:
                         if object_id in um.dynamic.held[arm]:
@@ -2378,7 +2378,7 @@ class Simulation(Controller):
                         
                 elif self.state_machine[um_idx] == self.Tutorial_State.activate_sensor_heavy:
                 
-                    o_translated = str(um_idx*3)
+                    o_translated = str(um_idx*4)
                     
                     if o_translated in um.item_info and "sensor" in um.item_info[o_translated]:
                         
@@ -2408,13 +2408,16 @@ class Simulation(Controller):
                     xn = self.wall_length[0]*um_idx + self.wall_length[0]/2 -self.scenario_size[0]/2
                     zn = self.wall_length[1]/2 -self.scenario_size[1]/2
                     
-                    object_id = list(self.object_names_translate.keys())[list(self.object_names_translate.values()).index(str(um_idx*3))]
+                    
+                    
+                    object_id = list(self.object_names_translate.keys())[list(self.object_names_translate.values()).index(str(um_idx*4))]
                     
                     still_carrying = False
                     for arm in [Arm.left,Arm.right]:
                         if object_id in um.dynamic.held[arm]:
                             still_carrying = True
                     
+                    #print(still_carrying, self.object_manager.transforms[object_id].position[[0,2]], np.linalg.norm(np.array([xn,zn]) - self.object_manager.transforms[object_id].position[[0,2]]))
                     if not still_carrying and np.linalg.norm(np.array([xn,zn]) - self.object_manager.transforms[object_id].position[[0,2]]) < 1: #Arrived to location
                         self.sio.emit("tutorial", (self.robot_names_translate[str(all_magnebots[um_idx].robot_id)], "end"))
                         self.state_machine[um_idx] = self.Tutorial_State.end
@@ -3523,6 +3526,7 @@ class Simulation(Controller):
                     self.reset_agents()
                 
                 all_ids = [*self.user_magnebots_ids,*self.ai_magnebots_ids]
+                all_magnebots = [*self.user_magnebots,*self.ai_magnebots]
                 #Include the positions of other magnebots in the view of all user magnebots
                 for um in self.user_magnebots:
                     um.screen_positions["position_ids"].extend(list(range(0,len(all_ids))))

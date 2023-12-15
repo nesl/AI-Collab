@@ -551,6 +551,7 @@ io.sockets.on("connection", socket => { //When a client connects
   
   socket.on("log_user_events", (events) => {
   
+    //console.log("Saving events!", events)
     const arr_idx = clients_ids.indexOf(socket.id);
   
     if(command_line_options.log && arr_idx >= 0){

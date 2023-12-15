@@ -232,10 +232,9 @@ label {
 
 .popup .close-btn {
   cursor:pointer;
-  position:absolute;
-  right:20px;
+  position:sticky;
+
   top:20px;
-  width:30px;
   height:30px;
   background:#222;
   color:#fff;
@@ -243,7 +242,9 @@ label {
   font-weight:600;
   line-height:30px;
   text-align:center;
-  border-radius:50%;
+ 
+  width:max-content;
+  margin-left:auto;
 }
 
 .popup.active .overlay {

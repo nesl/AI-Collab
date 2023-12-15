@@ -90,7 +90,7 @@
 	<div class="entry" id="collapsible_nearby_team_members">
 	
 	</div>
-	<h1 class="collapsible" onclick="fill_info()" id="collapsible_object_tag">Object Information (0)</h1>
+	<h1 class="collapsible" id="collapsible_object_tag">Object Information (0)</h1>
 	<div  id="collapsible_object_information">
 	<input id="search_input" type="text" placeholder="Search...">
 	<div class="entry_object" id="object_entries"></div>
@@ -98,30 +98,11 @@
 	</div>
 	<div class="popup" id="popup-1">
 	        	<div class="overlay"></div>
+	        	
 	        	<div class="content">
 	        		<div class="close-btn" onclick="togglePopup('popup-1')">&times;</div>
 	        		<div id="popup_text">
-	        		<h1> Instructions </h1> <br>
-	        		Sense objects and bring the dangerous objects into the middle of the room. When you sense an object you will see whether the object is dangerous or benign according to the color of the object ID, and in your sidebar you will be able to consult the object, as well as the accuracy of the prediction. Objects have a weight associated with them, and you will only be able to carry those that match your strength level. Strength level is modified by the amount of robots that are close to you and you may only be able to carry a heavy object when you have a given quantity of robots near you. The game will end if you try to carry a dangerous object without the required strength. You need to compare estimates of danger level in order to get the correct dangerous objects. You can talk with your fellow robots through the sidebar chat. <br>
-	        		<h1> Controls </h1> <br>
-				    Arrow Keys to advance <br>
-				    A to grab/drop object with left arm <br>
-				    D to grab/drop object with right arm <br>
-				    S to rotate camera downwards <br>
-				    W to rotate camera upwards <br>
-				    Q to take sensing action <br>
-				    E to focus in object (you need this to then grab an object)<br>
-				    <p id=distance_text>Maximum distance for carrying objects: </p>
-				    <p id=comms_text>Maximum distance for communication (-1 is out of range): </p>
-				    
-				    <p style="color: blue;"> Benign object</p>
-	    			    <p style="color: red;"> Dangerous object</p>
-	    			    
-	    			    You can send messages by putting the text and then pressing Enter <br>
-	    			    To search for an object, input the pattern and then press Enter
-	    			    
-	    			<h1>Sensor Measurements</h1><br>
-	    			Each object has a true danger status (either benign or dangerous). When a robot senses an object for the first time, it first samples a probability of being correct from a uniform distribution, and then applies that probability to a weighted choice between reporting the true danger status value and reporting a false value. This probability of being corrected is shown for each object, as well as the final result of the choice.
+	        		
 	    			
 	    			</div>
 	        		</div>
@@ -191,26 +172,11 @@
 
     </div>
     <script src="/socket.io/socket.io.js"></script>
-    <script src="/rrweb/record/rrweb-record.min.js"></script>
+    <script src="/rrweb/record/rrweb-record.min.js" onerror="alert('Please disable temporarily your ad blocker and reload the page for the experiment to work!')"></script>
     <script type='text/javascript' src='config.js'></script>
     <script src="/watch.js"></script>
 
-	<script>
-	var coll = document.getElementsByClassName("collapsible");
-	var i;
-
-	for (i = 0; i < coll.length; i++) {
-	  coll[i].addEventListener("click", function() {
-		this.classList.toggle("active");
-		var content = this.nextElementSibling;
-		if (content.style.maxHeight){
-		  content.style.maxHeight = null;
-		} else {
-		  content.style.maxHeight = content.scrollHeight + "px";
-		} 
-	  });
-	}
-	</script>
+	
     
   </body>
 </html>
