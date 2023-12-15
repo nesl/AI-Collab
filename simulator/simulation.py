@@ -1536,6 +1536,8 @@ class Simulation(Controller):
     
         if len(self.user_magnebots) <= 2:
             max_time_unheld = 2
+        elif len(self.user_magnebots) >= 5:
+            max_time_unheld = 5
         else:
             max_time_unheld = 10#10#5 #3
 
@@ -3517,7 +3519,9 @@ class Simulation(Controller):
             if self.reset:
                 print("Resetting...")
                 
-                #resp = self.communicate({"$type": "destroy_all_objects"})
+                for am in all_magnebots:
+                    self.sio.emit("reset_announcement", (self.robot_names_translate[str(am.robot_id)]))
+            
                 self.reset_world()
                 
                 self.reset_number += 1

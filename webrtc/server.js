@@ -258,6 +258,7 @@ io.sockets.on("connection", socket => { //When a client connects
 	} 
   });
   
+  
   socket.on("reset_tutorial", () =>{
     socket.to(simulator).emit("reset_tutorial");
   });
@@ -361,6 +362,12 @@ io.sockets.on("connection", socket => { //When a client connects
     if(command_line_options.log){
     	fs.appendFile(dir + dateTime + '.txt', String(timer.toFixed(2)) + ',4,' + magnebot_id + ',' + String(true_time.toFixed(3)) + '\n', err => {});
     }
+  });
+  
+  socket.on("reset_announcement", (magnebot_id) => {
+  
+    socket.to(simulator_id_to_socket(magnebot_id)).emit("reset_announcement");
+  
   });
   
   
