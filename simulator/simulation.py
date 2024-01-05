@@ -234,6 +234,7 @@ class Simulation(Controller):
         self.timer_start = self.timer
         self.reset_number = 0
         self.payment = 7
+        self.max_time_unheld = 1
 
         """
         if float(self.cfg['timer']) > 0:
@@ -332,26 +333,7 @@ class Simulation(Controller):
         print("Populated world")
 
         if self.options.log_state:
-            log_dir = './log/'
-            if not os.path.exists(log_dir):
-                os.makedirs(log_dir)
-            
-            env_objects_data = [[round(self.object_manager.transforms[eo].position[0],2),round(self.object_manager.transforms[eo].position[2],2)] for eo in self.env_objects]
-            
-
-            robots_type = []
-            for magn in [*self.user_magnebots,*self.ai_magnebots]:
-                robot_id = self.robot_names_translate[str(magn.robot_id)]
-                robots_type.append([robot_id,magn.controlled_by])
-            
-            scenario_dict = {"scenario_size": self.scenario_size, "wall_length": self.wall_length, "walls": self.walls, "env_objects": env_objects_data, "robots_type": robots_type}
-
-
-            self.log_state_f = open(log_dir + dateTime + '_state.txt', "w")
-            self.log_state_f.write(str(self.cfg)+'\n')
-            self.log_state_f.write(str(self.options)+'\n')
-            self.log_state_f.write(str(scenario_dict))
-            self.log_state_f.close()
+            self.log_init_data()
         
 
         
@@ -606,6 +588,28 @@ class Simulation(Controller):
                     
                 self.sio.connect(address)
 
+    def log_init_data(self):
+        log_dir = './log/'
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+            
+        env_objects_data = [[round(self.object_manager.transforms[eo].position[0],2),round(self.object_manager.transforms[eo].position[2],2)] for eo in self.env_objects]
+            
+
+        robots_type = []
+        for magn in [*self.user_magnebots,*self.ai_magnebots]:
+            robot_id = self.robot_names_translate[str(magn.robot_id)]
+            robots_type.append([robot_id,magn.controlled_by])
+            
+        scenario_dict = {"scenario_size": self.scenario_size, "wall_length": self.wall_length, "walls": self.walls, "env_objects": env_objects_data, "robots_type": robots_type}
+
+
+        self.log_state_f = open(log_dir + dateTime + '_state.txt', "a")
+        self.log_state_f.write(str(self.cfg)+'\n')
+        self.log_state_f.write(str(self.options)+'\n')
+        self.log_state_f.write(str(scenario_dict)+'\n')
+        self.log_state_f.close()
+
     def send_init_data(self):
         #Occupancy map info
         extra_config = {}
@@ -622,6 +626,7 @@ class Simulation(Controller):
         extra_config['communication_distance_limit'] = self.cfg['communication_distance_limit']
         extra_config['sensing_distance_limit'] = self.cfg['sensing_radius']
         extra_config["goal_radius"] = self.goal_area
+        extra_config["scenario"] = self.scenario
 
         
         translated_user_magnebots_ids = [self.robot_names_translate[robot_id] for robot_id in self.user_magnebots_ids]
@@ -1014,6 +1019,16 @@ class Simulation(Controller):
                                              "position": {"x": xn, "y": 0.01, "z": zn},
                                              "scale": 0.2,
                                              "shape":"circle"})
+                                             
+            for x in range(self.scenario_size[0]):
+                for y in range(self.scenario_size[1]):
+                    xn = x -self.scenario_size[0]/2
+                    zn = y -self.scenario_size[1]/2
+                    commands.append({"$type": "add_position_marker",
+                                             "position": {"x": xn, "y": 0.01, "z": zn},
+                                             "scale": 0.05,
+                                             "shape":"circle",
+                                             "color": {"r": 0, "g": 0, "b": 1, "a": 1}})
                   
                   
         commands.append({"$type": "send_framerate", "frequency": "always"})                             
@@ -1286,9 +1301,6 @@ class Simulation(Controller):
                 commands.extend(self.instantiate_object('iron_box',{"x": c4[0], "y": 0, "z": c4[1]},{"x": 0, "y": 0, "z": 0},1000,2,3, 3 + um*4))
             
             
-
-        
-            
         
             
         # Add post-processing.
@@ -1317,8 +1329,8 @@ class Simulation(Controller):
             commands.append({"$type": "set_render_quality", "render_quality": 0})
         
         
-        
-        commands.append({"$type": "add_compass_rose"})
+        if self.scenario != 2:
+            commands.append({"$type": "add_compass_rose"})
         
         return commands
 
@@ -1535,11 +1547,14 @@ class Simulation(Controller):
     def keyboard_output(self, key_pressed, key_hold, extra_commands, duration, keys_time_unheld, all_ids, messages, fps):
     
         if len(self.user_magnebots) <= 2:
-            max_time_unheld = 2
+            max_time_unheld_lin = 2
+            max_time_unheld_rot = 1
         elif len(self.user_magnebots) >= 5:
-            max_time_unheld = 5
+            max_time_unheld_lin = 5
+            max_time_unheld_rot = 5
         else:
-            max_time_unheld = 10#10#5 #3
+            max_time_unheld_lin = 10#10#5 #3
+            max_time_unheld_rot = 10
 
 
         #print(keys_time_unheld, key_pressed)
@@ -1551,6 +1566,8 @@ class Simulation(Controller):
             
             if key_pressed[j] in self.keys_set[0]: #Advance
                 idx = self.keys_set[0].index(key_pressed[j])
+                
+                self.max_time_unheld = max_time_unheld_lin
                 #print(self.user_magnebots[idx].action.status)
                 #if self.user_magnebots[0].action.status != ActionStatus.ongoing:
                 #if self.user_magnebots[idx].key_pressed != key_pressed[j] or self.user_magnebots[idx].action.status != ActionStatus.ongoing:
@@ -1559,7 +1576,7 @@ class Simulation(Controller):
                     if self.user_magnebots[idx].key_pressed != key_pressed[j] or self.user_magnebots[idx].action.status != ActionStatus.ongoing or num_users < 5:
                         self.user_magnebots[idx].move_by(distance=10)
                     
-                    if keys_time_unheld[idx] > max_time_unheld:
+                    if keys_time_unheld[idx] > self.max_time_unheld:
                         keys_time_unheld[idx] = int(-0.5*fps)
                     elif keys_time_unheld[idx] >= 0:
                         keys_time_unheld[idx] = 0      
@@ -1571,6 +1588,8 @@ class Simulation(Controller):
             elif key_pressed[j] in self.keys_set[1]: #Back
                 
                 idx = self.keys_set[1].index(key_pressed[j])
+                
+                self.max_time_unheld = max_time_unheld_lin
                 #print(self.user_magnebots[idx].action.status)
                 #if self.user_magnebots[idx].key_pressed != key_pressed[j] or self.user_magnebots[idx].action.status != ActionStatus.ongoing:
                 
@@ -1578,7 +1597,7 @@ class Simulation(Controller):
                     if self.user_magnebots[idx].key_pressed != key_pressed[j] or self.user_magnebots[idx].action.status != ActionStatus.ongoing or num_users < 5:
                         self.user_magnebots[idx].move_by(distance=-10)
                     
-                    if keys_time_unheld[idx] > max_time_unheld:
+                    if keys_time_unheld[idx] > self.max_time_unheld:
                         keys_time_unheld[idx] = int(-0.5*fps)
                     elif keys_time_unheld[idx] >= 0:
                         keys_time_unheld[idx] = 0                       
@@ -1588,6 +1607,8 @@ class Simulation(Controller):
 
             elif key_pressed[j] in self.keys_set[2]: #Right
                 idx = self.keys_set[2].index(key_pressed[j])
+                
+                self.max_time_unheld = max_time_unheld_rot
                 #print(self.user_magnebots[idx].action.status)
                 #if self.user_magnebots[idx].key_pressed != key_pressed[j] or self.user_magnebots[idx].action.status != ActionStatus.ongoing:
                 
@@ -1595,7 +1616,7 @@ class Simulation(Controller):
                     if self.user_magnebots[idx].key_pressed != key_pressed[j] or self.user_magnebots[idx].action.status != ActionStatus.ongoing or num_users < 5:
                         self.user_magnebots[idx].turn_by(179)
                     
-                    if keys_time_unheld[idx] > max_time_unheld:
+                    if keys_time_unheld[idx] > self.max_time_unheld:
                         keys_time_unheld[idx] = int(-0.5*fps)
                     elif keys_time_unheld[idx] >= 0:
                         keys_time_unheld[idx] = 0                        
@@ -1605,6 +1626,8 @@ class Simulation(Controller):
 
             elif key_pressed[j] in self.keys_set[3]: #Left
                 idx = self.keys_set[3].index(key_pressed[j])
+                
+                self.max_time_unheld = max_time_unheld_rot
                 #print(self.user_magnebots[idx].action.status)
                 #if self.user_magnebots[idx].key_pressed != key_pressed[j] or self.user_magnebots[idx].action.status != ActionStatus.ongoing:
                 
@@ -1612,7 +1635,7 @@ class Simulation(Controller):
                     if self.user_magnebots[idx].key_pressed != key_pressed[j] or self.user_magnebots[idx].action.status != ActionStatus.ongoing or num_users < 5:
                         self.user_magnebots[idx].turn_by(-179)
                     
-                    if keys_time_unheld[idx] > max_time_unheld:
+                    if keys_time_unheld[idx] > self.max_time_unheld:
                         keys_time_unheld[idx] = int(-0.5*fps)
                     elif keys_time_unheld[idx] >= 0:
                         keys_time_unheld[idx] = 0                     
@@ -1906,7 +1929,7 @@ class Simulation(Controller):
             for um_idx in range(len(self.user_magnebots)):
                 keys_time_unheld[um_idx] += 1
                 #print(keys_time_unheld[um_idx])
-                if keys_time_unheld[um_idx] == max_time_unheld and not self.user_magnebots[um_idx].resetting_arm: #3
+                if keys_time_unheld[um_idx] == self.max_time_unheld and not self.user_magnebots[um_idx].resetting_arm: #3
                     print("stop magnebot")
                     self.user_magnebots[um_idx].stop()
 
@@ -2296,8 +2319,9 @@ class Simulation(Controller):
                 
                     o_translated1 = str(1+um_idx*4)
                     o_translated2 = str(2+um_idx*4)
+                    o_translated3 = str(3+um_idx*4)
                     
-                    if o_translated1 in um.item_info and "sensor" in um.item_info[o_translated1] and o_translated2 in um.item_info and "sensor" in um.item_info[o_translated2]:
+                    if o_translated1 in um.item_info and "sensor" in um.item_info[o_translated1] and o_translated2 in um.item_info and "sensor" in um.item_info[o_translated2] and o_translated3 in um.item_info and "sensor" in um.item_info[o_translated3]:
                     
                         self.state_machine[um_idx] = self.Tutorial_State.pickup_object
                         
@@ -2655,7 +2679,6 @@ class Simulation(Controller):
                 
                 if all_magnebots[idx].robot_id not in disabled_robots and all_magnebots[idx].disabled:
                 
-                    print("New fire1!!!")
                     #start a fire
                     commands.append(self.get_add_visual_effect(name="fire", 
                                        position=TDWUtils.array_to_vector3(all_magnebots[idx].dynamic.transform.position),
@@ -2678,7 +2701,10 @@ class Simulation(Controller):
                     #all_magnebots[idx].stats.distance_traveled = round(all_magnebots[idx].stats.distance_traveled,1)
                     #all_magnebots[idx].stats.end_time = round(all_magnebots[idx].stats.end_time,1)
                     
-                    
+                    if self.scenario == 2 and all(1 if robot.disabled else 0 for robot in self.user_magnebots): #Only for tutorial are we going to reset automatically
+                        self.previous_scenario = self.scenario
+                        self.scenario = 1
+                        self.reset = True
                     
                     #Last magnebot to be sent stats. We also send to everyone the stats related to team performance
                     if len(disabled_robots) == len(all_magnebots):
@@ -2816,6 +2842,9 @@ class Simulation(Controller):
                             log_results_f = open(self.options.log_results + "/" + dateTime + "_" + str(game_finished) + '_results.txt', "w")
                             json.dump({"results": all_stats, "seed": self.seed_value}, log_results_f)
                             log_results_f.close()
+                            
+                        
+                        
                             
                     else:
                         self.sio.emit("stats", (self.robot_names_translate[str(all_magnebots[idx].robot_id)], all_magnebots[idx].stats.__dict__, self.timer, False))
@@ -3569,6 +3598,7 @@ class Simulation(Controller):
         extra_config['communication_distance_limit'] = self.cfg['communication_distance_limit']
         extra_config['sensing_distance_limit'] = self.cfg['sensing_radius']
         extra_config["goal_radius"] = self.goal_area
+        extra_config["scenario"] = self.scenario
         
         
         for am in all_magnebots:
@@ -3689,6 +3719,7 @@ class Simulation(Controller):
         
         self.communicate(commands)
 
+        self.log_init_data()
         
         #Reattach canvas
         for um in self.user_magnebots:

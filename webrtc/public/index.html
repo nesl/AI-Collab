@@ -15,7 +15,7 @@
 			<h1 style='float:left' class="chat_title">Chat</h1>
 
 
-			<button style='float:right' class='help_question' onclick="togglePopup('popup-1')">?</h1>
+			<button style='float:right' class='help_question' onclick="help_toggle()">?</h1>
 			
 	
 		</header>
@@ -40,10 +40,10 @@
 		<h1 class="collapsible">Pattern Substitution</h1>
 		<div class="entry">
 			<div class='wrapper' >
-				<button name="command" style="width:100%;" onclick="setCommand(0)">[agent]</button><br>
+				<button name="command" style="width:100%;" onclick="setCommand(0)">Agent to message</button><br>
 			</div>
 			<div class='wrapper' >
-				<button name="command" style="width:100%;" onclick="setCommand(1)">[object]</button><br>
+				<button name="command" style="width:100%;" onclick="setCommand(1)">Object to message</button><br>
 			</div>
 			<!--
 			<div class='wrapper' >
@@ -78,7 +78,7 @@
 	
 		<p style="color:white;"> <b>Controls</b><br><b>Arrow Keys</b> to advance<br><b>A</b> to grab/drop object with left arm<br><b>D</b> to grab/drop object with right arm<br><b>S</b> to rotate camera downwards<br><b>W</b> to rotate camera upwards<br><b>Q</b> to take sensing action<br><b>E</b> to focus in object (you need this to then grab an object)</p>
 		
-	<button id="leave_button" class="end" style="margin-bottom: 150px;"  onclick="reportObjects()">End control</button>
+	<button id="leave_button" class="end" style="margin-bottom: 150px;"  onclick="reportObjects()">End participation</button>
 	</div>
 	
 
@@ -100,11 +100,14 @@
 	        	<div class="overlay"></div>
 	        	
 	        	<div class="content">
-	        		<div class="close-btn" onclick="togglePopup('popup-1')">&times;</div>
+	        		<div class="close-btn" onclick="togglePopup('popup-1')">Close window</div>
 	        		<div id="popup_text">
 	        		
 	    			
 	    			</div>
+	    			<button class="next-btn" onclick="backPopup()">Back</button>
+	    			<button class="next-btn" onclick="nextPopup()">Next</button>
+	    			<div class="progress-bar-dots" id="tutorial_progress" ></div>
 	        		</div>
 	        		
 		
@@ -125,6 +128,17 @@
 	<div class="popup" id="popup-stats">
 				<div class="overlay"></div>
 	        	<div class="content" id="popup-stats-content">
+
+	        	
+	        	</div>
+	        	
+	
+	</div>
+	
+	<div class="popup" id="popup-reset">
+				<div class="overlay"></div>
+	        	<div class="content">
+	        	<h1>Resetting the game! Please wait for 1 minute...</h1>
 
 	        	
 	        	</div>

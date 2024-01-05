@@ -134,6 +134,25 @@ button.end:hover {
   background: orange;
 }
 
+button.next-btn {
+  background: yellow;
+  font-size:25px;
+  font-weight:600;
+  margin-left:10%;
+  margin-right:10%;
+  padding-left:10%;
+  padding-right:10%;
+}
+
+button.message_link:hover {
+  cursor: pointer;
+}
+
+button.next-btn:hover {
+  cursor: pointer;
+  background: orange;
+}
+
 input[type = "radio"] {
 	background: #fff;
 
@@ -148,7 +167,6 @@ label {
 .collapsible {
   background-color: #777;
   color: white;
-  cursor: pointer;
   padding: 18px;
   width: 100%;
   border: none;
@@ -157,21 +175,7 @@ label {
   font-size: 15px;
 }
 
-.collapsible:after {
-  content: '\002B';
-  color: white;
-  font-weight: bold;
-  float: right;
-  margin-left: 5px;
-}
 
-.active:after {
-  content: "\2212";
-}
-
-.active, .collapsible:hover {
-  background-color: #555;
-}
 
 .collapsible_content {
   padding: 0 18px;
@@ -216,12 +220,12 @@ label {
 
 .popup .content {
   position:absolute;
-  top:50%;
-  left:50%;
+  top:40vh;
+  left:50vw;
   transform:translate(-50%,-50%) scale(0);
   background:#fff;
-  width:50%;
-  height:50%;
+  width:60vw;
+  height:80vh;
   z-index:2;
   text-align:center;
   padding:20px;
@@ -289,4 +293,11 @@ ol li:last-child {
     margin-left: 1em;
 }
 
-
+.dot {
+  background: yellow;
+  border-radius: 50%;
+  display: inline-block;
+  height: 5px;
+  margin: 2px;
+  width: 5px;
+}

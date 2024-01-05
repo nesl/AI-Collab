@@ -1,6 +1,31 @@
 let peerConnection;
 
-//TODO: popup report clickable, obatining correct object number, announcing reset
+var xmlDoc;
+var first_state;
+
+//Load xml doc with strings
+function loadXMLDoc() {
+    let xmlhttp = new XMLHttpRequest();
+    xmlhttp.onreadystatechange = function () {
+ 
+        // Request finished and response 
+        // is ready and Status is "OK"
+        if (this.readyState == 4 && this.status == 200) {
+            xmlDoc = this.responseXML;
+            if(first_state){
+                tutorial_popup(first_state);
+            }
+        }
+    };
+ 
+    // employee.xml is the external xml file
+    xmlhttp.open("GET", "values/strings.xml", true);
+    xmlhttp.send();
+}
+ 
+loadXMLDoc(); 
+ 
+//TODO: popup report clickable, obatining correct object number, announcing reset, save last state tutorial
 
 function resize_alert(){
 
@@ -11,7 +36,7 @@ function resize_alert(){
     }
 }
 
-window.addEventListener('resize', resize_alert);
+//window.addEventListener('resize', resize_alert);
 resize_alert();
 
 //RECORDING EVENTS
@@ -142,78 +167,243 @@ socket.on("broadcaster", () => {
 });
 
 socket.on("reset_announcement", () => {
-    alert("Resetting the game! Wait for 1 minute...");
+    //alert("Resetting the game! Wait for 1 minute...");
+    document.getElementById("popup-reset").classList.add("active");
 });
 
 var tutorial_client_side = "wait";
 var tutorial_object = "";
-var tutorial_mode = false;
+var tutorial_mode;
+
+
+function find_entry(entries, state){
+    for (let i = 0; i < entries.length; i++) {
+        if(entries[i].getAttribute("name") == state){
+            return entries[i];
+        }
+    }
+    
+}
+
+var images_entry = {"move":[["<img src='/media/question_mark.png' style='width:10%;height:auto;'/>"], ["<img src='/media/box.png' style='width:20%;height:auto;'/>"], ["<img src='/media/magnebot.png' style='width:20%;height:auto;'/>"], ["<img src='/media/first_person_screen.png' style='width:50%;height:auto;'/>"], ["<img src='/media/my_strength_bar.png' style='width:20%;height:auto;'/>"], ["<img src='/media/timer_display.png' style='width:10%;height:auto;'/>"], ["<img src='/media/my_location.png' style='width:20%;height:auto;'/>","<img src='/media/points_floor.png' style='width:30%;height:auto;'/>"], ["<img src='/media/carried_object.png' style='width:20%;height:auto;'/>"], ["<img src='/media/action_status.png' style='width:20%;height:auto;'/>"], ["<img src='/media/targets_in_goal.png' style='width:15%;height:auto;'/>"], ["<img src='/media/white_dot.png' style='width:5%;height:auto;'/>"], ["<img src='/media/active.png' style='width:20%;height:auto;'/>"], ["<img src='/media/layout_tutorial.png' style='width:20%;height:auto;'/>"], ["<img src='/media/arrow_keys.png' style='width:20%;height:auto;'/>"],["<img src='/media/fire.gif' style='width:10%;height:auto;'/>"]], 
+"move_to_object":[["<img src='/media/fall.gif' style='width:20%;height:auto;'/>"], ["<img src='/media/stuck.jpg' style='width:20%;height:auto;'/>"],[]], 
+"activate_sensor":[["<img src='/media/keyW.png' style='width:5%;height:auto;'/>","<img src='/media/headup.gif' style='width:30%;height:auto;'/>","<img src='/media/keyS.png' style='width:5%;height:auto;'/>","<img src='/media/headdown.gif' style='width:30%;height:auto;'/>"], ["<img src='/media/keyQ.png' style='width:5%;height:auto;'/>","<img src='/media/sensor.gif' style='width:30%;height:auto;'/>"], []], 
+"pickup_object":[["<img src='/media/object_info.png' style='width:20%;height:auto;'/>"], [], ["<img src='/media/keyE.png' style='width:5%;height:auto;'/>","<img src='/media/scan.gif' style='width:30%;height:auto;'/>"], ["<img src='/media/keyA.png' style='width:5%;height:auto;'/>","<img src='/media/pickup.gif' style='width:30%;height:auto;'/>","<img src='/media/keyD.png' style='width:5%;height:auto;'/>"], ["<img src='/media/fail_pick.gif' style='width:30%;height:auto;'/>"], []], 
+"move_to_goal":[["<img src='/media/goal.png' style='width:20%;height:auto;'/>"]], 
+"drop_object":[["<img src='/media/keyA.png' style='width:5%;height:auto;'/>","<img src='/media/drop.gif' style='width:30%;height:auto;'/>","<img src='/media/keyD.png' style='width:5%;height:auto;'/>"]], 
+"move_to_heavy_object":[["<img src='/media/object_goal.png' style='width:20%;height:auto;'/>"],[]], 
+"activate_sensor_heavy":[[]], 
+"move_to_agent":[[],["<img src='/media/strength2.gif' style='width:30%;height:auto;'/>"], ["<img src='/media/distance.gif' style='width:20%;height:auto;'/>"], []], 
+"ask_sensor":[[],[],["<img src='/media/chat.gif' style='width:20%;height:auto;'/>"],[]], 
+"end":[["<img src='/media/end_control.png' style='width:20%;height:auto;'/>","<img src='/media/end.gif' style='width:50%;height:auto;'/>"], ["<img src='/media/select.png' style='width:50%;height:auto;'/>"], ["<img src='/media/results.png' style='width:50%;height:auto;'/>"], []], 
+"ask_for_sensing":[["<img src='/media/object_chosen.gif' style='width:30%;height:auto;'/>"], ["<img src='/media/object_write.gif' style='width:20%;height:auto;'/>"], []], 
+"send_object_info":[], 
+"ask_for_help":[], 
+"exchange_info":[], 
+"session":[]};
+
+var object_num;
+var popup_history;
+var popup_current_index;
+var content_popup_1;
+
+for(let z=0; z < document.getElementById("popup-1").children.length; z++){
+    if(document.getElementById("popup-1").children[z].className == "content"){
+        content_popup_1 = document.getElementById("popup-1").children[z];
+    }
+}
+
+function add_dot(reset){
+  progress_bar = document.getElementById('tutorial_progress');
+  dot = document.createElement('div');
+  dot.classList.add('dot');
+  dot.style.background = 'gray';
+  progress_bar.appendChild(dot);
+  
+  if(reset){
+      for(let y=0; y < popup_current_index; y++){
+        if(progress_bar.childNodes[y].style.background != "black"){
+            progress_bar.childNodes[y].style.background = "black";
+        }
+      }
+  }
+}
+
+function tutorial_popup(state){
+
+  var popup_text = document.getElementById("popup_text");
+  
+  const entries = xmlDoc.getElementsByTagName("entry");
+  const child_entries = find_entry(entries, state).childNodes;
+  
+  popup_text.innerHTML = "";
+  
+  var start_of_list = true;
+  var list_index = 0;
+  var first_title = false;
+  
+  for (let i = 0; i < child_entries.length; i++) {
+  
+    while(true){
+        match_result = child_entries[i].textContent.match(/\[(\w+)\]/);
+        if(! match_result){
+            break;
+        } else{
+            child_entries[i].textContent = child_entries[i].textContent.replace("["+ match_result[1] +"]", String(eval(match_result[1])));
+        }
+    }
+  
+    
+    switch(child_entries[i].nodeName){
+        
+        case "title":
+        
+            if(! start_of_list){
+                popup_text.appendChild(ol);
+                start_of_list = true;
+                
+            }      
+            
+            if(first_title){
+                popup_history.push(popup_text.innerHTML);
+                
+                if(popup_current_index == popup_history.length-1){
+                    add_dot(true);
+                } else{
+                    add_dot(false);
+                }
+                popup_text.innerHTML = "";
+            } else{
+                popup_current_index = popup_history.length; 
+            }
+              
+            popup_text.innerHTML += "<h1>" + child_entries[i].textContent + "</h1>";
+            first_title = true;
+            break;
+        
+        case "head":
+            popup_text.innerHTML += child_entries[i].textContent;
+            break;
+            
+        case "list":
+        
+            if(start_of_list){
+                start_of_list = false;
+                var ol = document.createElement('ol');
+            }
+        
+            let li = document.createElement('li');
+            li.innerHTML += child_entries[i].textContent;
+            
+            if(images_entry[state].length){
+                
+                if(images_entry[state][list_index].length > 0){
+                    li.innerHTML += "<span class='br'></span>";
+                    for (let j = 0; j < images_entry[state][list_index].length; j++) {
+                        li.innerHTML += images_entry[state][list_index][j];
+                    }
+                }
+            }
+            
+            ol.appendChild(li);
+            list_index += 1;
+            break;
+    }
+  }
+  
+  if(! start_of_list){
+    popup_text.appendChild(ol);
+  }
+  
+  
+  if(state == "move_to_agent"){
+    var object_info_div = document.getElementById("object_entries");
+        
+    list_child_nodes = object_info_div.childNodes;
+        
+    for (let i = 0; i < list_child_nodes.length; i++) {
+        if(list_child_nodes[i].children[1].children[0].rows[0].cells[0].textContent.match(/weight: ([0-9])+/)[1] == "2"){
+            tutorial_object = list_child_nodes[i].children[1].children[0].rows[0].cells[0].textContent;
+            break;
+        }
+    }
+    
+    object_num = tutorial_object.match(/Object ([0-9])+/)[1];
+    
+  } else if(state == "ask_sensor"){
+    tutorial_client_side = "ask_for_sensing";
+  } else if(state == "session"){
+    popup_text.innerHTML += "<span class='br'></span><img src='/media/layout.png' style='width:30%;height:auto;'/>";
+  }
+  
+  popup_history.push(popup_text.innerHTML);
+  
+  if(state == "ask_for_help" || state == "ask_for_sensing" || state == "send_object_info"){
+    setTimeout(function() { activatePopup("popup-1"); }, 2000);
+  
+  } else{
+    document.getElementById("popup-1").classList.add("active");
+  }
+  
+  if(popup_current_index == popup_history.length-1){
+    add_dot(true);
+  } else{
+    add_dot(false);
+  }
+  
+  
+  popup_text.innerHTML = popup_history[popup_current_index];
+  content_popup_1.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function help_toggle(){
+
+    document.getElementById("popup-1").classList.add("active");
+    
+    progress_bar = document.getElementById('tutorial_progress');
+    progress_bar.childNodes[popup_current_index].style.background = "gray";
+    content_popup_1.scrollTo({ top: 0, behavior: 'smooth' });
+    
+}
 
 socket.on("tutorial", (state) => {
   
   tutorial_mode = true;
-  var popup_text = document.getElementById("popup_text");
-  
-  switch(state){
-    case "move":
-    
-        popup_text.innerHTML = "<h1>Tutorial</h1><span class='br'></span><b>Welcome to this Tutorial!</b> Throughout the length of this tutorial you will learn how to control a robot in order to be able to participate effectively in the collaborative task that is the purpose of our research. The objective in this game is to collect only those objects that are dangerous. We will be now explaining how the controls work and the mechanics of the game. <ol><li>To move around use the <b>arrow keys</b> in your keyboard.<span class='br'></span><img src='/media/arrow_keys.png' style='width:20%;height:auto;'/></li><li>Try moving your robot to the center of the room highlighted by the fire.<span class='br'></span><img src='/media/fire.gif' style='width:10%;height:auto;'/></li><li>If you ever want to reopen this window, just click on the top right question mark button.<span class='br'></span><img src='/media/question_mark.png' style='width:10%;height:auto;'/></li></ol>";
-                
-        break;
-    case "move_to_object":
-        
-        popup_text.innerHTML = "<h1>Tutorial</h1><ol><li>Good job! Notice that while moving you may loose balance and fall if you are not careful.<span class='br'></span><img src='/media/fall.gif' style='width:20%;height:auto;'/></li><li>Also, be careful with walls and corners, as you may get stuck if you move too closely to them.<span class='br'></span><img src='/media/stuck.jpg' style='width:20%;height:auto;'/></li><li>Now let's move to the next highlighted area, we are now going to teach you how to sense objects!</li></ol>";
-        break;
-    case "activate_sensor":
-        popup_text.innerHTML = "<h1>Tutorial</h1>Now you are going to activate your sensor to check if the objects around you are dangerous or not.<ol><li>Use the key <b>W</b> to rotate upwards your camera, and <b>S</b> to rotate downwards your camera, this will help you see objects in the ground.<span class='br'></span><img src='/media/keyW.png' style='width:5%;height:auto;'/><img src='/media/headup.gif' style='width:30%;height:auto;'/><img src='/media/keyS.png' style='width:5%;height:auto;'/><img src='/media/headdown.gif' style='width:30%;height:auto;'/></li><li>Then use the key <b>Q</b> to activate your sensor and obtain estimates from the objects around you. Currently you will obtain the estimates of all objects in a radius of " + sensing_distance_limit + " meters from you. The IDs of the sensed objects will appear next to each of them: if the ID text is in red, it means your sensor estimates it is dangerous, if it's blue, your sensor estimates such object is benign.<span class='br'></span><img src='/media/keyQ.png' style='width:5%;height:auto;'/><img src='/media/sensor.gif' style='width:30%;height:auto;'/></li><li>Try using your sensor now!</li></ol>";
-        break;
-    case "pickup_object":
-        popup_text.innerHTML = "<h1>Tutorial</h1>Perfect, you should have now information about three objects.<ol><li>You should see that information reflected in your left sidebar.<span class='br'></span><img src='/media/object_info.png' style='width:20%;height:auto;'/></li><li>Each object has an ID, a weight and a danger status assigned to it. Unfortunately, the dangerness sensors each robot has are not perfect, so you can only obtain an estimate of the true danger status of any object with a given probability of being correct. Taking as an example the information shown in the previous image, this means that while object 2 is detected as benign with a probability of 73.4%, there is a small chance it might be dangerous instead. Each agent has sensors with different quality, so the best approach is to share estimates with each other to identify correctly the dangerous objects. Once you sense an object, you won't get any new estimates by activating the sensor again with the same object.</li><li>For now let's try picking up the object highlighted with fire irrespective of the result of your sensor. To do this you will first need to focus on that object and then pick it up. To focus on an object, align the white dot in the center of your view and press <b>E</b>. If you do it correctly, the ID of the object should appear. You can focus on an object even if you haven't sensed it, but you won't know if it's dangerous or not.<span class='br'></span><img src='/media/keyE.png' style='width:5%;height:auto;'/><img src='/media/scan.gif' style='width:30%;height:auto;'/></li><li>After you focus on the object, you should get close to it and use either the key <b>A</b> to pick up the object with your left arm, or <b>D</b> to pick it up with your right arm.<span class='br'></span><img src='/media/keyA.png' style='width:5%;height:auto;'/><img src='/media/pickup.gif' style='width:30%;height:auto;'/><img src='/media/keyD.png' style='width:5%;height:auto;'/></li><li>If you are too far away from the object you want to pick up or in a position where it is not possible to pick up such object, a message will appear indicating such issue. The way to solve this is by just getting closer to the object or approaching the object from a different position.<span class='br'></span><img src='/media/fail_pick.gif' style='width:30%;height:auto;'/></li><li>Try aligning the white dot in the center of your view with the object in question, press <b>E</b>, and then press either <b>A</b> or <b>D</b> to pick up the object.</li></ol>";
-        break;
-    case "move_to_goal":
-        popup_text.innerHTML = "<h1>Tutorial</h1>Great, now you should move to the goal location.<ol><li>The goal location will always be represented by an area surrounded by red circles.<span class='br'></span><img src='/media/goal.png' style='width:20%;height:auto;'/></li></ol>";
-        break;
-    case "drop_object":
-        popup_text.innerHTML = "<h1>Tutorial</h1>Now let's just drop the object.<ol><li>You should use the same key you used to pick up the object: if it was the left arm, press the key <b>A</b>, if it was the right arm, press the key <b>D</b>.<span class='br'></span><img src='/media/keyA.png' style='width:5%;height:auto;'/><img src='/media/drop.gif' style='width:30%;height:auto;'/><img src='/media/keyD.png' style='width:5%;height:auto;'/></li></ol>";
-        break;
-    case "move_to_heavy_object":
-        popup_text.innerHTML = "<h1>Tutorial</h1><ol><li>Once you bring an object to the goal area, you will obtain the true danger status of such object with 100% confidence, as shown in the image for object 2.<span class='br'></span><img src='/media/object_goal.png' style='width:20%;height:auto;'/></li><li>It seems the object you collected was indeed benign! Remember you should only try collecting dangerous objects or you will get penalized. Now let's move to the next highlighted area!</li></ol>";
-        break; 
-    case "activate_sensor_heavy":
-        popup_text.innerHTML = "<h1>Tutorial</h1><ol><li>Lets now try sensing the object in front of you. Activate your sensor with the key <b>Q</b>.</li></ol>";
-        break; 
-    case "move_to_agent":
-        popup_text.innerHTML = "<h1>Tutorial</h1><ol><li>In your left hand sidebar, you will see that the object you just sensed has a weight of 2, if you try carrying this object you will see that it is too heavy for you to carry alone.</li><li>Objects have a weight, and for you to be able to carry an object, your strength needs to match the weight of such object. Your strength will increase with the number of agents that are close enough to you.<span class='br'></span><img src='/media/strength2.gif' style='width:30%;height:auto;'/></li><li>Agents need to be within " + strength_distance_limit + " meters from you to contribute one unit in strength. You can check how far you are from other agents by checking the information displayed in the upper part of the left sidebar.<span class='br'></span><img src='/media/distance.gif' style='width:20%;height:auto;'/></li><li>In this panel you will also note that when agents are too far away even for communication, the entry in this table for the particular agent will be red colored. We will talk more about communication in a moment, for now you should ask the other robot for help, so let's move next to it!</li></ol>";
-        
-        var object_info_div = document.getElementById("object_entries");
-        
-        list_child_nodes = object_info_div.childNodes;
-        
-        for (let i = 0; i < list_child_nodes.length; i++) {
-            if(list_child_nodes[i].style.borderWidth == "thick"){
-                tutorial_object = list_child_nodes[i].children[1].children[0].rows[0].cells[0].textContent;
-                break;
-            }
-        }
-        
-        break; 
-    case "ask_sensor":
-        let object_num = tutorial_object.match(/Object ([0-9])+/)[1];
-        tutorial_client_side = "ask_for_sensing";
-        popup_text.innerHTML = "<h1>Tutorial</h1>You will now have to communicate with your teammate and check if they can help you carry the heavy object you found.<ol><li>To make sure any message you send is received by the intended agent, you must be sure that agent is within " + communication_distance_limit + " meters.</li><li>Use the right-hand sidebar chat to communicate. Just write in the bottom input field and press <b>Enter</b> or click on the <b>Send</b> button.<span class='br'></span><img src='/media/chat.gif' style='width:20%;height:auto;'/></li><li>For now, send exactly the following line of bold text: <b>Hey, what results did you get for object " + object_num + "?</b></li></ol>";
-        
-        break;    
-    case "end":
-    
-        popup_text.innerHTML = "<h1>Tutorial</h1>Congratulations, you finished before the time limit!. You can either play around until that happens or voluntarily end control. You should always end control before the time expires (20 minutes) as you have to report all those objects that you found whose weights are greater than the maximum strength you would ever be able to achieve.<ol><li>To voluntarily end control, just click the corresponding button at the bottom of the right-hand sidebar. You will now lose control over your robot and a popup window will appear. In the game you may end control at any time if you think you have already completed all the objectives.<span class='br'></span><img src='/media/end_control.png' style='width:20%;height:auto;'/><img src='/media/end.gif' style='width:50%;height:auto;'/></li><li>The first popup window that appears will show a list with all the objects that are heavier than the achievable maximum strength. You will have to select only those that are dangerous based on your shared sensing estimates. If all of your teammates choose a particular object and that object is benign, you will all be penalized as if you had carried the object to the goal. If all your teammates choose a particular object that is dangerous, you will all be awarded as if you had carried such object to the goal area. Choose wisely and then submit!<span class='br'></span><img src='/media/select.png' style='width:50%;height:auto;'/></li><li>After you make the report about the heaviest dangerous objects, or if the time expires, a popup window will appear with the results of the game session. Some of the fields will only be updated when all teammates end, so wait for that to happen!<span class='br'></span><img src='/media/results.png' style='width:50%;height:auto;'/></li><li>You are ready now for the actual game session! Please wait for all your teammates to end their tutorial session.</li></ol>"
-    
-        break;                     
+  if(xmlDoc){
+      tutorial_popup(state);
+      
+  } else{
+    first_state = state;
   }
-  
-  document.getElementById("popup-1").classList.add("active");
   
 });
 
+function backPopup(){
+
+    if(popup_current_index-1 >= 0){
+        
+        progress_bar = document.getElementById('tutorial_progress').childNodes;
+    
+        popup_current_index -= 1;
+        popup_text.innerHTML = popup_history[popup_current_index];
+        progress_bar[popup_current_index].style.background = "gray";
+        //content_popup_1.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+}
+
+function nextPopup(){
+
+    progress_bar = document.getElementById('tutorial_progress').childNodes;
+    progress_bar[popup_current_index].style.background = "black";
+
+    if(popup_current_index+1 >= popup_history.length){
+        document.getElementById("popup-1").classList.remove("active");
+    } else{
+        popup_current_index += 1;
+        popup_text.innerHTML = popup_history[popup_current_index];
+        content_popup_1.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+}
 
 var own_neighbors_info_entry = [];
 var object_list_store = [];
@@ -275,6 +465,7 @@ function removeTags(str) {
 var map_config = {};
 var communication_distance_limit, strength_distance_limit, sensing_distance_limit;
 var heaviest_objects;
+var previous_scenario;
 
 function reset(config_options){
 
@@ -303,6 +494,7 @@ function reset(config_options){
     own_neighbors_info_entry = [client_id, 0, 0, 0, -1];
     
     document.getElementById("popup-report").classList.remove("active");
+    document.getElementById("popup-reset").classList.remove("active");
     document.getElementById("popup-stats").classList.remove("active");
     document.getElementById("popup-stats-content").innerHTML = ""; //"<h1>Stats</h1><br>";
     document.getElementById("command_text").disabled = false;
@@ -315,9 +507,19 @@ function reset(config_options){
     
     var popup_text = document.getElementById("popup_text");
     
-    popup_text.innerHTML = "<h1>Succesful reset, you can start playing now!</h1><span class='br'></span><ol><li>Sense objects and bring only the dangerous ones into the goal area.</li><li>When you sense an object you will see whether the object is dangerous or benign according to the color of the object ID, and in your sidebar you will be able to consult the object, as well as the accuracy of the prediction.</li><li>Objects have a weight associated with them, and you will only be able to carry those that match your strength level. Strength level is modified by the amount of robots that are close to you and you may only be able to carry a heavy object when you have a given quantity of robots around you.</li><li>You need to compare estimates of danger level in order to get the correct dangerous objects. You can talk with your fellow robots through the sidebar chat. You can send messages by writing the text in the input field and then pressing Enter</li><li>To search for an object, input the pattern in the left-hand sidebar and then press Enter.</li><li>Maximum distance for carrying objects: <b>" + strength_distance_limit + " m</b></li><li>Maximum distance for communication: <b>" + communication_distance_limit + " m</b></li><li>Maximum distance for sensing: <b>" + sensing_distance_limit + " m</b></li><li><p style='color: blue;'> Benign objects are associated with blue color</p></li><li><p style='color: red;'>Dangerous objects are associated with red color</p></li></ol><span class='br'></span><h1> Controls </h1><span class='br'></span><b>Arrow Keys</b> to advance <br><b>A</b> to grab/drop object with left arm<br><b>D</b> to grab/drop object with right arm <br><b>S</b> to rotate camera downwards <br><b>W</b> to rotate camera upwards <br><b>Q</b> to take sensing action <br><b>E</b> to focus on an object (you need this to then grab an object)<span class='br'></span><h1>Scenario Map</h1><span class='br'></span><img src='/media/layout.png' style='width:30%;height:auto;'/>";
+    //popup_text.innerHTML = "<h1>Succesful reset, you can start playing now!</h1><span class='br'></span><ol><li>Sense objects and bring only the dangerous ones into the goal area.</li><li>When you sense an object you will see whether the object is dangerous or benign according to the color of the object ID, and in your sidebar you will be able to consult the object, as well as the accuracy of the prediction.</li><li>Objects have a weight associated with them, and you will only be able to carry those that match your strength level. Strength level is modified by the amount of robots that are close to you and you may only be able to carry a heavy object when you have a given quantity of robots around you.</li><li>You need to compare estimates of danger level in order to get the correct dangerous objects. You can talk with your fellow robots through the sidebar chat. You can send messages by writing the text in the input field and then pressing Enter</li><li>To search for an object, input the pattern in the left-hand sidebar and then press Enter.</li><li>Maximum distance for carrying objects: <b>" + strength_distance_limit + " m</b></li><li>Maximum distance for communication: <b>" + communication_distance_limit + " m</b></li><li>Maximum distance for sensing: <b>" + sensing_distance_limit + " m</b></li><li><p style='color: blue;'> Benign objects are associated with blue color</p></li><li><p style='color: red;'>Dangerous objects are associated with red color</p></li></ol><span class='br'></span><h1> Controls </h1><span class='br'></span><b>Arrow Keys</b> to advance <br><b>A</b> to grab/drop object with left arm<br><b>D</b> to grab/drop object with right arm <br><b>S</b> to rotate camera downwards <br><b>W</b> to rotate camera upwards <br><b>Q</b> to take sensing action <br><b>E</b> to focus on an object (you need this to then grab an object)<span class='br'></span><h1>Scenario Map</h1><span class='br'></span><img src='/media/layout.png' style='width:30%;height:auto;'/>";
     
+    if(! (previous_scenario && previous_scenario == 2 && map_config["scenario"] == 1)){
+        popup_history = [];
+        document.getElementById('tutorial_progress').innerHTML = "";
+        popup_current_index = 0;
+    }
     
+    if(map_config["scenario"] != 2){
+        tutorial_popup("session");
+    }
+    
+    previous_scenario = map_config["scenario"];
     //document.getElementById("reset_button").disabled = false;
     //document.getElementById("reset_button").innerText = "Reset Game";
     
@@ -952,6 +1154,10 @@ function togglePopup(element){
 	document.getElementById(element).classList.toggle("active");
 }
 
+function activatePopup(element){
+	document.getElementById(element).classList.add("active");
+}
+
 
 function convert_to_real_coordinates(position){
 
@@ -1324,7 +1530,7 @@ function findCheckedRadio(radio_elements,final_string,pattern){
 	for(i = 0; i < radio_elements.length; i++) {
 		if(radio_elements[i].checked){
 			command_string = radio_elements[i].value;
-			if(pattern == '[object]'){
+			if(pattern == 'Object to message'){
 			    const child_table = document.getElementById("object_entries").children[i].children[1].children[0];
 			    command_string = "";
 			    for(j = 0; j < child_table.rows.length; j++) {
@@ -1395,6 +1601,11 @@ function addPrompt(info_type){
 }
 */
 
+
+function set_text(text_string){
+    document.getElementById('command_text').value = text_string;
+}
+
 var help_requests = {};
 
 //Set Command based on templates
@@ -1405,14 +1616,14 @@ function setCommand (num){
 	var ele = document.getElementsByName('command');
     final_string = ele[num].innerText;
     
-	if(final_string.includes('[agent]')){
+	if(final_string.includes('Agent to message')){
 		var agents = document.getElementsByName('neighbors');
-		final_string = findCheckedRadio(agents,final_string,'[agent]');
+		final_string = findCheckedRadio(agents,final_string,'Agent to message');
 	
 	}
-	else if(final_string.includes('[object]')){
+	else if(final_string.includes('Object to message')){
 		var objects = document.getElementsByName('objects');
-		final_string = findCheckedRadio(objects,final_string,'[object]');
+		final_string = findCheckedRadio(objects,final_string,'Object to message');
 	}
 	
 	if(final_string.length == 0){
@@ -1424,6 +1635,7 @@ function setCommand (num){
 
 	
 }
+
 
 
 function sendCommand() {
@@ -1442,45 +1654,31 @@ function sendCommand() {
         
             case "ask_for_sensing":
             
-                let object_num = tutorial_object.match(/Object ([0-9])+/)[1];
-                
                 if(final_string.includes("Hey, what results did you get for object " + object_num + "?")){
+                    tutorial_popup(tutorial_client_side);
                     tutorial_client_side = "send_object_info";
                     
-                    popup_text.innerHTML = "<h1>Tutorial</h1>Good, you should now have received some information about the object you asked for. You should still try to send your results for that object to your teammate in order for all of you to have as much certainty as possible. There is an easy way of exchanging information about objects:<ol><li>Select the desired object from the list in your left sidebar.<span class='br'></span><img src='/media/object_chosen.gif' style='width:30%;height:auto;'/></li><li>Now click on the pattern substitution button in the right-hand sidebar and send the message.<span class='br'></span><img src='/media/object_write.gif' style='width:20%;height:auto;'/></li></ol>";
-                    
-                    document.getElementById("popup-1").classList.add("active");
                 }
                 
                 break;
             case "send_object_info":
             
                 if(final_string.includes(tutorial_object)){
+                    tutorial_popup(tutorial_client_side);
                     tutorial_client_side = "ask_for_help";
-                    document.getElementById("popup-1").classList.add("active");
-                    popup_text.innerHTML = "<h1>Tutorial</h1>Now let's ask our teammate for help.<ol><li>Just send the next line of text: <b>Yes, can you help me carry that object?</b></li></ol>";
                 }
                 break;
             case "ask_for_help":
                 if(final_string.includes("Yes, can you help me carry that object?")){
-                    document.getElementById("popup-1").classList.add("active");
-                    if(heaviest_objects){
-                        tutorial_client_side = "exchange_info";
-                        popup_text.innerHTML = "<h1>Tutorial</h1>Great, now your teammate should have expressed their willingness to help you, but before anything else, you should always be sharing with your teammates any information about those heavy objects that not even with the help of the entire team would you be able to carry them. Concretely for this tutorial, those would be all objects with a weight of 3. In the end you will have to report those objects that are too heavy to carry and that are also dangerous, as will be explained later.<ol><li>Use the object information exchange technique shown previously to communicate to your teammate about object " + String(heaviest_objects[0]) +  ". This object is too heavy for even both of you to carry together.</li></ol>";
-                    } else{
-                        popup_text.innerHTML = "<h1>Tutorial</h1>Try using your sensor to first find the object with weight 3 and then repeat the last action.<ol><li>Just send the next line of text <b>Yes, can you help me carry that object?</b></li></ol>"
-                    }
+                    tutorial_popup(tutorial_client_side);
+                    tutorial_client_side = "exchange_info";
                 }
                 
                 break;
             case "exchange_info":
                 if(final_string.includes("Object " + String(heaviest_objects[0]))){
-                    tutorial_client_side = "end";
-                    document.getElementById("popup-1").classList.add("active");
-                    
-                    let object_num = tutorial_object.match(/Object ([0-9])+/)[1];
-                    
-                    popup_text.innerHTML = "<h1>Tutorial</h1>Now let's try carrying object " + object_num + " with the help of your teammate.<ol><li>Move now to the location of that heavy object and wait there for your teammate</li><li>Pick up the object when your strength increases to 2 and move it to the goal area. Your teammate will follow you, but have patience as it may not move as fast as you.</li><li>If your strength decreases, you will automatically drop the object, so you will have to wait again for your teammate in order to carry it again. Dropping accidentally an object in this way is penalized during the actual game session, so avoid doing it.</li></ol>";
+                    tutorial_popup(tutorial_client_side);
+                    tutorial_client_side = "tutorial_end";
                     break;
                 }
             default:
@@ -1511,6 +1709,20 @@ function sendCommand() {
 	    
 	    neighbors_dict = {}
 	    
+	    
+	    for(nl_idx in neighbors_list_store){
+		        if(neighbors_list_store[nl_idx][5]){ //If it's closeby
+		            var human_or_robot = 0;
+		            if(! neighbors_list_store[nl_idx][1]){
+		                human_or_robot = "human";
+		            } else{
+		                human_or_robot = "ai";
+		            }
+		            neighbors_dict[neighbors_list_store[nl_idx][0]] = human_or_robot;
+		        }
+		    }
+	    
+	    /*
 	    if(command_string === "All"){
 		    for(nl_idx in neighbors_list_store){
 		        if(neighbors_list_store[nl_idx][5]){ //If it's closeby
@@ -1546,6 +1758,7 @@ function sendCommand() {
 	        
 	        neighbors_dict[robot_id] = human_or_robot;
 	    }
+	    */
 	    
 	    
 	    socket.emit("message", final_string, simulator_timer, neighbors_dict);

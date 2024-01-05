@@ -62,29 +62,32 @@ class TutorialControl:
     
         pattern1 = "Hey, what results did you get for object (\d+)"
         pattern2 = "Yes, can you help me carry that object?"
+        
+        
     
         for rm in received_messages:
             
             print("Received message:", rm)
 
+            if rm[0] == self.helping:
 
-            if re.search(pattern1,rm[1]):
-                rematch = re.search(pattern1,rm[1])
-                object_id = rematch.group(1)
-                self.message_text = "Object " + object_id + " (weight: 2) Last seen in (5.5,5.5) at 00:01. Status Danger: dangerous, Prob. Correct: 99.1%. What do you have?"
-            
-                            
-            
-            if not self.answered_first and (re.search(MessagePattern.item_regex_full(),rm[1]) or re.search(MessagePattern.item_regex_full_alt(),rm[1])):
-                self.message_text = "I think it's dangerous!"
-                self.answered_first = True
+                if re.search(pattern1,rm[1]):
+                    rematch = re.search(pattern1,rm[1])
+                    object_id = rematch.group(1)
+                    self.message_text = "Object " + object_id + " (weight: 2) Last seen in (5.5,5.5) at 00:01. Status Danger: dangerous, Prob. Correct: 99.1%. What do you have?"
+                
+                                
+                
+                if not self.answered_first and (re.search(MessagePattern.item_regex_full(),rm[1]) or re.search(MessagePattern.item_regex_full_alt(),rm[1])):
+                    self.message_text = "I think it's dangerous!"
+                    self.answered_first = True
 
-                
-                
-            if pattern2 in rm[1]:
-                self.message_text = "Sure, I'll follow you"
-                self.action_index = self.State.follow     
-                                              
+                    
+                    
+                if pattern2 in rm[1]:
+                    self.message_text = "Sure, I'll follow you"
+                    self.action_index = self.State.follow     
+                                                  
      
             
     
