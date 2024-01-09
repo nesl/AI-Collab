@@ -31,6 +31,7 @@ import random
 import sys
 from subprocess import Popen
 from enum import Enum
+import math
 
 
 
@@ -866,6 +867,7 @@ class Simulation(Controller):
     
         self.state_machine = [None]*(num_users+num_ais)
         self.goal_area = [(float(self.cfg["goal_radius"]), [0,0])]
+        self.wall_edges = []
         
                      
         #commands.append({"$type": "simulate_physics", "value": False})
@@ -963,6 +965,7 @@ class Simulation(Controller):
                                          "position": {"x": xn, "y": 0.01, "z": zn},
                                          "scale": 0.2,
                                          "shape":"circle"})
+            self.wall_edges = [[wall['x']+wall_width-self.scenario_size/2,wall['y']+wall_width-self.scenario_size/2] for wall in [wall1_1[-1],wall1_2[-1],wall2_1[-1],wall2_2[-1], wall3_1[-1],wall3_2[-1], wall4_1[-1],wall4_2[-1]]]
                                          
         elif self.scenario == 2: #Tutorial
             
@@ -1543,6 +1546,37 @@ class Simulation(Controller):
         # Listen for events where the key was first pressed on the previous frame.
     '''
     
+    def checkCollision(self, m_idx):
+     
+        # Finding the distance of line 
+        # from center.
+        
+        radius = 1.5
+        
+        y_rot = QuaternionUtils.quaternion_to_euler_angles(self.user_magnebots[m_idx].dynamic.transform.rotation)[1]
+        pos = self.user_magnebots[m_idx].dynamic.transform.position
+        a = math.tan(y_rot * math.pi / 180)
+        b = 1
+        c = 0
+        
+
+        for edg in self.wall_edges:
+        
+            distance2 = np.linalg.norm([edg[0] - pos[0], edg[1] - pos[2]])
+            if distance2 < radius:
+        
+                dist = ((abs(a * (edg[0] - pos[0]) + b * (edg[1] - pos[2]) + c)) /
+                        math.sqrt(a * a + b * b))
+             
+                # Checking if the distance is less 
+                # than, greater than or equal to radius.
+                if (radius >= dist):
+                    print("Touch", edg)
+                    return True
+                    
+        return False
+            
+    
     #Process keyboard presses
     def keyboard_output(self, key_pressed, key_hold, extra_commands, duration, keys_time_unheld, all_ids, messages, fps):
     
@@ -1572,7 +1606,10 @@ class Simulation(Controller):
                 #if self.user_magnebots[0].action.status != ActionStatus.ongoing:
                 #if self.user_magnebots[idx].key_pressed != key_pressed[j] or self.user_magnebots[idx].action.status != ActionStatus.ongoing:
                 
-                if not self.user_magnebots[idx].resetting_arm:
+                collision = False #self.checkCollision(idx)
+                
+                
+                if not self.user_magnebots[idx].resetting_arm and not collision:
                     if self.user_magnebots[idx].key_pressed != key_pressed[j] or self.user_magnebots[idx].action.status != ActionStatus.ongoing or num_users < 5:
                         self.user_magnebots[idx].move_by(distance=10)
                     
@@ -1584,6 +1621,7 @@ class Simulation(Controller):
                     #keys_time_unheld[idx] = -20
                     
                     self.user_magnebots[idx].key_pressed = key_pressed[j]
+                    
 
             elif key_pressed[j] in self.keys_set[1]: #Back
                 
@@ -1617,7 +1655,7 @@ class Simulation(Controller):
                         self.user_magnebots[idx].turn_by(179)
                     
                     if keys_time_unheld[idx] > self.max_time_unheld:
-                        keys_time_unheld[idx] = int(-0.5*fps)
+                        keys_time_unheld[idx] = int(-0.4*fps)
                     elif keys_time_unheld[idx] >= 0:
                         keys_time_unheld[idx] = 0                        
                     #keys_time_unheld[idx] = -20
@@ -1636,7 +1674,7 @@ class Simulation(Controller):
                         self.user_magnebots[idx].turn_by(-179)
                     
                     if keys_time_unheld[idx] > self.max_time_unheld:
-                        keys_time_unheld[idx] = int(-0.5*fps)
+                        keys_time_unheld[idx] = int(-0.4*fps)
                     elif keys_time_unheld[idx] >= 0:
                         keys_time_unheld[idx] = 0                     
                     #keys_time_unheld[idx] = -20
@@ -2659,6 +2697,9 @@ class Simulation(Controller):
                     
             object_info_update = []
 
+            
+            #print(QuaternionUtils.quaternion_to_euler_angles(all_magnebots[0].dynamic.transform.rotation)[0])
+            
             
             
             #Update all stats related with closeness of magnebots, like strength factor
