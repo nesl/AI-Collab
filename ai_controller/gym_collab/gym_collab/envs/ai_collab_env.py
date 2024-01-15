@@ -653,17 +653,21 @@ class AICollabEnv(gym.Env):
         '''
         
 
-        return observation, reward, terminated, self.truncated, info
+        return observation, reward, terminated, self.truncated or self.agent_reset, info
 
     def reset(self, seed=None, options=None):
 
         super().reset(seed=seed)
         
-        self.sio.emit("disable")
-        self.sio.emit("reset") #self.sio.emit("reset_ai")
-        print("Reseting agent")
-        while not self.agent_reset:
-            continue
+        print("Starting to reset agent")
+        
+        if not self.truncated and not self.agent_reset:
+            self.sio.emit("disable")
+        if not self.agent_reset:
+            self.sio.emit("reset") #self.sio.emit("reset_ai")
+            print("Reseting agent")
+            while not self.agent_reset:
+                continue
 
         self.agent_reset = False
         

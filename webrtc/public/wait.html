@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Waiting Room</title>
+    <meta charset="UTF-8" />
+    <link href="/styles.css" rel="stylesheet" />
+  </head>
+  <body>
+
+    <h1 class="wait">People in the waiting room:</h1><h1 id="wait-count" class="wait">1</h1>
+    <p class="wait">Please wait until the required number of participants join the waiting room</p>
+    <button class="ready" id="ready-btn" disabled onclick=readyFunction()></button>
+    <p class="ready" id="waiting-txt"></p><p class="ready" id="redirect-count"></p>
+    <p class="error" id="error-msg"></p>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/wait.js"></script>	
+    
+  </body>
+</html>

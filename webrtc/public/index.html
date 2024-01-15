@@ -40,10 +40,10 @@
 		<h1 class="collapsible">Pattern Substitution</h1>
 		<div class="entry">
 			<div class='wrapper' >
-				<button name="command" style="width:100%;" onclick="setCommand(0)">Agent to message</button><br>
+				<button class="command-btn" name="command" onclick="setCommand(0)">Agent to message</button><br>
 			</div>
 			<div class='wrapper' >
-				<button name="command" style="width:100%;" onclick="setCommand(1)">Object to message</button><br>
+				<button class="command-btn" name="command" onclick="setCommand(1)">Object to message</button><br>
 			</div>
 			<!--
 			<div class='wrapper' >
@@ -138,7 +138,7 @@
 	<div class="popup" id="popup-reset">
 				<div class="overlay"></div>
 	        	<div class="content">
-	        	<h1>Resetting the game! Please wait for 1 minute...</h1>
+	        	<h1>Resetting the session! Please wait for 1 minute...</h1>
 
 	        	
 	        	</div>
@@ -174,6 +174,7 @@
 	<div id="play_area" style="outline-width: 0;" tabindex="0">
 	<p style="text-align: center; font-size: 2.5em;" id="active_text"></p>
     <video playsinline autoplay muted></video>
+    <p class="hint" id="hint-txt"></p>
     <video playsinline autoplay muted></video>
     
 

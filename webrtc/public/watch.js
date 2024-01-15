@@ -32,7 +32,7 @@ function resize_alert(){
     var isAtMaxWidth = screen.availWidth - window.innerWidth === 0;
 
     if(! isAtMaxWidth){
-        alert("Make sure this window is maximized before continuing with the game session, otherwise you may experience difficulties");
+        alert("Make sure this window is maximized before continuing with the session, otherwise you may experience difficulties");
     }
 }
 
@@ -101,7 +101,13 @@ var num_video = 0;
 
 const queryString = window.location.search;
 const urlParams = new URLSearchParams(queryString);
-const client_number = urlParams.get('client');
+const client_number = urlParams.get('client').match(/\d+/)[0];
+
+var passcode = urlParams.get('pass');
+
+if(passcode){
+    socket.emit("watcher", client_number, passcode);
+}
 
 //We set here the video streams
 socket.on("offer", (id, description, new_client_id) => {
@@ -308,6 +314,11 @@ function tutorial_popup(state){
             ol.appendChild(li);
             list_index += 1;
             break;
+            
+        case "hint":
+            const hint_txt = document.getElementById("hint-txt");
+            hint_txt.innerHTML = child_entries[i].textContent;
+            break;
     }
   }
   
@@ -322,13 +333,13 @@ function tutorial_popup(state){
     list_child_nodes = object_info_div.childNodes;
         
     for (let i = 0; i < list_child_nodes.length; i++) {
-        if(list_child_nodes[i].children[1].children[0].rows[0].cells[0].textContent.match(/weight: ([0-9])+/)[1] == "2"){
+        if(list_child_nodes[i].children[1].children[0].rows[0].cells[0].textContent.match(/weight: ([0-9]+)/)[1] == "2"){
             tutorial_object = list_child_nodes[i].children[1].children[0].rows[0].cells[0].textContent;
             break;
         }
     }
     
-    object_num = tutorial_object.match(/Object ([0-9])+/)[1];
+    object_num = tutorial_object.match(/Object ([0-9]+)/)[1];
     
   } else if(state == "ask_sensor"){
     tutorial_client_side = "ask_for_sensing";
@@ -667,7 +678,7 @@ socket.on("stats", (stats_dict, final) => {
     
     const title = document.createElement('h1');
     
-    title.textContent = "Game Finished: ";
+    title.textContent = "Session Finished: ";
     
     if(stats_dict["failed"]){
         title.textContent += "Picked Up/Dropped Heavy Dangerous Object";
@@ -701,7 +712,8 @@ socket.on("stats", (stats_dict, final) => {
         "sensor_activation":"Number of times sensor was used:",
         "quality_work":"Quality of work:",
         "effort": "Effort:",
-        "individual_payment": "Payment ($):"};
+        "individual_payment": "Payment ($):",
+        "token": "Your token:"};
     
     Object.keys(stats_dict).forEach(function(key) {
         
@@ -793,6 +805,22 @@ socket.on("stats", (stats_dict, final) => {
             td1.appendChild(document.createTextNode(key_to_text[key]));
             var td1 = tr1.insertCell();
             td1.appendChild(document.createTextNode(String(stats_dict[key].toFixed(2))));
+        } else if(key == "token"){
+        
+            if(stats_dict[key]){
+                const tr1 = tbl.insertRow();
+                var td1 = tr1.insertCell();
+            
+                var bold_el = document.createElement('strong');
+                bold_el.setAttribute("class", "token");
+                bold_el.appendChild(document.createTextNode(key_to_text[key]));
+                td1.appendChild(bold_el);
+                var td1 = tr1.insertCell();
+                var bold_el = document.createElement('strong');
+                bold_el.setAttribute("class", "token");
+                bold_el.appendChild(document.createTextNode(stats_dict[key]));
+                td1.appendChild(bold_el);
+            }
         } else if(Object.keys(key_to_text).includes(key)){
         
             const tr1 = tbl.insertRow();

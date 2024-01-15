@@ -13,6 +13,8 @@ commander
   .option('--password <value>', 'Specify passwords separated by comma')
   .option('--logdir <value>', 'Specify alternate directory to write logs')
   .option('--replay <value>', 'Replay session using log file')
+  .option('--wait', 'Create waiting room')
+  .option('--cookies', 'Use cookies')
   .parse(process.argv);
 
 const command_line_options = commander.opts();
@@ -66,11 +68,40 @@ const server = https.createServer(options, app)
 
 const io = require("socket.io")(server);
 
-app.use("/rrweb",express.static( __dirname + "/node_modules/rrweb/dist/"));
 
+
+const cookieParser = require('cookie-parser');
+app.use(cookieParser());
+
+app.use(function (req, res, next) {
+  // check if client sent cookie
+  var cookie = req.cookies.simulator_cookie;
+  if (cookie === undefined) {
+    // no: set a new cookie
+    var randomNumber=Math.random().toString();
+    randomNumber=randomNumber.substring(2,randomNumber.length);
+    res.cookie('simulator_cookie',randomNumber, { maxAge: 900000, httpOnly: true });
+    //console.log('cookie created successfully');
+  }
+  next(); // <-- important!
+});
+
+app.use("/rrweb",express.static( __dirname + "/node_modules/rrweb/dist/"));
 app.use(express.static(__dirname + "/public"));
 
 
+function getCookie(cookie, name){
+    cookie = ";"+cookie;
+    cookie = cookie.split("; ").join(";");
+    cookie = cookie.split(" =").join("=");
+    cookie = cookie.split(";"+name+"=");
+    if(cookie.length<2){
+        return null;
+    }
+    else{
+        return decodeURIComponent(cookie[1].split(";")[0]);
+    }
+}
 
 
 var Filter = require('bad-words'),
@@ -81,6 +112,7 @@ var window_name = '';
 
 var char_replacement = [{'Up':'Up','Down':'Down','Left':'Left','Right':'Right'},{'Up':'W','Down':'S','Left':'A','Right':'D'}];
 var clients_ids = [], user_ids_list = [], ai_ids_list = [], ai_ids = [], all_ids = [], all_ids_list = [], stats = {}, saved_events = [], saved_key_strokes = [], saved_tutorial_state = [];
+var wait_ids = [], redirect_ids = [], waiting_room = false, wait_cookies=[], redirect_cookies=[], use_cookies = command_line_options.cookies;
 var init_xdotool = false;
 var video_idx_broadcaster = 0;
 var past_timer = 0, past_timer2 = 0;
@@ -89,13 +121,18 @@ const disable_list = [];
 
 var reset_count = 0;
 
-var passcode;
+var passcode = [];
 
-if(! command_line_options.password){
-    passcode = [Math.random().toString(36).substring(2,7)];
-}
-else{
-    passcode = command_line_options.password.split(",");
+if(! command_line_options.wait){
+
+    if(! command_line_options.password){
+        passcode = [Math.random().toString(36).substring(2,7)];
+    }
+    else{
+        passcode = command_line_options.password.split(",");
+    }
+} else{
+    waiting_room = true;
 }
 
 
@@ -238,6 +275,10 @@ io.sockets.on("connection", socket => { //When a client connects
     if(command_line_options.log){
     	fs.appendFile(dir + dateTime + '.txt', String(timer.toFixed(2)) + ',4,0,' + String(true_time.toFixed(3)) + '\n', err => {});
     }
+    
+    if(! command_line_options.wait){ //enable timer if we are not waiting for anyone
+        socket.emit("enable_timer");
+    }
 
   });
   
@@ -291,6 +332,31 @@ io.sockets.on("connection", socket => { //When a client connects
   });
   socket.on("disconnect", () => {
     socket.to(broadcaster).emit("disconnectPeer", socket.id);
+    
+    if(wait_ids.includes(socket.id)){
+        const wait_index = wait_ids.indexOf(socket.id);
+		wait_ids.splice(wait_index, 1);
+		wait_cookies.splice(wait_index, 1);
+		
+		for (let id_idx = 0; id_idx < wait_ids.length; id_idx++) {
+  		    socket.to(wait_ids[id_idx]).emit("waiting_participants", wait_ids.length, user_ids_list.length);
+	    }
+    }
+    
+    if(redirect_ids.includes(socket.id)){
+        const redirect_index = redirect_ids.indexOf(socket.id);
+		redirect_ids.splice(redirect_index, 1);
+		redirect_cookies.splice(redirect_index, 1);
+		
+		for (let id_idx = 0; id_idx < redirect_ids.length; id_idx++) {
+  		    socket.to(redirect_ids[id_idx]).emit("redirecting_participants", redirect_ids.length);
+  		}
+		
+    }
+    
+    
+    
+    
   });
 
   
@@ -602,6 +668,81 @@ io.sockets.on("connection", socket => { //When a client connects
   
     socket.to(simulator).emit("report", object_list, socket_to_simulator_id(socket.id));
   });
+  
+  socket.on("join_wait", () => {
+  
+    var cookie = getCookie(socket.request.headers.cookie,'simulator_cookie');
+  
+    if(command_line_options.wait && waiting_room && ! (use_cookies && wait_cookies.includes(cookie))){
+  
+        wait_ids.push(socket.id);
+        wait_cookies.push(cookie);
+        
+        console.log(socket.request.connection.remoteAddress, socket.request.connection.remotePort, getCookie(socket.request.headers.cookie,'simulator_cookie'), socket.handshake.headers.cookie)
+
+        for (let id_idx = 0; id_idx < wait_ids.length; id_idx++) {
+        
+            if(wait_ids[id_idx] == socket.id){
+                socket.emit("waiting_participants", wait_ids.length, user_ids_list.length);
+            } else{
+      		    socket.to(wait_ids[id_idx]).emit("waiting_participants", wait_ids.length, user_ids_list.length);
+      		}
+      		
+      		if(wait_ids.length >= user_ids_list.length){
+      		    if(wait_ids[id_idx] == socket.id){
+      		        socket.emit("enable_button");
+      		    } else{
+      		        socket.to(wait_ids[id_idx]).emit("enable_button");
+      		    }
+      		    
+      		}
+        }    
+    } else{
+        socket.emit("error_message", "Sorry, we are not allowing any more participants at this time");
+    }
+
+    
+  });
+  
+  socket.on("redirect_session", () => {
+
+    var cookie = getCookie(socket.request.headers.cookie,'simulator_cookie');
+
+    if(command_line_options.wait && waiting_room && ! (use_cookies && redirect_cookies.includes(cookie))){
+    
+        redirect_ids.push(socket.id);
+        redirect_cookies.push(cookie);
+
+
+        if(redirect_ids.length == user_ids_list.length){
+            socket.to(simulator).emit("reset_tutorial");
+            socket.to(simulator).emit("enable_timer");
+            waiting_room = false;
+            for (let id_idx = 0; id_idx < redirect_ids.length; id_idx++) {
+                individual_passcode = Math.random().toString(36).substring(2,7);
+                passcode.push(individual_passcode);
+                
+                if(redirect_ids[id_idx] == socket.id){
+                    socket.emit("redirect_session", id_idx+1, individual_passcode);
+                } else{
+                    socket.to(redirect_ids[id_idx]).emit("redirect_session", id_idx+1, individual_passcode);
+                }
+            }
+        } else{
+            for (let id_idx = 0; id_idx < redirect_ids.length; id_idx++) {
+                if(redirect_ids[id_idx] == socket.id){
+                    socket.emit("redirecting_participants", redirect_ids.length);
+                } else{
+          		    socket.to(redirect_ids[id_idx]).emit("redirecting_participants", redirect_ids.length);
+          		}
+      		}
+        }
+    } else{
+        socket.emit("error_message", "Sorry, we are not allowing any more participants at this time");
+    }
+    
+  });
+  
   
 });
 

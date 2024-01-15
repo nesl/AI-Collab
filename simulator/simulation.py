@@ -32,6 +32,7 @@ import sys
 from subprocess import Popen
 from enum import Enum
 import math
+import string
 
 
 
@@ -152,6 +153,7 @@ class Stats():
         self.team_achievement = 0
         self.team_payment = 0
         self.individual_payment = 0
+        self.token = ""
         
         
 
@@ -210,6 +212,7 @@ class Enhanced_Magnebot(Magnebot):
         self.p22 = float(random.uniform(0.5, 0.9))
         self.current_teammates = {}
         self.reported_objects = []
+        self.danger_estimates = []
 
 #Main class
 class Simulation(Controller):
@@ -244,7 +247,7 @@ class Simulation(Controller):
             self.timer_limit = 0
         """
         
-        self.timer_limit = float(self.cfg['timer'])
+        self.timer_limit = 0#float(self.cfg['timer'])
             
         self.ai_skip_frames = int(self.cfg['ai_skip_frames'])
         
@@ -396,129 +399,131 @@ class Simulation(Controller):
                 #Receive action for ai controlled robot
                 @self.sio.event
                 def ai_action(action_message, agent_id_translated): #No arbitrary eval should be allowed, check here
-                    print('New command:', action_message, agent_id_translated)
-                    agent_id = list(self.robot_names_translate.keys())[list(self.robot_names_translate.values()).index(agent_id_translated)]
-                    ai_agent_idx = self.ai_magnebots_ids.index(agent_id)
-                    ai_agent = self.ai_magnebots[ai_agent_idx]
-                    
+                
+                    if not self.reset:
+                        print('New command:', action_message, agent_id_translated)
+                        agent_id = list(self.robot_names_translate.keys())[list(self.robot_names_translate.values()).index(agent_id_translated)]
+                        ai_agent_idx = self.ai_magnebots_ids.index(agent_id)
+                        ai_agent = self.ai_magnebots[ai_agent_idx]
+                        
 
-                    
-                    
-                    for actions in action_message:
-                    
-                        if actions[0] == 'send_occupancy_map':
-                            function = self.send_occupancy_map
-                        elif actions[0] == 'send_objects_held_status':
-                            function = self.send_objects_held_status
-                        elif actions[0] == 'send_danger_sensor_reading':
-                            function = self.send_danger_sensor_reading
-                        elif actions[0] == 'turn_by':
-                            
-                            ai_agent.turn_by(float(actions[1]), aligned_at=float(actions[2]))
-                        elif actions[0] == 'turn_to':
-                            object_id = list(self.object_names_translate.keys())[list(self.object_names_translate.values()).index(actions[1])]
-                            ai_agent.turn_to(object_id, aligned_at=float(actions[2]))
-                        elif actions[0] == 'move_by':
-                            ai_agent.move_by(float(actions[1]), arrived_at=float(actions[2]))
-                        elif actions[0] == 'move_to':
-
-                            ai_agent.move_to(json.loads(actions[1]), arrived_at=float(actions[2]), aligned_at=float(actions[3]), arrived_offset=float(actions[4]))
-                        elif actions[0] == 'reach_for':
-                            object_id = list(self.object_names_translate.keys())[list(self.object_names_translate.values()).index(actions[1])]
-                            ai_agent.reach_for(object_id, Arm(int(actions[2])))
-                        elif actions[0] == 'grasp':
-                            object_id = list(self.object_names_translate.keys())[list(self.object_names_translate.values()).index(actions[1])]
-
-                            #print("Grasping",object_id,ai_agent.strength,self.required_strength[object_id],all(object_id not in um.dynamic.held[arm] for um in [*self.user_magnebots,*self.ai_magnebots] for arm in [Arm.left,Arm.right])) #Grasping 10936571 2 1 True
-
-                            if ai_agent.strength < self.required_strength[object_id]:
-                            
-                                pass
+                        
+                        
+                        for actions in action_message:
+                        
+                            if actions[0] == 'send_occupancy_map':
+                                function = self.send_occupancy_map
+                            elif actions[0] == 'send_objects_held_status':
+                                function = self.send_objects_held_status
+                            elif actions[0] == 'send_danger_sensor_reading':
+                                function = self.send_danger_sensor_reading
+                            elif actions[0] == 'turn_by':
                                 
-                                """
-                            
-                                if object_id in self.dangerous_objects:
+                                ai_agent.turn_by(float(actions[1]), aligned_at=float(actions[2]))
+                            elif actions[0] == 'turn_to':
+                                object_id = list(self.object_names_translate.keys())[list(self.object_names_translate.values()).index(actions[1])]
+                                ai_agent.turn_to(object_id, aligned_at=float(actions[2]))
+                            elif actions[0] == 'move_by':
+                                ai_agent.move_by(float(actions[1]), arrived_at=float(actions[2]))
+                            elif actions[0] == 'move_to':
 
-                                        
-                                    #self.sio.emit("disable", (self.robot_names_translate[str(self.user_magnebots[idx].robot_id)]))
-                                    ai_agent.disabled = True
-                                    ai_agent.stats.end_time = self.timer
-                                    ai_agent.stats.failed = 1
-                                    
-                                else:
+                                ai_agent.move_to(json.loads(actions[1]), arrived_at=float(actions[2]), aligned_at=float(actions[3]), arrived_offset=float(actions[4]))
+                            elif actions[0] == 'reach_for':
+                                object_id = list(self.object_names_translate.keys())[list(self.object_names_translate.values()).index(actions[1])]
+                                ai_agent.reach_for(object_id, Arm(int(actions[2])))
+                            elif actions[0] == 'grasp':
+                                object_id = list(self.object_names_translate.keys())[list(self.object_names_translate.values()).index(actions[1])]
+
+                                #print("Grasping",object_id,ai_agent.strength,self.required_strength[object_id],all(object_id not in um.dynamic.held[arm] for um in [*self.user_magnebots,*self.ai_magnebots] for arm in [Arm.left,Arm.right])) #Grasping 10936571 2 1 True
+
+                                if ai_agent.strength < self.required_strength[object_id]:
+                                
                                     pass
-                                """
-                            
-                            else:
-                                if all(object_id not in um.dynamic.held[arm] for um in [*self.user_magnebots,*self.ai_magnebots] for arm in [Arm.left,Arm.right]):
-                                    extra_commands.append({"$type": "set_mass", "mass": 1, "id": object_id})
-                                    duration.append(1)
-                                    ai_agent.grasp(object_id, Arm(int(actions[2])))
-                                    ai_agent.stats.grab_attempts += 1
-                                    ai_agent.resetting_arm = True
-                        elif actions[0] == 'drop':
-                            object_id = list(self.object_names_translate.keys())[list(self.object_names_translate.values()).index(actions[1])]
-                            arm = Arm(int(actions[2]))
-                            ai_agent.drop(object_id, arm)
-                            self.object_dropping.append([int(ai_agent.dynamic.held[arm][0]),time.time(),ai_agent,arm])
-                            
-                            """
-                            if self.danger_level[object_id] == 2 and np.linalg.norm(self.object_manager.transforms[object_id].position[[0,2]]) >= float(self.cfg["goal_radius"]):
-                            
-                                robot_ids,sort_indices = self.get_involved_teammates(ai_agent.current_teammates)
-                            
-                                for sidx in range(int(self.required_strength[object_id])-1):
-                                    all_magnebots[robot_ids[sort_indices[sidx]]].stats.dropped_outside_goal.append(self.object_names_translate[object_id])
-                            
-                                ai_agent.stats.dropped_outside_goal.append(self.object_names_translate[object_id])
-                            """
+                                    
+                                    """
                                 
-                        elif actions[0] == 'reset_arm':
-                            ai_agent.reset_arm(Arm(int(actions[1])))
-                        elif actions[0] == 'rotate_camera':
-                            ai_agent.rotate_camera(float(actions[1]), float(actions[2]), float(actions[3]))
-                        elif actions[0] == 'look_at':
-                            ai_agent.look_at(json.loads(actions[1]))
-                        elif actions[0] == 'move_camera':
-                            function = ai_agent.move_camera(json.loads(actions[1]))
-                        elif actions[0] == 'reset_camera':
-                            ai_agent.reset_camera()
-                        elif actions[0] == 'slide_torso':
-                            ai_agent.slide_torso(float(actions[1]))
-                        elif actions[0] == 'reset_position':
-                            ai_agent.reset_position()
-                        else:
-                            continue
-                        
-                        if 'send_' in actions[0]:
-                            self.queue_perception_action.append([function,[agent_id],self.ai_skip_frames])
+                                    if object_id in self.dangerous_objects:
 
-                        
-                        '''
-                        if 'send_' in actions[0]: # or 'send_occupancy_map' in actions[0] or 'send_objects_held_status' in actions[0]:
-                            eval_string = "self."
-                        else:
-                            eval_string = "ai_agent."
-                        
-                        
-                        eval_string += actions[0]+"("
+                                            
+                                        #self.sio.emit("disable", (self.robot_names_translate[str(self.user_magnebots[idx].robot_id)]))
+                                        ai_agent.disabled = True
+                                        ai_agent.stats.end_time = self.timer
+                                        ai_agent.stats.failed = 1
+                                        
+                                    else:
+                                        pass
+                                    """
+                                
+                                else:
+                                    if all(object_id not in um.dynamic.held[arm] for um in [*self.user_magnebots,*self.ai_magnebots] for arm in [Arm.left,Arm.right]):
+                                        extra_commands.append({"$type": "set_mass", "mass": 1, "id": object_id})
+                                        duration.append(1)
+                                        ai_agent.grasp(object_id, Arm(int(actions[2])))
+                                        ai_agent.stats.grab_attempts += 1
+                                        ai_agent.resetting_arm = True
+                            elif actions[0] == 'drop':
+                                object_id = list(self.object_names_translate.keys())[list(self.object_names_translate.values()).index(actions[1])]
+                                arm = Arm(int(actions[2]))
+                                ai_agent.drop(object_id, arm)
+                                self.object_dropping.append([int(ai_agent.dynamic.held[arm][0]),time.time(),ai_agent,arm])
+                                
+                                """
+                                if self.danger_level[object_id] == 2 and np.linalg.norm(self.object_manager.transforms[object_id].position[[0,2]]) >= float(self.cfg["goal_radius"]):
+                                
+                                    robot_ids,sort_indices = self.get_involved_teammates(ai_agent.current_teammates)
+                                
+                                    for sidx in range(int(self.required_strength[object_id])-1):
+                                        all_magnebots[robot_ids[sort_indices[sidx]]].stats.dropped_outside_goal.append(self.object_names_translate[object_id])
+                                
+                                    ai_agent.stats.dropped_outside_goal.append(self.object_names_translate[object_id])
+                                """
+                                    
+                            elif actions[0] == 'reset_arm':
+                                ai_agent.reset_arm(Arm(int(actions[1])))
+                            elif actions[0] == 'rotate_camera':
+                                ai_agent.rotate_camera(float(actions[1]), float(actions[2]), float(actions[3]))
+                            elif actions[0] == 'look_at':
+                                ai_agent.look_at(json.loads(actions[1]))
+                            elif actions[0] == 'move_camera':
+                                function = ai_agent.move_camera(json.loads(actions[1]))
+                            elif actions[0] == 'reset_camera':
+                                ai_agent.reset_camera()
+                            elif actions[0] == 'slide_torso':
+                                ai_agent.slide_torso(float(actions[1]))
+                            elif actions[0] == 'reset_position':
+                                ai_agent.reset_position()
+                            else:
+                                continue
+                            
+                            if 'send_' in actions[0]:
+                                self.queue_perception_action.append([function,[agent_id],self.ai_skip_frames])
 
-                        for a_idx, argument in enumerate(actions[1:]):
-                            if a_idx:
-                                eval_string += ','
-                            eval_string += argument
+                            
+                            '''
+                            if 'send_' in actions[0]: # or 'send_occupancy_map' in actions[0] or 'send_objects_held_status' in actions[0]:
+                                eval_string = "self."
+                            else:
+                                eval_string = "ai_agent."
+                            
+                            
+                            eval_string += actions[0]+"("
 
-                        if 'send_' in actions[0]:
-                            if len(actions) > 1:
-                                eval_string += ','
-                            eval_string +=  '"' + agent_id + '")'
-                            self.queue_perception_action.append([eval_string,self.ai_skip_frames])
-                        else:
-                            #print("Eval string", eval_string)
+                            for a_idx, argument in enumerate(actions[1:]):
+                                if a_idx:
+                                    eval_string += ','
+                                eval_string += argument
 
-                            eval(eval_string + ")")
-                        '''
-                        
+                            if 'send_' in actions[0]:
+                                if len(actions) > 1:
+                                    eval_string += ','
+                                eval_string +=  '"' + agent_id + '")'
+                                self.queue_perception_action.append([eval_string,self.ai_skip_frames])
+                            else:
+                                #print("Eval string", eval_string)
+
+                                eval(eval_string + ")")
+                            '''
+                            
                         
                         
 
@@ -584,7 +589,11 @@ class Simulation(Controller):
                     agent_idx = self.user_magnebots_ids.index(agent_id)
                 
                     self.user_magnebots[agent_idx].reported_objects = object_list
-                    
+                
+                #Enable time limit    
+                @self.sio.event
+                def enable_timer():
+                    self.timer_limit = float(self.cfg['timer'])
                     
                     
                 self.sio.connect(address)
@@ -811,7 +820,10 @@ class Simulation(Controller):
             self.uis.append(ui)
             um.ui = ui
             um.ui_elements = ((bar_id,text_id,timer_text_id, status_text_id, goal_status_text, position_text, arm_text))
-
+            
+            
+            if self.scenario != 2:
+                um.stats.token = ''.join(random.choices(string.ascii_lowercase + string.digits + string.ascii_uppercase, k=8))
 
 
 
@@ -1409,6 +1421,21 @@ class Simulation(Controller):
                 cv2.putText(original_image, screen_positions['ids'][s_idx], (int(s[0]),int(s[1])), font, fontScale, colorFont[s_idx], thickness, cv2.LINE_AA)
             except:
                 pdb.set_trace()
+                
+    def info_message_ui(self, all_magnebots, idx, text, color):
+    
+        if color == "red":
+            color_val = {"r": 1, "g": 0, "b": 0, "a": 1}
+        elif color == "blue":
+            color_val = {"r": 0, "g": 0, "b": 1, "a": 1}
+    
+        
+        txt = all_magnebots[idx].ui.add_text(text=text,
+         position={"x": 0, "y": 0},
+         color=color_val,
+         font_size=20
+         )
+        return [idx,txt,0]
     
 
     def get_involved_teammates(self, current_teammates, object_id): #Assign contributions to each teammate
@@ -1546,16 +1573,16 @@ class Simulation(Controller):
         # Listen for events where the key was first pressed on the previous frame.
     '''
     
-    def checkCollision(self, m_idx):
+    def checkCollision(self, m_idx, reverse):
      
         # Finding the distance of line 
         # from center.
         
-        radius = 1.5
+        radius = 0.5
         
         y_rot = QuaternionUtils.quaternion_to_euler_angles(self.user_magnebots[m_idx].dynamic.transform.rotation)[1]
         pos = self.user_magnebots[m_idx].dynamic.transform.position
-        a = math.tan(y_rot * math.pi / 180)
+        a = math.tan((y_rot+180*int(reverse)) * math.pi / 180)
         b = 1
         c = 0
         
@@ -1571,7 +1598,6 @@ class Simulation(Controller):
                 # Checking if the distance is less 
                 # than, greater than or equal to radius.
                 if (radius >= dist):
-                    print("Touch", edg)
                     return True
                     
         return False
@@ -1606,8 +1632,7 @@ class Simulation(Controller):
                 #if self.user_magnebots[0].action.status != ActionStatus.ongoing:
                 #if self.user_magnebots[idx].key_pressed != key_pressed[j] or self.user_magnebots[idx].action.status != ActionStatus.ongoing:
                 
-                collision = False #self.checkCollision(idx)
-                
+                collision = self.checkCollision(idx, False)
                 
                 if not self.user_magnebots[idx].resetting_arm and not collision:
                     if self.user_magnebots[idx].key_pressed != key_pressed[j] or self.user_magnebots[idx].action.status != ActionStatus.ongoing or num_users < 5:
@@ -1631,7 +1656,10 @@ class Simulation(Controller):
                 #print(self.user_magnebots[idx].action.status)
                 #if self.user_magnebots[idx].key_pressed != key_pressed[j] or self.user_magnebots[idx].action.status != ActionStatus.ongoing:
                 
-                if not self.user_magnebots[idx].resetting_arm:
+                collision = self.checkCollision(idx, True)
+
+                
+                if not self.user_magnebots[idx].resetting_arm and not collision:
                     if self.user_magnebots[idx].key_pressed != key_pressed[j] or self.user_magnebots[idx].action.status != ActionStatus.ongoing or num_users < 5:
                         self.user_magnebots[idx].move_by(distance=-10)
                     
@@ -2223,7 +2251,7 @@ class Simulation(Controller):
         return objects_held
     
     
-    def track_objects_carried(self, all_magnebots, all_idx, item_info):
+    def track_objects_carried(self, all_magnebots, all_idx, item_info, messages):
     
         #Track objects being carried
         
@@ -2256,6 +2284,8 @@ class Simulation(Controller):
                     
                         all_magnebots[all_idx].stats.objects_in_goal.append(self.object_names_translate[object_id])
                         self.already_collected.append(self.object_names_translate[object_id])
+                        if self.danger_level[object_id] == 1 and all_magnebots[all_idx].ui_elements:
+                            messages.append(self.info_message_ui(all_magnebots, all_idx, "Penalty! Benign object disposed!", "red"))
                         
                         
                         
@@ -2265,15 +2295,22 @@ class Simulation(Controller):
                             
                             for sidx in range(int(self.required_strength[object_id])-1):
                                 all_magnebots[robot_ids[sort_indices[sidx]]].stats.objects_in_goal.append(self.object_names_translate[object_id])
+                                if self.danger_level[object_id] == 1 and all_magnebots[robot_ids[sort_indices[sidx]]].ui_elements:
+                                    messages.append(self.info_message_ui(all_magnebots, robot_ids[sort_indices[sidx]], "Penalty! Benign object disposed!", "red"))
                     
                         if self.danger_level[object_id] == 2 and self.object_names_translate[object_id] not in all_magnebots[all_idx].stats.dangerous_objects_in_goal:
                             all_magnebots[all_idx].stats.dangerous_objects_in_goal.append(self.object_names_translate[object_id])
+                            
+                            if all_magnebots[all_idx].ui_elements:
+                                messages.append(self.info_message_ui(all_magnebots, all_idx, "Reward! Dangerous object disposed!", "blue"))
                             
                             
                             if int(self.required_strength[object_id]) > 1: #Add teammates contribution
                             
                                 for sidx in range(int(self.required_strength[object_id])-1):
                                     all_magnebots[robot_ids[sort_indices[sidx]]].stats.dangerous_objects_in_goal.append(self.object_names_translate[object_id])
+                                    if all_magnebots[robot_ids[sort_indices[sidx]]].ui_elements:
+                                        messages.append(self.info_message_ui(all_magnebots, robot_ids[sort_indices[sidx]], "Reward! Dangerous object disposed!", "blue"))
                             
                       
 
@@ -2282,7 +2319,6 @@ class Simulation(Controller):
                 item_info[self.object_names_translate[object_id]] = all_magnebots[all_idx].item_info[self.object_names_translate[object_id]]
                 
      
-    
     class Tutorial_State(Enum):
         start = 0
         move = 1
@@ -2359,7 +2395,7 @@ class Simulation(Controller):
                     o_translated2 = str(2+um_idx*4)
                     o_translated3 = str(3+um_idx*4)
                     
-                    if o_translated1 in um.item_info and "sensor" in um.item_info[o_translated1] and o_translated2 in um.item_info and "sensor" in um.item_info[o_translated2] and o_translated3 in um.item_info and "sensor" in um.item_info[o_translated3]:
+                    if o_translated1 in um.item_info and "sensor" in um.item_info[o_translated1] and um.item_info[o_translated1]['sensor'] and o_translated2 in um.item_info and "sensor" in um.item_info[o_translated2] and um.item_info[o_translated2]['sensor'] and o_translated3 in um.item_info and "sensor" in um.item_info[o_translated3] and um.item_info[o_translated3]['sensor']:
                     
                         self.state_machine[um_idx] = self.Tutorial_State.pickup_object
                         
@@ -2742,10 +2778,13 @@ class Simulation(Controller):
                     #all_magnebots[idx].stats.distance_traveled = round(all_magnebots[idx].stats.distance_traveled,1)
                     #all_magnebots[idx].stats.end_time = round(all_magnebots[idx].stats.end_time,1)
                     
-                    if self.scenario == 2 and all(1 if robot.disabled else 0 for robot in self.user_magnebots): #Only for tutorial are we going to reset automatically
-                        self.previous_scenario = self.scenario
-                        self.scenario = 1
-                        self.reset = True
+                    if self.scenario == 2:
+                        #Disable ai companion
+                        if str(all_magnebots[idx].robot_id) in self.user_magnebots_ids:
+                            agent_idx = self.user_magnebots_ids.index(str(all_magnebots[idx].robot_id))
+                            self.ai_magnebots[agent_idx].disabled = True
+                            self.ai_magnebots[agent_idx].stats.end_time = self.timer    
+                        
                     
                     #Last magnebot to be sent stats. We also send to everyone the stats related to team performance
                     if len(disabled_robots) == len(all_magnebots):
@@ -2884,7 +2923,11 @@ class Simulation(Controller):
                             json.dump({"results": all_stats, "seed": self.seed_value}, log_results_f)
                             log_results_f.close()
                             
-                        
+                        #Reset automatically for tutorial
+                        if self.scenario == 2:
+                            self.previous_scenario = self.scenario
+                            self.scenario = 1
+                            self.reset = True    
                         
                             
                     else:
@@ -3073,9 +3116,14 @@ class Simulation(Controller):
                             
                                 for sidx in range(int(self.required_strength[grasped_object])-1):
                                     all_magnebots[robot_ids[sort_indices[sidx]]].stats.dropped_outside_goal.append(self.object_names_translate[grasped_object])
+                                    
+                                    if all_magnebots[robot_ids[sort_indices[sidx]]].ui_elements: 
+                                        messages.append(self.info_message_ui(all_magnebots, robot_ids[sort_indices[sidx]], "Penalty! Object accidentaly dropped!", "red"))
                             
                                 all_magnebots[idx].stats.dropped_outside_goal.append(self.object_names_translate[grasped_object])
-                            
+                                
+                                if all_magnebots[idx].ui_elements:
+                                    messages.append(self.info_message_ui(all_magnebots, idx, "Penalty! Object accidentaly dropped!", "red"))
                             
                             """
                             if grasped_object in self.dangerous_objects:
@@ -3482,7 +3530,7 @@ class Simulation(Controller):
                     
                 #Track objects being carried
                 if not item_info:
-                    self.track_objects_carried(all_magnebots, all_idx, item_info)
+                    self.track_objects_carried(all_magnebots, all_idx, item_info, messages)
                             
                 
                 if not self.local and not all_magnebots[idx].last_output:
@@ -3538,7 +3586,7 @@ class Simulation(Controller):
                         
                     #Track objects being carried
                     if not item_info:
-                        self.track_objects_carried(all_magnebots, all_idx, item_info)
+                        self.track_objects_carried(all_magnebots, all_idx, item_info, messages)
                         
                     
                     
@@ -3587,6 +3635,8 @@ class Simulation(Controller):
 
             #Reset world
             if self.reset:
+            
+            
                 print("Resetting...")
                 
                 for am in all_magnebots:
@@ -3674,6 +3724,7 @@ class Simulation(Controller):
         if self.previous_scenario == 2 and not self.scenario == 2:
             for u_idx in range(len(self.ai_magnebots)):   
                 commands.append({"$type": "destroy_avatar", "id": str(self.ai_magnebots[u_idx].robot_id)})
+                self.add_ons.remove(self.ai_magnebots[u_idx])
             '''    
             for u_idx in range(len(self.user_magnebots)):   
                 commands.append({"$type": "destroy_avatar", "id": str(self.user_magnebots[u_idx].robot_id)})
@@ -3753,6 +3804,9 @@ class Simulation(Controller):
             self.user_magnebots[u_idx].reset(position=user_spawn_positions[u_idx])
             #self.user_magnebots[u_idx].ui.initialized = False
             commands.append({"$type": "destroy_visual_effect", "id": self.user_magnebots[u_idx].robot_id})
+            
+            if self.scenario != 2:
+                self.user_magnebots[u_idx].stats.token = ''.join(random.choices(string.ascii_lowercase + string.digits + string.ascii_uppercase, k=8))
 
 
         commands.extend(self.populate_world())

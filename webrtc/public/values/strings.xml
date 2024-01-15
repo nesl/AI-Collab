@@ -31,6 +31,7 @@
         <list><![CDATA[The layout of the room your robot is currently inside corresponds to the next image:]]></list>
         <list><![CDATA[To move around this room you will have to press and hold the <b>arrow keys</b> in your keyboard.]]></list>
         <list><![CDATA[After clicking on <b>Next</b>, move your robot to the center of the room, which is highlighted by a fire. You have to enter the fire for the next popup window to appear. For now, we will be using fires to guide you, but don't expect these fires to be present in the actual research session. Also, be careful with objects in the ground, as they can block your movement.]]></list>
+        <hint><![CDATA[Move your robot into the fire]]></hint>
              
     </entry>
     <entry name="move_to_object">
@@ -39,6 +40,7 @@
         <list><![CDATA[Good job! Notice that while moving you may lose balance (tip) and fall if you are not careful.]]></list>
         <list><![CDATA[Also, be careful with walls and corners, as you may get stuck if you move too closely to them.]]></list>
         <list><![CDATA[After you click on <b>Next</b>, you should now look for the next highlighted area with fire and move into it, we are now going to teach you how to sense objects!]]></list>
+        <hint><![CDATA[Move your robot into the next fire]]></hint>
         
      </entry>
 
@@ -48,6 +50,7 @@
         <list><![CDATA[The objects you are meant to sense are usually in the ground, to see them you may need to rotate your camera. You can press the key <b>W</b> to rotate the camera upwards, and <b>S</b> to rotate the camera downwards.]]></list>
         <list><![CDATA[After adjusting the camera, you can use the key <b>Q</b> to activate the sensor and obtain information from the objects around you. Currently, you will obtain such information from all objects in a radius of [sensing_distance_limit] meters from you. The IDs of the sensed objects will appear next to each of them: if the ID text is in red, it means the sensor thinks such an object is dangerous, if it's blue, the sensor thinks it's benign.]]></list>
         <list><![CDATA[After you click on <b>Next</b>, try adjusting your camera with the <b>W</b> and <b>S</b> keys, and then activate your sensor using the key <b>Q</b>. You are right now in a perfect spot to get information from the three objects next to you, so please don't move. The next popup window will appear after you sense those three objects.]]></list>
+        <hint><![CDATA[Adjust your camera with <b>W</b> and <b>S</b>, then activate your sensor with <b>Q</b>]]></hint>
 
     </entry>
     
@@ -63,6 +66,7 @@
         <list><![CDATA[After you focus on the object, you need to get close to it and use either the key <b>A</b> to pick up the object with your left arm, or <b>D</b> to pick it up with your right arm.]]></list>
         <list><![CDATA[If you are too far away from the object you want to pick up or in a position where it is not possible to pick up such object, a message will appear indicating such an issue. The way to solve this is by just getting closer to the object or approaching the object from a different position.]]></list>
         <list><![CDATA[After you click on <b>Next</b>, look out for the object partially covered with fire and try aligning the white dot with the object in question, press <b>E</b>, and then press either <b>A</b> or <b>D</b> to pick up the object.]]></list>
+        <hint><![CDATA[Look out for the object partially covered with fire, move close to it, align the white dot with the object in question, press <b>E</b>, and then press either <b>A</b> or <b>D</b> to pick up the object]]></hint>
         
     </entry>
     <entry name="move_to_goal">
@@ -71,24 +75,31 @@
         
         <list><![CDATA[After you click on <b>Next</b>, you should move into the goal location that is covered right now with fire. The goal location will always be represented by an area surrounded by red circles.]]></list>
 
+        <hint><![CDATA[Move your robot into the next fire]]></hint>
     </entry>
     <entry name="drop_object">
         <title>Tutorial</title>
         <head><![CDATA[Now you will learn how to place the object in the goal area.]]></head>
         
         <list><![CDATA[You should use the same key you used to pick up the object: if it was the left arm, press the key <b>A</b>, if it was the right arm, press the key <b>D</b>. Do it now after you click on <b>Next</b>. Make sure the object stays within the goal area.]]></list>
+        
+        <hint><![CDATA[Press <b>A</b> or <b>D</b> to drop the object]]></hint>
     </entry>        
     <entry name="move_to_heavy_object">
         <title>Tutorial</title>
         
         <list><![CDATA[Once you bring an object to the goal area, you will obtain the true danger status of such object, as shown in the example image below for object 2.]]></list>
         <list><![CDATA[If you look into your left-hand sidebar you will notice that the object you collected is benign! You may have gotten a correct or incorrect estimate depending on your sensor. Remember, you should only collect dangerous objects or you will get penalized. Now click on <b>Next</b> and move into the next area highlighted with fire!]]></list>
+        
+        <hint><![CDATA[Move your robot into the next fire]]></hint>
 
     </entry>
     <entry name="activate_sensor_heavy">
         <title>Tutorial</title>
         
         <list><![CDATA[Your robot should now be next to an object you haven't sensed yet. Click on <b>Next</b> and activate your sensor with the key <b>Q</b>. Don't move while doing this, you are already within range to sense the object.]]></list>
+        
+        <hint><![CDATA[Activate your sensor by pressing <b>Q</b>]]></hint>
     </entry>
     <entry name="move_to_agent">
         <title>Tutorial</title>
@@ -97,6 +108,8 @@
         <list><![CDATA[Objects have a weight, and for you to be able to carry an object, your strength needs to match the weight of such object. Each robot has an individual strength, and when you are close enough to other robots, their individual strengths will be added. Both your individual strength and the individual strength of your teammate in the room are 1 unit each in this tutorial. In order to carry heavy objects, just ask other robots to get close to you.]]></list>
         <list><![CDATA[Robots need to be within [strength_distance_limit] meters from you to add their individual strengths to yours. You can check how far you are from other robots by checking the information displayed in the upper part of the left sidebar.]]></list>
         <list><![CDATA[In this panel you will also note that when robots are too far away even for communication, the entry in this table for the particular robot will be red colored. We will talk more about communication in a moment, for now, you should ask a robot for help. We have located one robot that is close enough to help you move this object. After clicking on <b>Next</b> move into the area highlighted with fire.]]></list>
+        
+        <hint><![CDATA[Move your robot into the next fire]]></hint>
     </entry>        
     <entry name="ask_sensor">
 
@@ -107,6 +120,8 @@
        <list><![CDATA[To make sure any message you send is received by the intended robot, you must make sure that the robot is within [communication_distance_limit] meters.]]></list>
        <list><![CDATA[To communicate use the right-hand sidebar chat. Just write any message in the bottom input field and press <b>Enter</b> or click on the <b>Send</b> button. This message will be broadcast to all robots within communication distance.]]></list>
        <list><![CDATA[For now, send exactly the following line of text: <button class="message_link" onclick="set_text('Hey, what results did you get for object [object_num]?')">Hey, what results did you get for object [object_num]?</button>. Instead of manually writing such a line of text, you can just click on it to automatically write it in the input field of your chat. Click on the previous line of text, then click on <b>Next</b>, and press on the <b>Send</b> button. Notice that right now you have to communicate with specific message templates, but in the research session you may write messages of any kind.]]></list>
+       
+       <hint><![CDATA[Send the line of text]]></hint>
         
     </entry>
     <entry name="end">
@@ -119,6 +134,7 @@
         <list><![CDATA[After you submit the report of the heaviest dangerous objects, or if the time runs out, a popup window will appear with the results of the research session. Some of the fields will only be updated when all teammates finish, so wait for that to happen!]]></list>
         <list><![CDATA[After completing the previous steps you will now be ready for the actual research session! Please wait for all your teammates to end their tutorial session, a message will appear when the simulated environment is getting reset.]]></list>
         
+        <hint><![CDATA[End participation]]></hint>
     </entry>
     <entry name="ask_for_sensing">
             
@@ -128,6 +144,8 @@
         <list><![CDATA[Let's assume you want to communicate information about object 5. You would first need to click on the desired object from the list of objects in your left sidebar:]]></list>
         <list><![CDATA[Then you would have to click on the <b>Object to message</b> button below the <b>Pattern Substitution</b> header in the right-hand sidebar, and then you would have send the message.]]></list>
         <list><![CDATA[Perform all of the previous steps but for object [object_num] after clicking on <b>Next</b>!]]></list>
+        
+        <hint><![CDATA[Use pattern substitution for object [object_num] and send the message]]></hint>
                     
     </entry>                    
     <entry name="send_object_info">
@@ -136,6 +154,8 @@
         <head><![CDATA[Perfect, communication is a fundamental action needed to succeed in the research session. Try to always talk with your teammates. Now you should ask your teammate for help.]]></head>
         
         <list><![CDATA[You will now send the next line of text: <button class="message_link" onclick="set_text('Yes, can you help me carry that object?')">Yes, can you help me carry that object?</button>. Click on the previous line of text, then click on <b>Next</b>, and press on the <b>Send</b> button.]]></list>
+        
+        <hint><![CDATA[Send the line of text]]></hint>
     </entry>
     <entry name="ask_for_help">
         <title>Tutorial</title>
@@ -143,15 +163,19 @@
         
         <list><![CDATA[After clicking on <b>Next</b>, use the object information exchange technique shown previously to communicate to your teammate about object [heaviest_objects]. This object is too heavy for even both of you to carry together.]]></list>
  
+        <hint><![CDATA[Use pattern substitution for object [heaviest_objects] and send the message]]></hint>
+ 
     </entry>                
     <entry name="exchange_info">
      
         <title>Tutorial</title>
-        <head><![CDATA[Now you should try carrying object [object_num] with the help of your teammate. This time there will be no guidance on the steps to take, we will test what you have learned so far! Just some notes:]]></head>
+        <head><![CDATA[Now you should try moving object [object_num] to the goal area with the help of your teammate. This time there will be no guidance on the steps to take, we will test what you have learned so far! Just some notes:]]></head>
         
         <list><![CDATA[Move to the location of object [object_num] and wait there for your teammate]]></list>
         <list><![CDATA[Pick up the object when your strength increases to 2 and move it to the goal area. Your teammate will follow you, but have patience as she may not move as fast as you.]]></list>
         <list><![CDATA[If your strength decreases, you will automatically drop the object and have to wait again for your teammate to come closer to carry the object again. Dropping accidentally any object in this way is penalized during the actual research session, so avoid doing it.]]></list>
+        
+        <hint><![CDATA[Move object [object_num] to the goal area]]></hint>
     </entry>
 </tutorial>
 
@@ -175,6 +199,8 @@
         <head><![CDATA[<b>Arrow Keys</b> to advance <br><b>A</b> to grab/drop object with left arm<br><b>D</b> to grab/drop object with right arm <br><b>S</b> to rotate camera downwards <br><b>W</b> to rotate camera upwards <br><b>Q</b> to take sensing action <br><b>E</b> to focus on an object (you need this to then grab an object)]]></head>
         
         <title>Scenario Map</title>
-    </entry>>
+        
+        <hint><![CDATA[Sense objects and bring only the dangerous ones into the goal area]]></hint>
+    </entry>
 </session>       
 </simulation>

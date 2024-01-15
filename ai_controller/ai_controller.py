@@ -366,7 +366,6 @@ while True:
             
         
         next_observation, reward, terminated, truncated, info = env.step(action)
-        
         if args.webcam:
             pass
             #cv2.imwrite("frame.jpg",info["frame"])
