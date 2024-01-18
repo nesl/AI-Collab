@@ -239,6 +239,8 @@ class Simulation(Controller):
         self.reset_number = 0
         self.payment = 7
         self.max_time_unheld = 1
+        self.enable_logs = False
+        self.timer_limit = 0#float(self.cfg['timer'])
 
         """
         if float(self.cfg['timer']) > 0:
@@ -247,8 +249,6 @@ class Simulation(Controller):
             self.timer_limit = 0
         """
         
-        self.timer_limit = 0#float(self.cfg['timer'])
-            
         self.ai_skip_frames = int(self.cfg['ai_skip_frames'])
         
         
@@ -594,6 +594,7 @@ class Simulation(Controller):
                 @self.sio.event
                 def enable_timer():
                     self.timer_limit = float(self.cfg['timer'])
+                    self.enable_logs = True
                     
                     
                 self.sio.connect(address)
@@ -631,7 +632,7 @@ class Simulation(Controller):
         extra_config['num_cells'] = self.static_occupancy_map.occupancy_map.shape
         extra_config['num_objects'] = len(self.graspable_objects)
         extra_config['all_robots'] = [(self.robot_names_translate[str(um.robot_id)],um.controlled_by) for um in [*self.user_magnebots,*self.ai_magnebots]]
-        extra_config['timer_limit'] = self.timer_limit
+        extra_config['timer_limit'] = float(self.cfg['timer'])
         extra_config['strength_distance_limit'] = self.cfg['strength_distance_limit']
         extra_config['communication_distance_limit'] = self.cfg['communication_distance_limit']
         extra_config['sensing_distance_limit'] = self.cfg['sensing_radius']
@@ -2102,6 +2103,7 @@ class Simulation(Controller):
     def send_occupancy_map(self, magnebot_id):
     
         self.occupancy_map_request.append(magnebot_id)
+        print("occupancy request", self.occupancy_map_request)
         
         
     def send_objects_held_status(self,magnebot_id):
@@ -2130,6 +2132,7 @@ class Simulation(Controller):
             pdb.set_trace()
         
         
+        #print("Hello Sending occupancy map", self.occupancy_map_request, magnebot_id, self.ai_magnebots[m_idx].view_radius)
         if magnebot_id in self.occupancy_map_request and self.ai_magnebots[m_idx].view_radius:
             
             print("Sending occupancy map")
@@ -2927,7 +2930,13 @@ class Simulation(Controller):
                         if self.scenario == 2:
                             self.previous_scenario = self.scenario
                             self.scenario = 1
-                            self.reset = True    
+                            self.reset = True
+                        else:
+                            self.enable_logs = False
+                            self.timer_limit = 0   
+                            self.previous_scenario = self.scenario
+                            self.scenario = 2
+                            self.reset = True
                         
                             
                     else:
@@ -3472,6 +3481,7 @@ class Simulation(Controller):
                     self.queue_perception_action[qa_idx][2] -= 1
                 else:
                     self.queue_perception_action[qa_idx][0](*self.queue_perception_action[qa_idx][1])
+                    print(self.queue_perception_action[qa_idx])
                     to_remove.append(qa_idx)
                     
             to_remove.reverse()
@@ -3482,7 +3492,7 @@ class Simulation(Controller):
             
             #Send frames to virtual cameras in system and occupancy maps if required, and all outputs needed
 
-            if self.options.create_video:
+            if self.options.create_video and self.enable_logs:
                 video_meta_f.write(str(self.timer)+'\n') #Given variable frame rate, save timestamp of frame
 
             #For top down view
@@ -3493,7 +3503,7 @@ class Simulation(Controller):
                 im = Image.fromarray(img_image)
                 im.save("top_view.png")
                 """
-                if self.options.create_video:
+                if self.options.create_video and self.enable_logs:
                     img_image_rgb = cv2.cvtColor(img_image, cv2.COLOR_BGR2RGB)
                     video[0].write(img_image_rgb)
 
@@ -3511,7 +3521,7 @@ class Simulation(Controller):
                         im.save("first_view.png")
                     """
                     
-                    if self.options.create_video:
+                    if self.options.create_video and self.enable_logs:
                         #pdb.set_trace()
                         img_image_rgb = cv2.cvtColor(magnebot_images[magnebot_id], cv2.COLOR_BGR2RGB)
                         video[idx+1].write(img_image_rgb)
@@ -3550,7 +3560,7 @@ class Simulation(Controller):
                     if cams and magnebot_id in magnebot_images:
                         cams[idx+1].send(magnebot_images[magnebot_id])
                         
-                        if self.options.create_video:
+                        if self.options.create_video and self.enable_logs:
                             video[idx+1].write(magnebot_images[magnebot_id])
 
                     #Occupancy maps
@@ -3597,8 +3607,8 @@ class Simulation(Controller):
                         
                     #print(limited_map)
                     if not self.local and not all_magnebots[all_idx].last_output:
-                        if any(extra_status):
-                            print("Sending extra status")
+                        #if any(extra_status):
+                        #    print("Sending extra status")
                         self.sio.emit('ai_output', (all_idx, json_numpy.dumps(limited_map), reduced_metadata, objects_held, item_info, ai_status, extra_status, all_magnebots[all_idx].strength, self.timer, all_magnebots[all_idx].disabled) )
                         if all_magnebots[all_idx].disabled:
                             all_magnebots[all_idx].last_output = True
@@ -3684,7 +3694,7 @@ class Simulation(Controller):
         extra_config['num_cells'] = self.static_occupancy_map.occupancy_map.shape
         extra_config['num_objects'] = len(self.graspable_objects)
         extra_config['all_robots'] = [(self.robot_names_translate[str(um.robot_id)],um.controlled_by) for um in [*self.user_magnebots,*self.ai_magnebots]]
-        extra_config['timer_limit'] = self.timer_limit
+        extra_config['timer_limit'] = float(self.cfg['timer'])
         extra_config['strength_distance_limit'] = self.cfg['strength_distance_limit']
         extra_config['communication_distance_limit'] = self.cfg['communication_distance_limit']
         extra_config['sensing_distance_limit'] = self.cfg['sensing_radius']
@@ -3724,7 +3734,9 @@ class Simulation(Controller):
         if self.previous_scenario == 2 and not self.scenario == 2:
             for u_idx in range(len(self.ai_magnebots)):   
                 commands.append({"$type": "destroy_avatar", "id": str(self.ai_magnebots[u_idx].robot_id)})
+                self.sio.emit("agent_delete", (self.robot_names_translate[str(self.ai_magnebots[u_idx].robot_id)]))
                 self.add_ons.remove(self.ai_magnebots[u_idx])
+                del self.robot_names_translate[str(self.ai_magnebots[u_idx].robot_id)]
             '''    
             for u_idx in range(len(self.user_magnebots)):   
                 commands.append({"$type": "destroy_avatar", "id": str(self.user_magnebots[u_idx].robot_id)})
@@ -3790,6 +3802,8 @@ class Simulation(Controller):
                     self.ai_magnebots.append(Enhanced_Magnebot(robot_id=robot_id, position=ai_spawn_positions[ai_idx],image_frequency=ImageFrequency.never, controlled_by='ai'))
                     #self.ai_magnebots.append(Enhanced_Magnebot(robot_id=robot_id, position=ai_spawn_positions[ai_idx],image_frequency=ImageFrequency.always, pass_masks=['_img'], controlled_by='ai'))
                     self.robot_names_translate[str(robot_id)] = chr(ord('A') + ai_idx + num_users)
+                
+                print(self.robot_names_translate)
                     
                 print("Before:", self.add_ons)
                 self.add_ons.extend([*self.ai_magnebots])
@@ -3823,15 +3837,13 @@ class Simulation(Controller):
         
         self.segmentation_colors = self.get_segmentation_colors()
         
-        if self.previous_scenario == 2 and not self.scenario == 2:
-            self.static_occupancy_map.generate(cell_size=self.cfg['cell_size']) #TODO: outputs occupancy map with obstacles that should not be there!!
-            self.communicate([])
         
-        #print("Generated occupancy map")
-        #print(self.static_occupancy_map.occupancy_map)
-        #self.static_occupancy_map.generate(cell_size=self.cfg['cell_size']) #Get occupancy map only with walls
+        self.static_occupancy_map.generate(cell_size=self.cfg['cell_size']) #Get occupancy map only with walls
         
-        #self.communicate([])
+        self.communicate([])
+        
+        self.manual_occupancy_map()
+        print(self.static_occupancy_map.occupancy_map)
         
     
 

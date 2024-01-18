@@ -115,7 +115,7 @@ var clients_ids = [], user_ids_list = [], ai_ids_list = [], ai_ids = [], all_ids
 var wait_ids = [], redirect_ids = [], waiting_room = false, wait_cookies=[], redirect_cookies=[], use_cookies = command_line_options.cookies;
 var init_xdotool = false;
 var video_idx_broadcaster = 0;
-var past_timer = 0, past_timer2 = 0;
+var past_timer = 0, past_timer2 = 0, last_time = 0;
 var message_sent = false;
 const disable_list = [];
 
@@ -145,6 +145,48 @@ function socket_to_simulator_id(socket_id){
 
 function simulator_id_to_socket(simulator_id){
   return all_ids[all_ids_list.indexOf(simulator_id)];
+}
+
+function eliminate_from_waiting_room(socket, socket_id){
+
+    if(wait_ids.includes(socket_id)){
+        const wait_index = wait_ids.indexOf(socket_id);
+		wait_ids.splice(wait_index, 1);
+		wait_cookies.splice(wait_index, 1);
+		
+		for (let id_idx = 0; id_idx < wait_ids.length; id_idx++) {
+  		    socket.to(wait_ids[id_idx]).emit("waiting_participants", wait_ids.length, user_ids_list.length);
+	    }
+    }
+    
+    if(redirect_ids.includes(socket_id)){
+        const redirect_index = redirect_ids.indexOf(socket_id);
+		redirect_ids.splice(redirect_index, 1);
+		redirect_cookies.splice(redirect_index, 1);
+		
+		for (let id_idx = 0; id_idx < redirect_ids.length; id_idx++) {
+  		    socket.to(redirect_ids[id_idx]).emit("redirecting_participants", redirect_ids.length);
+  		}
+		
+    }
+}
+
+function get_waiting_time(start){
+
+    var time_limit = map_config["timer_limit"];
+    
+    if(map_config["scenario"] == 2){
+        time_limit *= 2;
+    }
+    
+    if(! start){
+        time_limit -= last_time;
+    }
+    
+    console.log("Timer", time_limit, last_time, map_config["timer_limit"]);
+    
+    return time_limit;
+    
 }
 
 io.sockets.on("error", e => console.log(e));
@@ -333,29 +375,7 @@ io.sockets.on("connection", socket => { //When a client connects
   socket.on("disconnect", () => {
     socket.to(broadcaster).emit("disconnectPeer", socket.id);
     
-    if(wait_ids.includes(socket.id)){
-        const wait_index = wait_ids.indexOf(socket.id);
-		wait_ids.splice(wait_index, 1);
-		wait_cookies.splice(wait_index, 1);
-		
-		for (let id_idx = 0; id_idx < wait_ids.length; id_idx++) {
-  		    socket.to(wait_ids[id_idx]).emit("waiting_participants", wait_ids.length, user_ids_list.length);
-	    }
-    }
-    
-    if(redirect_ids.includes(socket.id)){
-        const redirect_index = redirect_ids.indexOf(socket.id);
-		redirect_ids.splice(redirect_index, 1);
-		redirect_cookies.splice(redirect_index, 1);
-		
-		for (let id_idx = 0; id_idx < redirect_ids.length; id_idx++) {
-  		    socket.to(redirect_ids[id_idx]).emit("redirecting_participants", redirect_ids.length);
-  		}
-		
-    }
-    
-    
-    
+    eliminate_from_waiting_room(socket, socket.id);
     
   });
 
@@ -374,6 +394,8 @@ io.sockets.on("connection", socket => { //When a client connects
     	disable_list.push(all_ids_list[idx]);
     }
     
+    
+    last_time = timer;
   });
   
   
@@ -394,6 +416,8 @@ io.sockets.on("connection", socket => { //When a client connects
     if((! disable_list.includes(all_ids_list[idx])) && disable){
     	disable_list.push(all_ids_list[idx]);
     }
+    
+    last_time = timer;
     
   });
   
@@ -596,6 +620,26 @@ io.sockets.on("connection", socket => { //When a client connects
   	if(command_line_options.log){
     	fs.appendFile(dir + dateTime + '.txt', String(timer.toFixed(2)) + ',5,' + magnebot_id + ',' + JSON.stringify(stats_dict) + '\n', err => {});
     }
+    
+    if(map_config["scenario"] != 2 && final && command_line_options.wait){ //Rest experimental session
+        passcode = [];
+
+        var client_number = all_ids_list.indexOf(magnebot_id);
+
+        clients_ids[client_number] = null
+        all_ids[client_number] = null;
+        
+        waiting_room = true;
+        
+        
+        if(wait_ids.length >= user_ids_list.length){
+            for (let id_idx = 0; id_idx < wait_ids.length; id_idx++) {
+    		    socket.to(wait_ids[id_idx]).emit("enable_button");
+            }
+        }    
+        
+    }
+    
   });
   
   socket.on("sim_crash", (timer) => {
@@ -673,7 +717,7 @@ io.sockets.on("connection", socket => { //When a client connects
   
     var cookie = getCookie(socket.request.headers.cookie,'simulator_cookie');
   
-    if(command_line_options.wait && waiting_room && ! (use_cookies && wait_cookies.includes(cookie))){
+    if(command_line_options.wait && cookie && ! (use_cookies && wait_cookies.includes(cookie))){
   
         wait_ids.push(socket.id);
         wait_cookies.push(cookie);
@@ -688,7 +732,7 @@ io.sockets.on("connection", socket => { //When a client connects
       		    socket.to(wait_ids[id_idx]).emit("waiting_participants", wait_ids.length, user_ids_list.length);
       		}
       		
-      		if(wait_ids.length >= user_ids_list.length){
+      		if(wait_ids.length >= user_ids_list.length && waiting_room){
       		    if(wait_ids[id_idx] == socket.id){
       		        socket.emit("enable_button");
       		    } else{
@@ -696,7 +740,12 @@ io.sockets.on("connection", socket => { //When a client connects
       		    }
       		    
       		}
-        }    
+        }
+        
+        if(! waiting_room){
+            socket.emit("disable_button", get_waiting_time(false));
+        }
+        
     } else{
         socket.emit("error_message", "Sorry, we are not allowing any more participants at this time");
     }
@@ -722,12 +771,27 @@ io.sockets.on("connection", socket => { //When a client connects
                 individual_passcode = Math.random().toString(36).substring(2,7);
                 passcode.push(individual_passcode);
                 
+                
                 if(redirect_ids[id_idx] == socket.id){
                     socket.emit("redirect_session", id_idx+1, individual_passcode);
                 } else{
                     socket.to(redirect_ids[id_idx]).emit("redirect_session", id_idx+1, individual_passcode);
                 }
             }
+            
+            for (let id_idx = 0; id_idx < wait_ids.length; id_idx++) {
+            
+                if(! redirect_ids.includes(wait_ids[id_idx])){ //For all those that are not admitted into the session
+                    if(wait_ids[id_idx] == socket.id){
+                        socket.emit("disable_button", get_waiting_time(true));
+                    } else{
+                        socket.to(wait_ids[id_idx]).emit("disable_button", get_waiting_time(true));
+                    }
+                } else{
+                    eliminate_from_waiting_room(socket, wait_ids[id_idx]);
+                }
+            }
+            
         } else{
             for (let id_idx = 0; id_idx < redirect_ids.length; id_idx++) {
                 if(redirect_ids[id_idx] == socket.id){
@@ -735,12 +799,20 @@ io.sockets.on("connection", socket => { //When a client connects
                 } else{
           		    socket.to(redirect_ids[id_idx]).emit("redirecting_participants", redirect_ids.length);
           		}
+          		
       		}
         }
+    
     } else{
         socket.emit("error_message", "Sorry, we are not allowing any more participants at this time");
     }
     
+  });
+  
+  socket.on("agent_delete", (magnebot_id) => {
+  
+    socket.to(simulator_id_to_socket(magnebot_id)).emit("agent_delete");
+
   });
   
   

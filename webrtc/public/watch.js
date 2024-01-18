@@ -947,6 +947,12 @@ socket.on("stats", (stats_dict, final) => {
         
         
         popup_content.appendChild(tbl_team);
+        
+        if(! tutorial_mode){
+            //peerConnection.close(); //Close stream
+            socket.disconnect();
+        }
+        
         /*
         const bt = document.createElement('button');
         bt.setAttribute("id", "reset_button");

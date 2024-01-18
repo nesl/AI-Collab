@@ -364,8 +364,10 @@ while True:
         
         
             
-        
+        #print(action, next_observation)
         next_observation, reward, terminated, truncated, info = env.step(action)
+        
+
         if args.webcam:
             pass
             #cv2.imwrite("frame.jpg",info["frame"])
@@ -390,7 +392,6 @@ while True:
             
         #When any action has completed
         if next_observation and any(next_observation['action_status']) and not disabled:
-            
             
             
             
@@ -422,8 +423,8 @@ while True:
 
                                 ob_key = info["object_key_to_index"][map_object[0]]
                              
-                                
                                 robotState.items[ob_key]["item_location"] = [int(m_key_xy[0]), int(m_key_xy[1])]
+                    
 
                                 
                             elif map_object not in info['map_metadata'][str(ego_location[0][0])+'_'+str(ego_location[1][0])]: #Robot information

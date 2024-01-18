@@ -68,6 +68,8 @@ class AICollabEnv(gym.Env):
         self.last_sensed = []
         self.extra = {}
         self.disabled = False
+        self.delete = False
+        self.truncated = False
         
         if webcam:
             self.cap = cv2.VideoCapture(video_index) 
@@ -108,6 +110,8 @@ class AICollabEnv(gym.Env):
                      self.view_radius,
                      self.centered_view,
                      self.skip_frames))
+                     
+                
             # asyncio.run(main_ai(tracks_received))
 
         # Receiving simulator's robot id
@@ -131,7 +135,8 @@ class AICollabEnv(gym.Env):
                 #asyncio.run(self.main_ai())
                 self.gym_setup()
                 self.setup_ready = True
-
+                
+            self.delete = False
         # Receiving occupancy map
         self.maps = []
         self.map_ready = False
@@ -297,6 +302,11 @@ class AICollabEnv(gym.Env):
             self.map_config = config
             self.disabled = False
             print("Agent reset")
+            
+        @self.sio.event
+        def agent_delete():
+            self.delete = True
+            print("Agent delete")
             
         @self.sio.event
         def offer_ai(broadcast_id, request):
@@ -653,16 +663,36 @@ class AICollabEnv(gym.Env):
         '''
         
 
-        return observation, reward, terminated, self.truncated or self.agent_reset, info
+        return observation, reward, terminated, self.truncated or self.agent_reset or self.delete, info
 
     def reset(self, seed=None, options=None):
 
         super().reset(seed=seed)
         
-        print("Starting to reset agent")
         
+        if self.delete:
+            print("Delete")
+            while not self.agent_reset:
+                time.sleep(0.2)
+                continue
+            print("Reset delete")
+            self.sio.emit(
+                    "watcher_ai",
+                    (self.client_number,
+                     self.use_occupancy,
+                     "",
+                     self.view_radius,
+                     self.centered_view,
+                     self.skip_frames))
+        
+            while self.delete:
+                time.sleep(0.2)
+                continue
+        
+        print("Starting to reset agent")
         if not self.truncated and not self.agent_reset:
             self.sio.emit("disable")
+            print("Disabling agent")
         if not self.agent_reset:
             self.sio.emit("reset") #self.sio.emit("reset_ai")
             print("Reseting agent")
@@ -670,6 +700,7 @@ class AICollabEnv(gym.Env):
                 continue
 
         self.agent_reset = False
+        
         
         
         map_size = self.map_config['num_cells'][0]
@@ -861,7 +892,7 @@ class AICollabEnv(gym.Env):
             print("action", action_message)
             self.sio.emit("ai_action", (action_message))
 
-        while not self.new_output:  # Sync with simulator
+        while not self.new_output and not self.delete:  # Sync with simulator
             pass
 
         #print(self.new_output[0])
@@ -1244,6 +1275,7 @@ class AICollabEnv(gym.Env):
 
                 if any(extra_status):
                     terminated[1] = True
+                    
 
                     if extra_status[0]:  # Occupancy map received
 
