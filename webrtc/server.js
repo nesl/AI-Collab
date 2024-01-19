@@ -115,7 +115,7 @@ var clients_ids = [], user_ids_list = [], ai_ids_list = [], ai_ids = [], all_ids
 var wait_ids = [], redirect_ids = [], waiting_room = false, wait_cookies=[], redirect_cookies=[], use_cookies = command_line_options.cookies;
 var init_xdotool = false;
 var video_idx_broadcaster = 0;
-var past_timer = 0, past_timer2 = 0, last_time = 0;
+var past_timer2 = 0, last_time = 0;
 var message_sent = false;
 const disable_list = [];
 
@@ -403,7 +403,6 @@ io.sockets.on("connection", socket => { //When a client connects
     socket.to(all_ids[idx]).emit("human_output", location, item_info, neighbors_info, timer, disable);
     
     if(command_line_options.log && Object.keys(item_info).length > 0){ //(timer - past_timer > 1 || Object.keys(item_info).length > 0)){
-        past_timer = timer;
         fs.appendFile(dir + dateTime + '.txt', String(timer.toFixed(2)) +',' + '3' + ',' + socket_to_simulator_id(all_ids[idx]) + ',' + JSON.stringify(item_info) + '\n', err => {}); //+ ',' + JSON.stringify(neighbors_info) + '\n', err => {});
 
 		/*
@@ -452,6 +451,8 @@ io.sockets.on("connection", socket => { //When a client connects
     if(command_line_options.log){
     	fs.appendFile(dir + dateTime + '.txt', String(timer.toFixed(2)) + ',4,' + magnebot_id + ',' + String(true_time.toFixed(3)) + '\n', err => {});
     }
+    
+    past_timer2 = 0;
   });
   
   socket.on("reset_announcement", (magnebot_id) => {
@@ -635,6 +636,10 @@ io.sockets.on("connection", socket => { //When a client connects
         if(wait_ids.length >= user_ids_list.length){
             for (let id_idx = 0; id_idx < wait_ids.length; id_idx++) {
     		    socket.to(wait_ids[id_idx]).emit("enable_button");
+            }
+        } else{
+            for (let id_idx = 0; id_idx < wait_ids.length; id_idx++) {
+    		    socket.to(wait_ids[id_idx]).emit("deactivate_timer");
             }
         }    
         

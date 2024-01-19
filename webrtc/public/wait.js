@@ -69,6 +69,20 @@ socket.on("disable_button", (time_to_finish) => {
 
 });
 
+socket.on("deactivate_timer", () => {
+
+  session_ongoing = false;
+  
+  
+  if(countdown_ongoing){
+    clearInterval(countdown_ongoing);
+    countdown_ongoing = null;
+  }
+  
+  document.getElementById('ready-btn').textContent = "Waiting for participants";
+
+});
+
 socket.on("error_message", (msg) => {
   document.getElementById('error-msg').textContent = msg;
 });

@@ -1635,6 +1635,14 @@ class Simulation(Controller):
                 
                 collision = self.checkCollision(idx, False)
                 
+                if collision:
+                    txt = self.user_magnebots[idx].ui.add_text(text="Too close to wall, move back!",
+                             position={"x": 0, "y": 0},
+                             color={"r": 1, "g": 0, "b": 0, "a": 1},
+                             font_size=20
+                             )
+                    messages.append([idx,txt,0])
+                
                 if not self.user_magnebots[idx].resetting_arm and not collision:
                     if self.user_magnebots[idx].key_pressed != key_pressed[j] or self.user_magnebots[idx].action.status != ActionStatus.ongoing or num_users < 5:
                         self.user_magnebots[idx].move_by(distance=10)
@@ -1658,6 +1666,14 @@ class Simulation(Controller):
                 #if self.user_magnebots[idx].key_pressed != key_pressed[j] or self.user_magnebots[idx].action.status != ActionStatus.ongoing:
                 
                 collision = self.checkCollision(idx, True)
+                
+                if collision:
+                    txt = self.user_magnebots[idx].ui.add_text(text="Too close to wall, move back!",
+                             position={"x": 0, "y": 0},
+                             color={"r": 1, "g": 0, "b": 0, "a": 1},
+                             font_size=20
+                             )
+                    messages.append([idx,txt,0])
 
                 
                 if not self.user_magnebots[idx].resetting_arm and not collision:
@@ -2103,7 +2119,7 @@ class Simulation(Controller):
     def send_occupancy_map(self, magnebot_id):
     
         self.occupancy_map_request.append(magnebot_id)
-        print("occupancy request", self.occupancy_map_request)
+        #print("occupancy request", self.occupancy_map_request)
         
         
     def send_objects_held_status(self,magnebot_id):
@@ -2648,7 +2664,7 @@ class Simulation(Controller):
                 self.object_attributes_id[str(pos_new[0])+'_'+str(pos_new[1])].append((self.robot_names_translate[str(o.robot_id)]))
 
             
-            if self.options.log_state: # and self.timer - past_timer > 1:
+            if self.options.log_state and self.enable_logs: # and self.timer - past_timer > 1:
                 past_timer = self.timer
                 object_metadata = []
                 
@@ -3481,7 +3497,7 @@ class Simulation(Controller):
                     self.queue_perception_action[qa_idx][2] -= 1
                 else:
                     self.queue_perception_action[qa_idx][0](*self.queue_perception_action[qa_idx][1])
-                    print(self.queue_perception_action[qa_idx])
+                    #print(self.queue_perception_action[qa_idx])
                     to_remove.append(qa_idx)
                     
             to_remove.reverse()

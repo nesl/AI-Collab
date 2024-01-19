@@ -698,6 +698,22 @@ class AICollabEnv(gym.Env):
             print("Reseting agent")
             while not self.agent_reset:
                 continue
+                
+            if self.delete:
+                print("Delete")
+                print("Reset delete")
+                self.sio.emit(
+                        "watcher_ai",
+                        (self.client_number,
+                         self.use_occupancy,
+                         "",
+                         self.view_radius,
+                         self.centered_view,
+                         self.skip_frames))
+            
+                while self.delete:
+                    time.sleep(0.2)
+                    continue
 
         self.agent_reset = False
         
