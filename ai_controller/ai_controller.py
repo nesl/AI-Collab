@@ -10,12 +10,14 @@ import random
 import cv2
 
 
+
 from gym_collab.envs.action import Action
 
 from llm_control import LLMControl
 from deepq_control import DeepQControl
 from heuristic_control import HeuristicControl
 from tutorial_control import TutorialControl
+from decision_control import DecisionControl
 
 parser = argparse.ArgumentParser(
     description="AI Controller"
@@ -34,7 +36,7 @@ parser.add_argument("--use-occupancy", action='store_true', help="Use occupancy 
 parser.add_argument("--address", default='https://172.17.15.69:4000', help="Address where our simulation is running")
 parser.add_argument("--robot-number", default=1, help="Robot number to control")
 parser.add_argument("--view-radius", default=0, help="When using occupancy maps, the view radius")
-parser.add_argument("--control", default="heuristic", type=str, help="Type of control to apply: heuristic,llm,openai,deepq,q,manual")
+parser.add_argument("--control", default="heuristic", type=str, help="Type of control to apply: heuristic,llm,openai,deepq,q,manual,decision")
 parser.add_argument("--message-loop", action="store_true", help="Use to allow messages to be sent back to sender")
 parser.add_argument("--role", default="general", help="Choose a role for the agent: general, scout, lifter")
 parser.add_argument("--planning", default="equal", help="Choose a planning role for the agent: equal, coordinator, coordinated")
@@ -184,52 +186,20 @@ actions_to_take = [*[1]*2,*[2]*3,11,19,*[3]*4,*[0]*5,16,19]
 
 
 class RobotState:
-    def __init__(self, latest_map, object_held, meta_robots):
+    def __init__(self, latest_map, object_held, env):
         self.latest_map = latest_map
         self.object_held = object_held
         self.items = []
         self.item_estimates = {}
-        self.robots = [{"neighbor_type": meta_robots[n][1], "neighbor_location": [-1,-1], "last_seen_location": []} for n in range(len(meta_robots))] # 0 if human, 1 if ai
+        self.robots = [{"neighbor_type": env.neighbors_info[n][1], "neighbor_location": [-1,-1], "neighbor_time": 0.0} for n in range(len(env.neighbors_info))] # 0 if human, 1 if ai
         self.strength = 1
         self.map_metadata = {}
+        self.sensor_parameters = env.sensor_parameters
+        self.neighbors_sensor_parameters = env.neighbors_sensor_parameters
+        self.possible_estimates = {}
         
-    def update_items(self,item_output, item_idx, robot_idx): #Updates items
-
-
-        if item_idx >= len(self.items):
-            diff_len = item_idx - len(robotState.items)-1
-            self.items.extend([{'item_weight': 0, 'item_danger_level': 0, 'item_danger_confidence': np.array([0.]), 'item_location': np.array([-1, -1], dtype=np.int16), 'item_time': np.array([0], dtype=np.int16)} for d in range(diff_len)])
-
-        if item_idx not in self.item_estimates:
-            self.item_estimates[item_idx] = [{"item_danger_level": 0, "item_danger_confidence": 0, "item_location": [-1,-1], "item_time": 0} for n in range(len(self.robots)+1)]
-            
-        self.item_estimates[item_idx][robot_idx]["item_location"] = [int(item_output["item_location"][0]),int(item_output["item_location"][1])]
-        self.item_estimates[item_idx][robot_idx]["item_time"] = item_output["item_time"]
-        self.item_estimates[item_idx][robot_idx]["item_danger_level"] = item_output["item_danger_level"]
-        if item_output["item_danger_confidence"]:
-            self.item_estimates[item_idx][robot_idx]["item_danger_confidence"] = item_output["item_danger_confidence"][0]
-
-
-
-        print(item_output)
-        """
-        if not self.items[item_idx]["item_danger_level"] or  (item_output["item_danger_level"] and round(self.items[item_idx]["item_danger_confidence"][0],3) == round(item_output["item_danger_confidence"][0],3) and self.items[item_idx]["item_time"][0] < item_output["item_time"][0]) or (item_output["item_danger_level"] and self.items[item_idx]["item_danger_confidence"][0] < item_output["item_danger_confidence"][0]):
-            
-            self.items[item_idx] = item_output
-            self.items[item_idx]["item_location"] = [int(item_output["item_location"][0]),int(item_output["item_location"][1])]
-        """    
-        if not self.items[item_idx]["item_danger_level"]:
-            self.items[item_idx] = item_output
-            self.items[item_idx]["item_location"] = [int(item_output["item_location"][0]),int(item_output["item_location"][1])]
-        
-        if self.items[item_idx]["item_time"][0] < item_output["item_time"][0]:
-        
-            self.items[item_idx]["item_location"] = [int(item_output["item_location"][0]),int(item_output["item_location"][1])]
-            self.items[item_idx]["item_time"] = item_output["item_time"]
-            
-        self.items[item_idx]["item_weight"] = item_output["item_weight"]
-        
-        
+    def average_fusion(self, item_idx):
+    
         benign = 0
         dangerous = 0
         num_samples = 0
@@ -253,6 +223,141 @@ class RobotState:
             else:
                 self.items[item_idx]["item_danger_level"] = 1
                 self.items[item_idx]["item_danger_confidence"] = [benign]
+                
+    def bayesian_fusion(self, item_idx):
+    
+        prior_benign = 0.7
+        prior_dangerous = 0.3
+        samples = False
+        
+        self.possible_estimates[item_idx] = {}
+    
+        for ie_idx,ie in enumerate(self.item_estimates[item_idx]):
+        
+            if ie["item_danger_level"]:
+            
+                samples = True
+                
+                if ie_idx == len(self.item_estimates[item_idx])-1:
+                    if ie["item_danger_level"] == 2:
+                        benign = 1-self.sensor_parameters[0]
+                        dangerous = self.sensor_parameters[1]
+                    elif ie["item_danger_level"] == 1:
+                        benign = self.sensor_parameters[0]
+                        dangerous = 1-self.sensor_parameters[1]
+                        
+                else:
+                    if ie["item_danger_level"] == 2:
+                        benign = 1-self.neighbors_sensor_parameters[ie_idx][0]
+                        dangerous = self.neighbors_sensor_parameters[ie_idx][1]
+                    elif ie["item_danger_level"] == 1:
+                        benign = self.neighbors_sensor_parameters[ie_idx][0]
+                        dangerous = 1-self.neighbors_sensor_parameters[ie_idx][1]
+            
+                prob_evidence = (prior_benign*benign + prior_dangerous*dangerous)
+                
+                prior_benign = benign*prior_benign/prob_evidence
+                prior_dangerous = dangerous*prior_dangerous/prob_evidence
+                
+                
+        for ie_idx,ie in enumerate(self.item_estimates[item_idx]):
+        
+            if not ie["item_danger_level"]:
+            
+                
+                for item_danger_level in [1,2]:
+                
+                    if ie_idx == len(self.item_estimates[item_idx])-1:
+                        if item_danger_level == 2:
+                            benign = 1-self.sensor_parameters[0]
+                            dangerous = self.sensor_parameters[1]
+                        elif item_danger_level == 1:
+                            benign = self.sensor_parameters[0]
+                            dangerous = 1-self.sensor_parameters[1]
+                            
+                    else:
+                        if item_danger_level == 2:
+                            benign = 1-self.neighbors_sensor_parameters[ie_idx][0]
+                            dangerous = self.neighbors_sensor_parameters[ie_idx][1]
+                        elif item_danger_level == 1:
+                            benign = self.neighbors_sensor_parameters[ie_idx][0]
+                            dangerous = 1-self.neighbors_sensor_parameters[ie_idx][1]
+                
+                    prob_evidence = (prior_benign*benign + prior_dangerous*dangerous)
+                    
+                    prior_benign_temp = benign*prior_benign/prob_evidence
+                    prior_dangerous_temp = dangerous*prior_dangerous/prob_evidence
+                
+                    prior_list = [prior_benign_temp,prior_dangerous_temp]
+                    dangerous_level = np.argmax(prior_list)
+                    
+                    if ie_idx not in self.possible_estimates[item_idx]:
+                        self.possible_estimates[item_idx][ie_idx] = []
+                    
+                    self.possible_estimates[item_idx][ie_idx].append(prior_list[dangerous_level])
+                
+                
+                
+                
+                    
+                
+        if samples:
+            prior_list = [prior_benign,prior_dangerous]
+            dangerous_level = np.argmax(prior_list)
+            self.items[item_idx]["item_danger_level"] = dangerous_level + 1
+            self.items[item_idx]["item_danger_confidence"] = [prior_list[dangerous_level]]
+        
+        
+    def update_items(self,item_output, item_idx, robot_idx): #Updates items
+
+        information_change = False
+        #We save estimates from all robots
+        if item_idx >= len(self.items):
+            diff_len = item_idx - len(robotState.items)-1
+            self.items.extend([{'item_weight': 0, 'item_danger_level': 0, 'item_danger_confidence': np.array([0.]), 'item_location': np.array([-1, -1], dtype=np.int16), 'item_time': np.array([0], dtype=np.int16)} for d in range(diff_len)])
+            information_change = True
+
+        if item_idx not in self.item_estimates:
+            self.item_estimates[item_idx] = [{"item_danger_level": 0, "item_danger_confidence": 0, "item_location": [-1,-1], "item_time": 0} for n in range(len(self.robots)+1)]
+            information_change = True
+            
+        self.item_estimates[item_idx][robot_idx]["item_location"] = [int(item_output["item_location"][0]),int(item_output["item_location"][1])]
+        self.item_estimates[item_idx][robot_idx]["item_time"] = item_output["item_time"]
+        
+        if item_output["item_danger_level"]:
+            self.item_estimates[item_idx][robot_idx]["item_danger_level"] = item_output["item_danger_level"]
+            self.item_estimates[item_idx][robot_idx]["item_danger_confidence"] = item_output["item_danger_confidence"][0]
+            information_change = True
+
+
+            
+        """
+        if not self.items[item_idx]["item_danger_level"] or  (item_output["item_danger_level"] and round(self.items[item_idx]["item_danger_confidence"][0],3) == round(item_output["item_danger_confidence"][0],3) and self.items[item_idx]["item_time"][0] < item_output["item_time"][0]) or (item_output["item_danger_level"] and self.items[item_idx]["item_danger_confidence"][0] < item_output["item_danger_confidence"][0]):
+            
+            self.items[item_idx] = item_output
+            self.items[item_idx]["item_location"] = [int(item_output["item_location"][0]),int(item_output["item_location"][1])]
+        """
+           
+        try: 
+            if not self.items[item_idx]["item_danger_level"]:
+                self.items[item_idx] = item_output
+                self.items[item_idx]["item_location"] = [int(item_output["item_location"][0]),int(item_output["item_location"][1])]
+        except:
+            pdb.set_trace()
+        if self.items[item_idx]["item_time"][0] < item_output["item_time"][0]:
+        
+            self.items[item_idx]["item_location"] = [int(item_output["item_location"][0]),int(item_output["item_location"][1])]
+            self.items[item_idx]["item_time"] = item_output["item_time"]
+            
+        if item_output["item_weight"]:
+            self.items[item_idx]["item_weight"] = item_output["item_weight"]
+        
+        
+        
+        if information_change:
+            print(item_output)
+            #self.average_fusion(item_idx)
+            self.bayesian_fusion(item_idx)
         
         
 '''
@@ -299,7 +404,7 @@ while True:
         num_robots = env.action_space["robot"].n-1
     
     print(env.neighbors_info)
-    robotState = RobotState(observation['frame'].copy(), 0, env.neighbors_info)
+    robotState = RobotState(observation['frame'].copy(), 0, env)
     #observation, reward, terminated, truncated, info = env.step(17)
     done = False
 
@@ -328,9 +433,9 @@ while True:
     if args.control == 'llm' or args.control == 'openai':
         obs_sample = env.observation_space.sample()
 
-        room_size = str(obs_sample['frame'].shape[0])
-
         llm_control = LLMControl(args.control == 'openai',env, device, robotState)
+    elif args.control == "decision":
+        decision_control = DecisionControl(env, robotState)
     elif args.control == 'heuristic':
         h_control.start()
     elif args.control == 'deepq':
@@ -423,7 +528,9 @@ while True:
 
                                 ob_key = info["object_key_to_index"][map_object[0]]
                              
-                                robotState.items[ob_key]["item_location"] = [int(m_key_xy[0]), int(m_key_xy[1])]
+                                template_item_info = {'item_weight': 0, 'item_danger_level': 0, 'item_danger_confidence': np.array([0.]), 'item_location': np.array([int(m_key_xy[0]), int(m_key_xy[1])], dtype=np.int16), 'item_time': np.array([info["time"]], dtype=np.int16)}
+                                robotState.update_items(template_item_info, ob_key, -1)
+                                #robotState.items[ob_key]["item_location"] = [int(m_key_xy[0]), int(m_key_xy[1])]
                     
 
                                 
@@ -431,6 +538,7 @@ while True:
                                 
                                 ob_key = info["robot_key_to_index"][map_object]
                                 robotState.robots[ob_key]["neighbor_location"] = [int(m_key_xy[0]), int(m_key_xy[1])]
+                                robotState.robots[ob_key]["neighbor_time"] = info["time"]
 
                                 
                                 
@@ -449,6 +557,7 @@ while True:
                     item_idx = last_action_arguments[1]-1
                     robotState.robots[item_idx]["neighbor_location"] = next_observation["neighbors_output"]["neighbor_location"]
                     robotState.robots[item_idx]["neighbor_type"] = next_observation["neighbors_output"]["neighbor_type"]
+                    robotState.robots[item_idx]["neighbor_time"] = next_observation["neighbors_output"]["neighbor_time"]
                         
 
                         
@@ -479,6 +588,7 @@ while True:
                 robo_location = robotState.latest_map[robotState.robots[ob_key]["neighbor_location"][0],robotState.robots[ob_key]["neighbor_location"][1]]
                 if robo_location != 5 and robo_location != 3:
                     robotState.robots[ob_key]["neighbor_location"] = [-1,-1]
+                    robotState.robots[ob_key]["neighbor_time"] = info["time"]
                     
             for ob_key in range(len(robotState.items)): #If the agent is not where it was last seen, mark it
                 try:
@@ -507,6 +617,13 @@ while True:
                             disabled = True
                             env.sio.emit("disable")
                         #high_level_action_finished = False
+                        
+                    elif args.control == "decision":
+                        action,terminated_tmp = decision_control.control(messages, robotState, info, next_observation)
+                        
+                        if terminated_tmp:
+                            disabled = True
+                            env.sio.emit("disable")
                     elif args.control == 'heuristic':
                         #action["action"] = h_control.planner(robotState, process_reward, step_count, terminated or truncated)
                         

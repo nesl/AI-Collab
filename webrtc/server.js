@@ -479,7 +479,7 @@ io.sockets.on("connection", socket => { //When a client connects
     var sim_id = socket_to_simulator_id(socket.id);
     message = filter.clean(message); //censor
     
-    console.log(timestamp,sim_id,message);
+    console.log(timestamp,sim_id,message, neighbors_list);
     
     
     let source_id = socket_to_simulator_id(socket.id)
@@ -776,6 +776,9 @@ io.sockets.on("connection", socket => { //When a client connects
                 individual_passcode = Math.random().toString(36).substring(2,7);
                 passcode.push(individual_passcode);
                 
+                if(command_line_options.log){
+    	            fs.appendFile(dir + dateTime + '.txt', '0.00' + ',7,' + String(id_idx+1) + ',' + redirect_cookies[id_idx] + '\n', err => {});
+                }
                 
                 if(redirect_ids[id_idx] == socket.id){
                     socket.emit("redirect_session", id_idx+1, individual_passcode);

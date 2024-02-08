@@ -500,7 +500,8 @@ class AICollabEnv(gym.Env):
                 "neighbors_output": spaces.Dict(
                     {
                         "neighbor_type": spaces.Discrete(3, start=-1),
-                        "neighbor_location": spaces.Box(low=-np.infty, high=np.infty, shape=(2,), dtype=np.int16)
+                        "neighbor_location": spaces.Box(low=-np.infty, high=np.infty, shape=(2,), dtype=np.int16),
+                        "neighbor_time": spaces.Box(low=0, high=np.infty, shape=(1,), dtype=np.int16)
                     }
 
                 ),
@@ -740,7 +741,8 @@ class AICollabEnv(gym.Env):
 
             "neighbors_output": {
                 "neighbor_type": -1,
-                "neighbor_location": np.ones(2, dtype=np.int16)*(-1)
+                "neighbor_location": np.ones(2, dtype=np.int16)*(-1),
+                "neighbor_time": np.zeros(1, dtype=np.int16)
             },
 
             "strength": 1,
@@ -788,6 +790,14 @@ class AICollabEnv(gym.Env):
         self.robot_key_to_index = {self.neighbors_info[i][0]:i for i in range(len(self.neighbors_info))}
         self.own_neighbors_info_entry = [self.robot_id, 1, 0, 0, -1]
         self.last_sensed = []
+        self.neighbors_sensor_parameters = []
+        
+        for um in self.map_config['sensor_parameters']:
+            if um[0] == self.robot_id:
+                self.sensor_parameters = um[1:]
+            else:
+                self.neighbors_sensor_parameters.append(um[1:])
+        
 
         '''
         self.sio.emit("disable")
@@ -955,7 +965,9 @@ class AICollabEnv(gym.Env):
             "messages": "",
             "neighbors_output": {
                 "neighbor_type": -1,
-                "neighbor_location": np.array([-1, -1], dtype=np.int16)},
+                "neighbor_location": np.array([-1, -1], dtype=np.int16),
+                "neighbor_time": np.array([0], dtype=np.int16),
+                },
             "objects_held": -1,
             "strength": strength,
             "objects_metadata": {}
@@ -1177,6 +1189,7 @@ class AICollabEnv(gym.Env):
                     robot_idx = complete_action["robot"] - 1
                     sensing_output["neighbors_output"]["neighbor_type"] = self.neighbors_info[robot_idx][1]
                     sensing_output["neighbors_output"]["neighbor_location"] = self.neighbors_info[robot_idx][2:4]
+                    sensing_output["neighbors_output"]["neighbor_time"] = self.neighbors_info[robot_idx][4]
                     terminated[1] = True
                 else:
                     truncated[1] = True

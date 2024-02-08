@@ -1226,7 +1226,7 @@ function update_danger_estimate(danger_data){
 	    txt_danger = 'dangerous';
     }
 
-    var label_string =  ' <p style="color:' + color + ';margin:0;"> Status Danger: ' + txt_danger + ',  Prob. Correct: ' + removeTags(String((sensor_user.confidence*100).toFixed(1)))+"% </p>"; //" <div style=\"color:" + color + "\">&#9632;</div> "+ String((sensor_user.confidence*100).toFixed(2))+"%";
+    var label_string =  ' <p style="color:' + color + ';margin:0;"> Status: ' + txt_danger + ',  Prob. Correct: ' + removeTags(String((sensor_user.confidence*100).toFixed(1)))+"% </p>"; //" <div style=\"color:" + color + "\">&#9632;</div> "+ String((sensor_user.confidence*100).toFixed(2))+"%";
     
     return label_string;
 
@@ -1805,7 +1805,7 @@ socket.on("message", (message, timestamp, id) => {
 	console.log("Received message");
 	newMessage(message, id);
 	
-	let object_info = tutorial_object.match(/Object ([0-9]+) \(weight: ([0-9]+)\)/);
+	let object_info = message.match(/Object ([0-9]+) \(weight: ([0-9]+)\)/);
 	
 	if(object_info && (parseInt(object_info[2]) >= map_config['all_robots'].length+2 || (tutorial_mode && parseInt(object_info[2]) >= 3)) && ! heaviest_objects.includes(object_info[1])){
 	    heaviest_objects.push(object_info[1]);
@@ -1845,6 +1845,8 @@ function reportObjects(){
     document.getElementById("popup-report").classList.add("active");
     
     const report_list = document.getElementById('report-list');
+    
+    report_list.innerHTML = "";
     
     for(ho_idx = 0; ho_idx < heaviest_objects.length; ho_idx++){
         var div_element = document.createElement("div");

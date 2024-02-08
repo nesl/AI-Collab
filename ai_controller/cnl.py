@@ -27,7 +27,7 @@ class MessagePattern:
     def item(robotState,item_idx,object_id, info, robot_id, convert_to_real_coordinates):
 
         """ Example
-        Object 1 (weight: 1) Last seen in (5.5,5.5) at 00:57. Status Danger: benign, Prob. Correct: 88.1%
+        Object 1 (weight: 1) Last seen in (5.5,5.5) at 00:57. Status: benign, Prob. Correct: 88.1%
         """
     
         message_text = ""
@@ -36,10 +36,8 @@ class MessagePattern:
                             
             item_loc = robotState.items[item_idx]['item_location']
         
-            try:
-                mins, remainder = divmod(robotState.items[item_idx]["item_time"][0], 60)
-            except:
-                pdb.set_trace()
+            mins, remainder = divmod(robotState.items[item_idx]["item_time"][0], 60)
+
             secs,millisecs = divmod(remainder,1)
             
             
@@ -60,7 +58,7 @@ class MessagePattern:
                 if roboestimate['item_danger_level'] > 0:
                     
                     if not status_danger:                
-                        status_danger +=  "Status Danger: ["
+                        status_danger +=  "Status: ["
                         prob_correct += "Prob. Correct: ["
                         from_estimates += "From: ["
                     else:
@@ -101,7 +99,7 @@ class MessagePattern:
 
             if rematch.group(5):
                 old_string = rematch.group()
-                new_string = " Status Danger: [" + rematch.group(6) + "], Prob. Correct: [" + rematch.group(7) + "%], From: [" + robot_id + "]"
+                new_string = " Status: [" + rematch.group(6) + "], Prob. Correct: [" + rematch.group(7) + "%], From: [" + robot_id + "]"
                 message_text += old_string.replace(rematch.group(5), new_string)
                 
         
@@ -113,11 +111,11 @@ class MessagePattern:
         
     @staticmethod
     def item_regex_full():
-        return "Object (\d+) \(weight: (\d+)\) Last seen in (\(-?\d+\.\d+,-?\d+\.\d+\)) at (\d+:\d+).( Status Danger: (\[\w+(,\w+)*\]), Prob. Correct: (\[\d+\.\d+%(,\d+\.\d+%)*\]), From: (\[\w+(,\w+)*\]))?"#"Object (\d+) \(weight: (\d+)\) Last seen in (\(-?\d+\.\d+,-?\d+\.\d+\)) at (\d+:\d+).( Status Danger: (\w+), Prob. Correct: (\d+\.\d+)%)?"
+        return "Object (\d+) \(weight: (\d+)\) Last seen in (\(-?\d+\.\d+,-?\d+\.\d+\)) at (\d+:\d+).( Status: (\[\w+(,\w+)*\]), Prob. Correct: (\[\d+\.\d+%(,\d+\.\d+%)*\]), From: (\[\w+(,\w+)*\]))?"#"Object (\d+) \(weight: (\d+)\) Last seen in (\(-?\d+\.\d+,-?\d+\.\d+\)) at (\d+:\d+).( Status: (\w+), Prob. Correct: (\d+\.\d+)%)?"
         
     @staticmethod
     def item_regex_full_alt():
-        return "Object (\d+) \(weight: (\d+)\) Last seen in (\(-?\d+\.\d+,-?\d+\.\d+\)) at (\d+:\d+).( Status Danger: (\w+), Prob. Correct: (\d+\.\d+)%)?"
+        return "Object (\d+) \(weight: (\d+)\) Last seen in (\(-?\d+\.\d+,-?\d+\.\d+\)) at (\d+:\d+).( Status: (\w+), Prob. Correct: (\d+\.\d+)%)?"
     
     @staticmethod
     def sensing_help(object_id):
@@ -127,6 +125,42 @@ class MessagePattern:
     def sensing_help_regex():
         return "What do you know about object (\d+)" 
         
+    @staticmethod
+    def sensing_ask_help(robotState, item_idx, object_id, robot_id, convert_to_real_coordinates):
+    
+        item_loc = robotState.items[item_idx]['item_location']
+    
+        if not (item_loc[0] == -1 and item_loc[1] == -1):
+            real_location = convert_to_real_coordinates(item_loc)
+        else:
+           real_location = [99.99,99.99]
+           
+        mins, remainder = divmod(robotState.items[item_idx]["item_time"][0], 60)
+        secs,millisecs = divmod(remainder,1)
+        time_formatted = '{:02d}:{:02d}'.format(int(mins), int(secs))
+    
+        return "Hey " + str(robot_id) + ", can you help me sense object " + str(object_id) + " in location (" + str(real_location[0]) + "," + str(real_location[1]) + "), last seen at " + time_formatted + ". "
+        
+    @staticmethod
+    def sensing_ask_help_regex():
+        return "Hey (\w+), can you help me sense object (\d+) in location (\(-?\d+\.\d+,-?\d+\.\d+\)), last seen at (\d+:\d+)"
+        
+    @staticmethod
+    def sensing_ask_help_confirm(robot_id, object_id):
+        return "Yes, I can help you sense object " + str(object_id) + ", " + str(robot_id) + ". "
+        
+    @staticmethod
+    def sensing_ask_help_confirm_regex():
+        return "Yes, I can help you sense object (\d+), (\w+)"
+        
+    @staticmethod
+    def sensing_ask_help_reject(robot_id):
+        return "No, I cannot help you sense, " + str(robot_id) + ". "
+        
+    @staticmethod
+    def sensing_ask_help_reject_regex():
+        return "No, I cannot help you sense, (\w+)"      
+        
     @staticmethod    
     def sensing_help_negative_response(object_id):
         return "I know nothing about object " + str(object_id) + ". "
@@ -135,6 +169,54 @@ class MessagePattern:
     def sensing_help_negative_response_regex():
         return "I know nothing about object (\d+)"
         
+    @staticmethod
+    def object_not_found(robot_id, object_id):
+        return "Hey " + str(robot_id) + ", I didn't find object " + str(object_id) + ". "
+        
+    @staticmethod    
+    def object_not_found_regex():
+        return "Hey (\w+), I didn't find object (\d+)"
+
+    @staticmethod
+    def ask_for_agent(robot_id):
+        return "Where is agent " + str(agent_id) + "?"
+        
+    @staticmethod
+    def ask_for_agent_regex(robot_id):
+        return "Where is agent (\w+)"
+        
+    @staticmethod
+    def agent(robot_id, robo_idx, robotState, convert_to_real_coordinates):
+    
+        message_text = ""
+                      
+        robot_loc = robotState.robots[robo_idx]['neighbor_location']
+              
+        mins, remainder = divmod(robotState.robots[robo_idx]["neighbor_time"][0], 60)
+
+        secs,millisecs = divmod(remainder,1)
+          
+        if not (robot_loc[0] == -1 and robot_loc[1] == -1):
+            real_location = convert_to_real_coordinates(robot_loc)
+        else:
+            real_location = [99.99,99.99]
+            
+        time_formatted = '{:02d}:{:02d}'.format(int(mins), int(secs))
+         
+        if robotState.robots[robo_idx]['neighbor_type'] == 1:
+            robot_type = "ai"
+        elif not robotState.robots[robo_idx]['neighbor_type']:
+            robot_type = "human"
+        
+        message_text = "Agent " + str(robot_id) + " (type: " +  robot_type + ") Last seen in (" + str(real_location[0]) + "," + str(real_location[1]) + ") at " + time_formatted + ". "
+
+
+        return message_text
+        
+    @staticmethod
+    def agent_regex(robot_id):
+        return "Agent (\w+) \(type: (\w+)\) Last seen in (\(-?\d+\.\d+,-?\d+\.\d+\)) at (\d+:\d+)"
+
     @staticmethod
     def carry_help(object_id, num_robots):
         return "I need " + str(num_robots) + " more robots to help carry object " + str(object_id) + ". "
@@ -190,6 +272,14 @@ class MessagePattern:
     @staticmethod
     def follow_regex():
         return "Thanks, follow me (\w+)"
+        
+    @staticmethod
+    def following(robot_id):
+        return "Thanks, I'll follow you " + str(robot_id) + ". "
+        
+    @staticmethod
+    def following_regex():
+        return "Thanks, I'll follow you (\w+)"
         
     @staticmethod
     def wait(robot_id):

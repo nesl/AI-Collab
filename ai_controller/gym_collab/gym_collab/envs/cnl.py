@@ -27,7 +27,7 @@ class MessagePattern:
     def item(items,item_idx,object_id, convert_to_real_coordinates):
 
         """ Example
-        Object 1 (weight: 1) Last seen in (5.5,5.5) at 00:57. Status Danger: benign, Prob. Correct: 88.1%
+        Object 1 (weight: 1) Last seen in (5.5,5.5) at 00:57. Status: benign, Prob. Correct: 88.1%
         """
     
         message_text = ""
@@ -51,7 +51,7 @@ class MessagePattern:
                                 
             if items[item_idx]['item_danger_level'] > 0:
                                 
-                message_text +=  "Status Danger: "
+                message_text +=  "Status: "
                 if items[item_idx]['item_danger_level'] == 1:
                     message_text += "benign, "
                 else:
@@ -68,7 +68,7 @@ class MessagePattern:
         return "Object (\d+) \(weight: (\d+)\) Last seen in (\(-?\d+\.\d+,-?\d+\.\d+\)) at (\d+:\d+)"
     @staticmethod
     def item_regex_full():
-        return "Object (\d+) \(weight: (\d+)\) Last seen in (\(-?\d+\.\d+,-?\d+\.\d+\)) at (\d+:\d+).( Status Danger: (\w+), Prob. Correct: (\d+\.\d+)%)?"
+        return "Object (\d+) \(weight: (\d+)\) Last seen in (\(-?\d+\.\d+,-?\d+\.\d+\)) at (\d+:\d+).( Status: (\w+), Prob. Correct: (\d+\.\d+)%)?"
     
     @staticmethod
     def sensing_help(object_id):

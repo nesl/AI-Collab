@@ -621,8 +621,9 @@ class Simulation(Controller):
         self.log_state_f.write(str(scenario_dict)+'\n')
         self.log_state_f.close()
 
-    def send_init_data(self):
-        #Occupancy map info
+
+    def extra_config_population(self):
+    
         extra_config = {}
 
 
@@ -638,6 +639,14 @@ class Simulation(Controller):
         extra_config['sensing_distance_limit'] = self.cfg['sensing_radius']
         extra_config["goal_radius"] = self.goal_area
         extra_config["scenario"] = self.scenario
+        extra_config["sensor_parameters"] = [(self.robot_names_translate[str(um.robot_id)], um.p11, um.p22) for um in [*self.user_magnebots,*self.ai_magnebots]]
+        
+        
+        return extra_config
+
+    def send_init_data(self):
+        #Occupancy map info
+        extra_config = self.extra_config_population()
 
         
         translated_user_magnebots_ids = [self.robot_names_translate[robot_id] for robot_id in self.user_magnebots_ids]
@@ -1340,7 +1349,7 @@ class Simulation(Controller):
                       {"$type": "set_img_pass_encoding", "value": False},
                       {"$type": "set_render_order", "render_order": 1, "sensor_name": "SensorContainer", "avatar_id": "a"}])
         
-            commands.append({"$type": "send_keyboard", "frequency": "always"})
+            #commands.append({"$type": "send_keyboard", "frequency": "always"})
             
             commands.append({"$type": "set_render_quality", "render_quality": 0})
         
@@ -1636,7 +1645,7 @@ class Simulation(Controller):
                 collision = self.checkCollision(idx, False)
                 
                 if collision:
-                    txt = self.user_magnebots[idx].ui.add_text(text="Too close to wall, move back!",
+                    txt = self.user_magnebots[idx].ui.add_text(text="Too close to wall, move away!",
                              position={"x": 0, "y": 0},
                              color={"r": 1, "g": 0, "b": 0, "a": 1},
                              font_size=20
@@ -1668,7 +1677,7 @@ class Simulation(Controller):
                 collision = self.checkCollision(idx, True)
                 
                 if collision:
-                    txt = self.user_magnebots[idx].ui.add_text(text="Too close to wall, move back!",
+                    txt = self.user_magnebots[idx].ui.add_text(text="Too close to wall, move away!",
                              position={"x": 0, "y": 0},
                              color={"r": 1, "g": 0, "b": 0, "a": 1},
                              font_size=20
@@ -2078,9 +2087,16 @@ class Simulation(Controller):
                         if danger_estimate[0] == 1:
                             estimate_accuracy = ego_magnebot.p11
                             other_estimate_accuracy = 1-ego_magnebot.p22
+                            
+                            prior = 1 - len(self.dangerous_objects)/len(self.graspable_objects)
+                            other_prior = 1 - prior
+                            
                         elif danger_estimate[0] == 2:
                             estimate_accuracy = ego_magnebot.p22
                             other_estimate_accuracy = 1-ego_magnebot.p11
+                            
+                            prior = len(self.dangerous_objects)/len(self.graspable_objects) 
+                            other_prior = 1 - prior
                         
                         ego_magnebot.item_info[o_translated]['sensor'][robot_id_translated] = {}
                         ego_magnebot.item_info[o_translated]['sensor'][robot_id_translated]['value'] = int(danger_estimate[0])
@@ -2313,9 +2329,12 @@ class Simulation(Controller):
                             robot_ids,sort_indices = self.get_involved_teammates(all_magnebots[all_idx].current_teammates, self.object_names_translate[object_id])
                             
                             for sidx in range(int(self.required_strength[object_id])-1):
-                                all_magnebots[robot_ids[sort_indices[sidx]]].stats.objects_in_goal.append(self.object_names_translate[object_id])
-                                if self.danger_level[object_id] == 1 and all_magnebots[robot_ids[sort_indices[sidx]]].ui_elements:
-                                    messages.append(self.info_message_ui(all_magnebots, robot_ids[sort_indices[sidx]], "Penalty! Benign object disposed!", "red"))
+                            
+                                if sidx < len(sort_indices):
+                            
+                                    all_magnebots[robot_ids[sort_indices[sidx]]].stats.objects_in_goal.append(self.object_names_translate[object_id])
+                                    if self.danger_level[object_id] == 1 and all_magnebots[robot_ids[sort_indices[sidx]]].ui_elements:
+                                        messages.append(self.info_message_ui(all_magnebots, robot_ids[sort_indices[sidx]], "Penalty! Benign object disposed!", "red"))
                     
                         if self.danger_level[object_id] == 2 and self.object_names_translate[object_id] not in all_magnebots[all_idx].stats.dangerous_objects_in_goal:
                             all_magnebots[all_idx].stats.dangerous_objects_in_goal.append(self.object_names_translate[object_id])
@@ -2902,7 +2921,11 @@ class Simulation(Controller):
                         if end_time > self.timer_limit:
                             end_time = self.timer_limit
                         
-                        team_speed_work = self.timer_limit/(max(self.timer_limit/10,min(self.timer_limit,end_time)))
+                        if self.timer_limit:
+                            team_speed_work = self.timer_limit/(max(self.timer_limit/10,min(self.timer_limit,end_time)))
+                        else:
+                            team_speed_work = 0
+                            
                         team_achievement = team_speed_work * team_quality_work
                         
                         for idx2 in range(len(all_magnebots)):
@@ -2943,7 +2966,7 @@ class Simulation(Controller):
                             log_results_f.close()
                             
                         #Reset automatically for tutorial
-                        if self.scenario == 2:
+                        if self.scenario == 2 or self.options.no_human_test:
                             self.previous_scenario = self.scenario
                             self.scenario = 1
                             self.reset = True
@@ -3140,10 +3163,12 @@ class Simulation(Controller):
                                 robot_ids,sort_indices = self.get_involved_teammates(all_magnebots[idx].current_teammates, self.object_names_translate[grasped_object])
                             
                                 for sidx in range(int(self.required_strength[grasped_object])-1):
-                                    all_magnebots[robot_ids[sort_indices[sidx]]].stats.dropped_outside_goal.append(self.object_names_translate[grasped_object])
-                                    
-                                    if all_magnebots[robot_ids[sort_indices[sidx]]].ui_elements: 
-                                        messages.append(self.info_message_ui(all_magnebots, robot_ids[sort_indices[sidx]], "Penalty! Object accidentaly dropped!", "red"))
+                                
+                                    if sidx < len(sort_indices):
+                                        all_magnebots[robot_ids[sort_indices[sidx]]].stats.dropped_outside_goal.append(self.object_names_translate[grasped_object])
+                                        
+                                        if all_magnebots[robot_ids[sort_indices[sidx]]].ui_elements: 
+                                            messages.append(self.info_message_ui(all_magnebots, robot_ids[sort_indices[sidx]], "Penalty! Object accidentaly dropped!", "red"))
                             
                                 all_magnebots[idx].stats.dropped_outside_goal.append(self.object_names_translate[grasped_object])
                                 
@@ -3701,22 +3726,7 @@ class Simulation(Controller):
     def reset_agents(self):
         all_magnebots = [*self.user_magnebots,*self.ai_magnebots]
         
-        extra_config = {}
-
-
-        extra_config['edge_coordinate'] = [float(self.static_occupancy_map.positions[0,0,0]),float(self.static_occupancy_map.positions[0,0,1])] #self.static_occupancy_map.get_occupancy_position(0,0)
-        extra_config['cell_size'] = self.cfg['cell_size']
-        #print(self.static_occupancy_map.occupancy_map.shape)
-        extra_config['num_cells'] = self.static_occupancy_map.occupancy_map.shape
-        extra_config['num_objects'] = len(self.graspable_objects)
-        extra_config['all_robots'] = [(self.robot_names_translate[str(um.robot_id)],um.controlled_by) for um in [*self.user_magnebots,*self.ai_magnebots]]
-        extra_config['timer_limit'] = float(self.cfg['timer'])
-        extra_config['strength_distance_limit'] = self.cfg['strength_distance_limit']
-        extra_config['communication_distance_limit'] = self.cfg['communication_distance_limit']
-        extra_config['sensing_distance_limit'] = self.cfg['sensing_radius']
-        extra_config["goal_radius"] = self.goal_area
-        extra_config["scenario"] = self.scenario
-        
+        extra_config = self.extra_config_population()
         
         for am in all_magnebots:
             self.sio.emit("agent_reset", (self.robot_names_translate[str(am.robot_id)],self.timer,self.real_timer, extra_config))
@@ -3885,6 +3895,7 @@ if __name__ == "__main__":
     parser.add_argument('--save-map', action='store_true', help="Save the occupancy map")
     parser.add_argument('--no-launch-build', action='store_true', help="Do not launch build")
     parser.add_argument('--sim-binary', default='', help="Location of binary if not auto-launched")
+    parser.add_argument('--no-human-test', action='store_true', help="Do not run human tests")
     
     
     

@@ -8,25 +8,40 @@ import re
 
 def convert_to_grid_coords(x,y,scenario_size,cell_size):
 
-    coordinate_x = math.floor((scenario_size/2 + x)/cell_size)
-    coordinate_y = math.floor((scenario_size/2 + y)/cell_size)
+    if isinstance(scenario_size,list):
+        coordinate_x = math.floor((scenario_size[0]/2 + x)/cell_size)
+        coordinate_y = math.floor((scenario_size[1]/2 + y)/cell_size)
+    else:
+        coordinate_x = math.floor((scenario_size/2 + x)/cell_size)
+        coordinate_y = math.floor((scenario_size/2 + y)/cell_size)
     
     return coordinate_x,coordinate_y
     
 def convert_to_real_coords(x,y,scenario_size,cell_size):
-    
-    coordinate_x = x*cell_size+cell_size/2 - scenario_size/2
-    coordinate_y = y*cell_size+cell_size/2 - scenario_size/2
+
+    if isinstance(scenario_size,list):
+        coordinate_x = x*cell_size+cell_size/2 - scenario_size[0]/2
+        coordinate_y = y*cell_size+cell_size/2 - scenario_size[1]/2
+    else:
+        coordinate_x = x*cell_size+cell_size/2 - scenario_size/2
+        coordinate_y = y*cell_size+cell_size/2 - scenario_size/2
     
     return coordinate_x,coordinate_y
     
 def init_grid_map(wall_coords, scenario_size):
     
     grid_map = []
+    
+    if isinstance(scenario_size,list):
+        size_x = scenario_size[0]
+        size_y = scenario_size[1]
+    else:
+        size_x = scenario_size
+        size_y = scenario_size
 
-    for x in range(scenario_size):
+    for x in range(size_x):
         grid_map.append([])
-        for y in range(scenario_size):
+        for y in range(size_y):
             if [x,y] in wall_coords:
                 grid_map[x].append(1)
             else:
@@ -48,6 +63,13 @@ def print_map(occupancy_map): #Occupancy maps require special printing so that t
     for row_id in range(occupancy_map.shape[1]): 
         new_new_occupancy_map[:,row_id] = new_occupancy_map[:,occupancy_map.shape[1]-row_id-1]
     print(new_new_occupancy_map)
+
+    """
+    out_file = open("map.json", "w")
+    json.dump({"data":new_new_occupancy_map.tolist()},out_file)
+    out_file.close()
+    exit()
+    """
     
 def determine_direction(origin,destination,pickup):
 
@@ -102,62 +124,15 @@ def determine_direction(origin,destination,pickup):
     return action
 
     
-"""
-def get_action_index(key):
-
-    "Q","A","D"
-
-    move_up = 0
-move_down = 1
-move_left = 2
-move_right = 3
-move_up_right = 4
-move_up_left = 5
-move_down_right = 6
-move_down_left = 7
-grab_up = 8
-grab_right = 9
-grab_down = 10
-grab_left = 11
-grab_up_right = 12
-grab_up_left = 13
-grab_down_right = 14
-grab_down_left = 15
-drop_object = 16
-
-danger_sensing = 17
-get_occupancy_map = 18
-get_objects_held = 19
-check_item = 20
-check_robot = 21
-get_messages = 22
-send_message = 23
-request_item_info = 24
-request_agent_info = 25
-
-"""
+def get_settings(log_state_file, target_cell_size):
 
 
-target_cell_size = 1
-
-for d in glob.glob("*.txt"):
-    d = "2023_08_04_15_08_34.txt" #"2023_05_12_14_00_00.txt" #"2023_08_04_15_08_34.txt"
+    settings = log_state_file.readline()
     
-    if not re.match("\d{4}_\d{2}",d):
-        continue
-    
-    log_file = open(d)
-    new_line = log_file.readline()
-    messages_present = False
-    log_state_file = open("../../simulator/log/" + d[:-4] + "_state.txt")
-    num_objects = -1
-    action_sample = {"action":-1,"item":-1,"robot":-1, "message":""}
-    state_sample = {"object_weight": 0, "object_danger_level": 0, "object_confidence": 0, "object_location": [-1,-1], "grid_map":[]}
-    
-    
-    
-    
-    settings = eval(log_state_file.readline().strip())
+    if not settings:
+        return None,None
+        
+    settings = eval(settings.strip())
     arguments = log_state_file.readline().strip()
     scenario_options_line = log_state_file.readline()
     if scenario_options_line:
@@ -212,8 +187,71 @@ for d in glob.glob("*.txt"):
     
         wall_coords.append(env_p)
         
-        
+    return scenario_options,wall_coords,settings,arguments
+
     
+"""
+def get_action_index(key):
+
+    "Q","A","D"
+
+    move_up = 0
+move_down = 1
+move_left = 2
+move_right = 3
+move_up_right = 4
+move_up_left = 5
+move_down_right = 6
+move_down_left = 7
+grab_up = 8
+grab_right = 9
+grab_down = 10
+grab_left = 11
+grab_up_right = 12
+grab_up_left = 13
+grab_down_right = 14
+grab_down_left = 15
+drop_object = 16
+
+danger_sensing = 17
+get_occupancy_map = 18
+get_objects_held = 19
+check_item = 20
+check_robot = 21
+get_messages = 22
+send_message = 23
+request_item_info = 24
+request_agent_info = 25
+
+"""
+
+
+target_cell_size = 1
+
+for d in glob.glob("*.txt"):
+    #d = "2023_11_02_16_05_09.txt" #"2023_05_12_14_00_00.txt" #"2023_08_04_15_08_34.txt"
+    
+    d = "2024_01_22_14_47_18.txt"
+    
+    if not re.match("\d{4}_\d{2}",d):
+        continue
+    
+
+    log_file = open(d)
+    new_line = log_file.readline()
+    messages_present = False
+    log_state_file = open("../../simulator/log/" + d[:-4] + "_state.txt")
+    num_objects = -1
+    action_sample = {"action":-1,"item":-1,"robot":-1, "message":""}
+    state_sample = {"object_weight": 0, "object_danger_level": 0, "object_confidence": 0, "object_location": [-1,-1], "grid_map":[]}
+    
+    
+    sensed_objects = {}
+    team_collected_objects = 0
+    individual_stats_count = 0
+
+    scenario_options,wall_coords,settings,arguments = get_settings(log_state_file, target_cell_size)
+        
     grid_map = init_grid_map(wall_coords, scenario_options["scenario_size"]) #[[0 for y in range(scenario_options["scenario_size"])] for y in range(scenario_options["scenario_size"])]
     agents_dict = {}
     #agents_dict = {robot[0]:{"last_action":action_sample.copy(),"location":[],"last_grid_world":[], "changed":False, "object_carried":-1, "object_mapping":{}, "reward":0, "disabled":False} for robot in scenario_options["robots_type"]}
@@ -227,6 +265,8 @@ for d in glob.glob("*.txt"):
     legacy = False
     legacy_keys = {}
     legacy_list_carrying_objects = {}
+    
+    just_reset = []
     
     while new_line:
         split_line = new_line.strip().split(',')
@@ -286,6 +326,7 @@ for d in glob.glob("*.txt"):
                 
                     
                     new_grid_map[int(coordinate_x)][int(coordinate_y)] = 2
+                    
              
                     
                     if objects_dict[object_id]["location"]:
@@ -320,7 +361,7 @@ for d in glob.glob("*.txt"):
                     #    agent_id = scenario_options["robots_type"][agent_number-1][0]
                         
                     if agent_id not in agents_dict:
-                        agents_dict[agent_id] = {"last_action":action_sample.copy(),"location":[],"last_grid_world":[], "changed":False, "object_carried":-1, "object_mapping":{}, "reward":0, "disabled":False}
+                        agents_dict[agent_id] = {"last_action":action_sample.copy(),"location":[],"last_grid_world":[], "changed":False, "object_carried":-1, "object_mapping":{}, "reward":0, "disabled":False, "object_manipulation":{"dangerous_dropped": 0, "non_dangerous_collected": 0, "dangerous_collected": 0, "dangerous_not_collected": 0}}
                     
                     agents_dict[agent_id]["last_action"] = action_sample.copy()
                     agents_dict[agent_id]["reward"] = 0
@@ -403,7 +444,7 @@ for d in glob.glob("*.txt"):
                         #print(object_id,agent_id)
                         
 
-                        #Check weight
+                        #If object is dropped consciously
                         if (strength >= objects_dict[object_id]["weight"] and not legacy) or (legacy and "dropped" in legacy_keys[agent_id]):
                             agents_dict[agent_id]["last_action"]["action"] = Action.drop_object.value
                             
@@ -412,7 +453,7 @@ for d in glob.glob("*.txt"):
                                 d_idx = legacy_keys[agent_id].index("dropped")
                                 legacy_keys[agent_id][d_idx] = ""
                             
-                            if object_id not in rewarded_objects and (objects_dict[object_id]["danger_level"] == 2 or objects_dict[object_id]["danger_level"] == -1) and np.linalg.norm(objects_dict[object_id]["real_location"][-1]) < settings['goal_radius']: #Give reward of 1 if in goal area
+                            if object_id not in rewarded_objects and (objects_dict[object_id]["danger_level"] == 2 or objects_dict[object_id]["danger_level"] == -1) and np.linalg.norm(objects_dict[object_id]["real_location"][-1]) < settings['goal_radius']: #Give reward of 1 if in goal area. We assume at first all legacy objects are dangerous until the end were we check for each case
                                 agents_dict[agent_id]["reward"] = 1
                                 rewarded_objects.append(object_id)
                                 
@@ -423,8 +464,16 @@ for d in glob.glob("*.txt"):
                                         legacy_objects[agent_id] = []
                                         
                                     legacy_objects[agent_id].append({"index":-1,"object_id":object_id})
+                                    
+                                #agents_dict[agent_id]["object_manipulation"]["dangerous_collected"] += 1
+                                
+                            #elif objects_dict[object_id]["danger_level"] == 1 and np.linalg.norm(objects_dict[object_id]["real_location"][-1]) < settings['goal_radius']:
+                            #    agents_dict[agent_id]["object_manipulation"]["non_dangerous_collected"] += 1
+                           
 
-                            
+                        elif not legacy: #Object was dropped unintentionally
+                            agents_dict[agent_id]["object_manipulation"]["dangerous_dropped"] += 1
+                               
                                         
                                      
                             
@@ -473,19 +522,21 @@ for d in glob.glob("*.txt"):
                     object_carried = agents_dict[a_key]["object_carried"] > -1
                     log_memory.append([a_key,current_state,agents_dict[a_key]["last_action"],next_state,agents_dict[a_key]["reward"]])
                     #print(a_key,grid_map,Action(agents_dict[a_key]["last_action"]),new_grid_map,0)
+                    
+                    
                     if a_key == "A":
                         print(a_key,Action(agents_dict[a_key]["last_action"]["action"]), "REWARD", agents_dict[a_key]["reward"], "CARRYING", object_carried)
 
                         #print_map(np.array(grid_map))
                         print_map(np.array(new_grid_map))
-            
+                    
 
             grid_map = new_grid_map
                     
             
                     
         
-        elif log_line_type == 1:
+        elif log_line_type == 1: #Keys pressed
             a_key = split_line[2]
             key = split_line[3]
 
@@ -531,7 +582,7 @@ for d in glob.glob("*.txt"):
 
         
             
-        elif log_line_type == 2:
+        elif log_line_type == 2: #messages sent
             if not messages_present:
                 messages_present = True
             
@@ -554,7 +605,7 @@ for d in glob.glob("*.txt"):
             log_memory.append([a_key,current_state,agent_action,current_state,0])
             #print(agent_action)
                 
-        elif log_line_type == 3 and agents_dict:
+        elif log_line_type == 3 and agents_dict: #objects and teammates
             a_key = split_line[2]
             
             if legacy:
@@ -581,8 +632,10 @@ for d in glob.glob("*.txt"):
                         if ob_key > -1 and str(ob_key) not in object_results.keys() and legacy_keys[a_key][ob_idx]:
                             if legacy_keys[a_key][ob_idx] == "dropping":
                                 legacy_keys[a_key][ob_idx] = "dropped"
-                            else:
+                            else: #Object was dropped accidentaly
                                 legacy_keys[a_key][ob_idx] = ""
+                                agents_dict[a_key]["object_manipulation"]["dangerous_dropped"] += 1
+                                
                             #print(ob_key,a_key, legacy_keys[a_key][ob_idx], "going to drop")
 
                             
@@ -607,7 +660,8 @@ for d in glob.glob("*.txt"):
                 time = object_results[ob_key]["time"]
                 location = object_results[ob_key]["location"]
 
-                if object_results[ob_key]["sensor"]:              
+                if object_results[ob_key]["sensor"] and a_key in object_results[ob_key]["sensor"]:   
+                
                     danger_level = object_results[ob_key]["sensor"][a_key]["value"]
                     confidence = object_results[ob_key]["sensor"][a_key]["confidence"]
 
@@ -628,7 +682,7 @@ for d in glob.glob("*.txt"):
                     next_state["object_weight"] = weight
                     next_state["location"] = location
                     
-                    if object_results[ob_key]["sensor"]:
+                    if object_results[ob_key]["sensor"] and a_key in object_results[ob_key]["sensor"]:
                         next_state["object_danger_level"] = danger_level
                         next_state["object_confidence"] = confidence
                     
@@ -636,17 +690,43 @@ for d in glob.glob("*.txt"):
                     #print(agent_action, weight,danger_level,confidence,location)
                     
                     current_state = next_state
+                    
+                    
+                    if ob_key not in sensed_objects.keys(): #For score calculation
+                        sensed_objects[ob_key] = []                        
+                    if a_key not in sensed_objects[ob_key]:
+                        sensed_objects[ob_key].append(a_key)
                 
         elif log_line_type == 4: #Reset
-            grid_map = init_grid_map(wall_coords, scenario_options["scenario_size"])
-            agents_dict = {}
-            objects_dict = {}
-            rewarded_objects = []
-            legacy_objects = {}
-            legacy_keys = {}
-            legacy_list_carrying_objects = {}
-        elif log_line_type == 5:
+            
+            log_line_agent = split_line[2]
+            
+            just_reset.append(log_line_agent)
+            
+            
+            if all(robot[0] in just_reset for robot in scenario_options["robots_type"] if robot[1] == "human"): #Check robot is real
+            
+                print("Resetting")
+                scenario_options_tmp,wall_coords_tmp,settings,arguments = get_settings(log_state_file, target_cell_size)
+                    
+                if scenario_options_tmp:
+                    scenario_options = scenario_options_tmp
+                    wall_coords = wall_coords_tmp
+                    
+                grid_map = init_grid_map(wall_coords, scenario_options["scenario_size"])
+                agents_dict = {}
+                objects_dict = {}
+                rewarded_objects = []
+                legacy_objects = {}
+                legacy_keys = {}
+                legacy_list_carrying_objects = {}
+                individual_stats_count = 0
+                
+                just_reset = [] #multiple resets
+            
+        elif log_line_type == 5: #statistics
             a_key = split_line[2]
+
 
             if '{' in new_line: #else it is a legacy format
                 m_idx1 = new_line.index('{')
@@ -654,6 +734,93 @@ for d in glob.glob("*.txt"):
 
                 stats = json.loads(new_line[m_idx1:m_idx2])
                 
+                #print("finish", a_key, individual_stats_count)
+                
+                if "total_dangerous_objects" in stats and stats["total_dangerous_objects"]:
+                
+                    
+                    individual_stats_count += 1
+                    
+                    """
+                    individual_effort = 0
+                    objects_sensed_by_agent = []
+                    total_objects = 20
+
+                    for s in sensed_objects.keys():
+                        if int(s) >= 20:
+                            total_objects = 25
+                        
+                        if a_key in sensed_objects[s]:
+                        
+                            individual_effort += 1/len(sensed_objects[s])
+                            
+                            
+                    individual_effort /= total_objects
+                    
+
+                    individual_quality = len(stats["dangerous_objects_in_goal"]) - (len(stats["objects_in_goal"])-len(stats["dangerous_objects_in_goal"])) - agents_dict[a_key]["object_manipulation"]["dangerous_dropped"] # - (stats["total_dangerous_objects"]-len(stats["dangerous_objects_in_goal"]))
+                    
+                    individual_quality /= stats["total_dangerous_objects"]
+                    
+                    individual_quality = max(0, individual_quality)
+                    
+                    team_collected_objects += len(stats["objects_in_goal"])
+                    
+                    agents_dict[a_key]["effort"] = individual_effort
+                    agents_dict[a_key]["quality"] = individual_quality
+                    """
+                    
+                    agents_dict[a_key]["effort"] = stats["effort"]
+                    agents_dict[a_key]["quality"] = stats["quality_work"]
+                    agents_dict[a_key]["payment"] = stats["individual_payment"]
+                
+                if individual_stats_count == len(agents_dict.keys()):
+                
+                    """
+                    team_objects_dropped = sum([agents_dict[a_key]["object_manipulation"]["dangerous_dropped"] for a_key in agents_dict.keys()])
+                
+                    team_quality = stats["team_objects_in_goal"] - (team_collected_objects-stats["team_objects_in_goal"]) - team_objects_dropped # - (stats["total_dangerous_objects"]-stats["team_objects_in_goal"])
+                    
+
+                    
+                    team_quality /= stats["total_dangerous_objects"]
+                    
+                    team_quality = max(0, team_quality)
+                    
+                    maxPayment = 7*len(agents_dict.keys())
+                    
+                    totalEffort = sum([agents_dict[a_key]["effort"] for a_key in agents_dict.keys()])
+                    
+                    actualPayment = maxPayment * (team_quality + totalEffort) / 2
+                    
+                    if team_quality + totalEffort == 0:
+                        continue
+                    
+                    acc_individual_payment = 0
+                    for b_idx,b_key in enumerate(agents_dict.keys()):
+                    
+                            
+
+                        
+                        individual_contribution = (agents_dict[b_key]["quality"] + agents_dict[b_key]["effort"])/(team_quality + totalEffort)
+                        individual_payment = actualPayment * individual_contribution
+                        acc_individual_payment += individual_payment
+                        print(b_key, "Effort:", agents_dict[b_key]["effort"], "Quality:", agents_dict[b_key]["quality"], "Payment:", individual_payment)
+                        
+                    
+                    print("Team Quality:", team_quality, "Dangerous objects in goal:", stats["team_objects_in_goal"], "Total objects in goal:", team_collected_objects, "Objects dropped:", team_objects_dropped, "Total dangerous objects:", stats["total_dangerous_objects"])   
+                    print("Total Effort:", totalEffort)
+                    print('Maximum Payment:', maxPayment, "Total Payment:", acc_individual_payment)
+                    """
+                    
+                    for b_idx,b_key in enumerate(agents_dict.keys()):
+                        print(b_key, "Effort:", agents_dict[b_key]["effort"], "Quality:", agents_dict[b_key]["quality"], "Payment:", agents_dict[a_key]["payment"])
+                    
+                    print("Team Quality:", stats["team_quality_work"], "Dangerous objects in goal:", stats["team_dangerous_objects_in_goal"], "Total dangerous objects:", stats["total_dangerous_objects"])   
+                    print("Total Effort:", stats["human_team_effort"])
+                    print("Total Team Payment:", stats["team_payment"])
+                    
+                    
                 if a_key in legacy_objects:
                     for lo in legacy_objects[a_key]: #Rewrite log file for legacy cases were we only know the dangerous objects until the end
             
@@ -661,7 +828,6 @@ for d in glob.glob("*.txt"):
                         if lo["object_id"] not in stats["dangerous_objects_in_goal"]:
                             log_memory[lo["index"]][4] = 0
    
-        
         
         new_line = log_file.readline()
     
