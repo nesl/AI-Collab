@@ -1,5 +1,6 @@
 import pdb
 import re
+import numpy as np
 
 class MessagePattern:
     @staticmethod
@@ -159,7 +160,15 @@ class MessagePattern:
         
     @staticmethod
     def sensing_ask_help_reject_regex():
-        return "No, I cannot help you sense, (\w+)"      
+        return "No, I cannot help you sense, (\w+)" 
+        
+    @staticmethod
+    def sensing_ask_help_incorrect(robot_id):
+        return "I didn't offer my help to you " + str(robot_id) + ". "
+        
+    @staticmethod
+    def sensing_ask_help_incorrect_regex():
+        return "I didn't offer my help to you (\w+)"     
         
     @staticmethod    
     def sensing_help_negative_response(object_id):
@@ -179,11 +188,19 @@ class MessagePattern:
 
     @staticmethod
     def ask_for_agent(robot_id):
-        return "Where is agent " + str(agent_id) + "?"
+        return "Where is agent " + str(robot_id) + "? "
         
     @staticmethod
-    def ask_for_agent_regex(robot_id):
+    def ask_for_agent_regex():
         return "Where is agent (\w+)"
+        
+    @staticmethod
+    def agent_not_found(robot_id):
+        return "I don't know where is agent " + str(robot_id) + ". "
+        
+    @staticmethod
+    def agent_not_found_regex():
+        return "I don't know where is agent (\w+)"
         
     @staticmethod
     def agent(robot_id, robo_idx, robotState, convert_to_real_coordinates):
@@ -214,8 +231,57 @@ class MessagePattern:
         return message_text
         
     @staticmethod
-    def agent_regex(robot_id):
+    def agent_regex():
         return "Agent (\w+) \(type: (\w+)\) Last seen in (\(-?\d+\.\d+,-?\d+\.\d+\)) at (\d+:\d+)"
+
+    @staticmethod
+    def surroundings(xy, view_radius, robotState, info, convert_to_real_coordinates):
+    
+        real_location = convert_to_real_coordinates(xy)
+    
+        message_text = "Scanned area at (" + str(real_location[0]) + "," + str(real_location[1]) + ") with view radius " + str(view_radius) + ". "
+        
+        x_min = max(0,xy[0]-view_radius)
+        y_min = max(0,xy[1]-view_radius)
+        x_max = min(robotState.latest_map.shape[0]-1,xy[0]+view_radius)
+        y_max = min(robotState.latest_map.shape[1]-1,xy[1]+view_radius)
+        
+        local_map = robotState.latest_map[x_min:x_max+1,y_min:y_max+1]
+        
+        walls = np.where(local_map == 1)
+
+        if walls[0].size > 0:
+            message_text += "Walls: ["
+            for w in range(len(walls[0])):
+                if w:
+                    message_text += ","
+                real_location = convert_to_real_coordinates([x_min+walls[0][w],y_min+walls[1][w]])
+                message_text += "(" + str(real_location[0]) + "," + str(real_location[1]) + ")"
+            
+            message_text += "]. "
+        
+        objects = []        
+        for it_idx in range(len(robotState.items)):
+            if robotState.items[it_idx]["item_location"][0] >= x_min and robotState.items[it_idx]["item_location"][0] <= x_max and robotState.items[it_idx]["item_location"][1] >= y_min and robotState.items[it_idx]["item_location"][1] <= y_max:
+                real_location = convert_to_real_coordinates(robotState.items[it_idx]["item_location"])
+                object_id = list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(it_idx)]
+                objects.append((object_id, real_location))
+                
+        if objects:
+            message_text += "Objects: {"
+            
+            for ob_idx,ob in enumerate(objects):
+                if ob_idx:
+                    message_text += ","
+                message_text += str(ob[0]) + ":" + "(" + str(ob[1][0]) + "," + str(ob[1][1]) + ")"
+        
+            message_text += "}. "
+            
+        return message_text
+        
+    @staticmethod
+    def surroundings_regex():
+        return "Scanned area at (\(-?\d+\.\d+,-?\d+\.\d+\)) with view radius (\d+).( Walls: (\[(,?\(-?\d+\.\d+,-?\d+\.\d+\))+\]).)?( Objects: (\{(,?\d+:\(-?\d+\.\d+,-?\d+\.\d+\))+\}))?"
 
     @staticmethod
     def carry_help(object_id, num_robots):
@@ -236,6 +302,14 @@ class MessagePattern:
     @staticmethod
     def carry_help_participant_reject(robot_id):
         return "I cannot help you " + str(robot_id) + ". "
+        
+    @staticmethod
+    def come_closer(robot_id):
+        return "Come closer " + str(robot_id) + ". "
+        
+    @staticmethod
+    def come_closer_regex():
+        return "Come closer (\w+)"    
         
     @staticmethod
     def carry_help_participant_reject_regex():
@@ -429,7 +503,17 @@ class MessagePattern:
         
     @staticmethod    
     def order_collect_group_regex():
-        return "Team leader: (\w+). Helpers: \[(\w+)(,\w+)*\]. Collect object (\d+)"
+        return "Team leader: (\w+). Helpers: (\[(,?\w+)+\]). Collect object (\d+)"
+        
+    @staticmethod
+    def order_explore(robot_id, location, convert_to_real_coordinates):
+    
+        real_location = convert_to_real_coordinates(location)
+        return str(robot_id) + ", go to location (" + str(real_location[0]) + "," + str(real_location[1]) + "). "
+    
+    @staticmethod    
+    def order_explore_regex():
+        return "(\w+), go to location (\(-?\d+\.\d+,-?\d+\.\d+\))"
         
     @staticmethod
     def order_finished():
@@ -441,11 +525,11 @@ class MessagePattern:
         
     @staticmethod
     def finish():
-        return "Let's finish. "
+        return "Let's end participation. "
         
     @staticmethod
     def finish_reject():
-        return "Wait, not yet. "
+        return "Wait, let's not end participation yet. "
         
     @staticmethod
     def parse_sensing_message(rematch, rm, robotState, info, other_agents, convert_to_grid_coordinates):    
@@ -467,7 +551,7 @@ class MessagePattern:
         item["item_time"] = [int(last_time[1]) + int(last_time[0])*60]
         item["item_weight"] = int(rematch.group(2))
         item["item_danger_level"] = 0
-        item["item_danger_confidence"] = []
+        item["item_danger_confidence"] = [0.0]
         
         
         sender_agent_idx = info['robot_key_to_index'][rm[0]]

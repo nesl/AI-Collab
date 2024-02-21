@@ -29,10 +29,10 @@ class Movement:
         #self.helping = []
         #self.accepted_help = ""
         #self.asked_time = 0
-        self.help_status_info = [[],0,[],[],"",[]]
+        self.help_status_info = [[],0,[],[],"",[],[],[]]
         self.help_status = self.HelpState.no_request
         self.last_action_index = -1
-        self.wait_time_limit = 5
+        self.wait_time_limit = 15#5
         self.help_time_limit = random.randrange(self.wait_time_limit,30)
         self.pending_location = []
         self.ignore_object = []
@@ -337,7 +337,7 @@ class Movement:
 
 
                     
-                    print("Waiting: moving", x,y, path_to_follow)
+                    print("Waiting: moving", x,y, path_to_follow, action_index, self.last_action_index)
                     
                     self.stuck_wait_moving += 1
                     
@@ -410,7 +410,7 @@ class Movement:
                 action = self.position_to_action(current_location,path_to_follow[0],False)
                        
         if not checking:
-            print("Retreis:", self.go_retries)   
+            print("Retreis:", self.go_retries, self.previous_go_location)   
             
             if action == -1:
                 self.stuck_moving += 1
@@ -579,10 +579,13 @@ class Movement:
             if robotState.object_held:
                 carrying_object = object_held
                 if not carrying_object: #Sometimes the agent doesn't know what it is carrying
-                    carrying_object = "NA"
+                    carrying_object = "9999"
         
             message_text +=  MessagePattern.location(target_loc[0],target_loc[1],next_loc[0][0],next_loc[0][1], self.env.convert_to_real_coordinates, [ego_location[0][0],ego_location[1][0]], carrying_object, helping, object_of_interest)
             
+            if not self.go_retries: #reset because of message
+                self.previous_go_location = []
+                print("reseting previous_go-location")
         
         return message_text,next_loc    
 
@@ -615,7 +618,7 @@ class Movement:
             #self.asked_time = time.time()
             self.help_status_info[1] = time.time()
             
-            if self.help_status == self.HelpState.asking:
+            if self.help_status == self.HelpState.asking and not (following and rm[0] not in self.help_status_info[0]):
                 
                 #teammate_number = len(self.being_helped)
                 
@@ -695,6 +698,7 @@ class Movement:
                     #self.accepted_help = rm[0]
                     
                     self.help_status = self.HelpState.accepted
+                    self.help_status_info[1] = time.time()
                     self.help_status_info[0] = [rm[0]]
                     
                     if sensing == True:
@@ -713,31 +717,38 @@ class Movement:
                 
         return message_text,action_index,template_match
         
-    def message_processing_help(self, rm, action_index, initial_state):
+    def message_processing_help(self, rm, action_index, sensing, initial_state):
     
         template_match = False
+        message = ""
                 
-        if re.search(MessagePattern.follow_regex(),rm[1]):
+        if re.search(MessagePattern.follow_regex(),rm[1]) or re.search(MessagePattern.following_regex(),rm[1]):
         
             template_match = True
         
-            for rematch in re.finditer(MessagePattern.follow_regex(),rm[1]):
-        
-                if rematch.group(1) == self.env.robot_id:
+            if self.help_status == self.HelpState.accepted:
+                for rematch in itertools.chain(re.finditer(MessagePattern.follow_regex(),rm[1]),re.finditer(MessagePattern.following_regex(),rm[1])):
             
-                    #teammate_number = int(rematch.group(2))
-                    
-                    #self.helping = [rm[0]]
-                    
-                    self.help_status_info[0] = [rm[0]]
-                    self.help_status = self.HelpState.helping
-                    
-                    action_index = self.State.follow
-                    
-                    
-                    print("HELPING")
-                    break
-                    
+                    if rematch.group(1) == self.env.robot_id:
+                
+                        #teammate_number = int(rematch.group(2))
+                        
+                        #self.helping = [rm[0]]
+                        
+                        if sensing and rm[0] not in self.help_status_info[0]:
+                            message += MessagePattern.sensing_ask_help_incorrect(rm[0])
+                        else:
+                            self.help_status_info[0] = [rm[0]]
+                            self.help_status_info[6] = []
+                            self.help_status = self.HelpState.helping
+                            
+                            if not sensing:
+                                action_index = self.State.follow
+                            
+                            
+                            print("HELPING")
+                            break
+        """            
         if re.search(MessagePattern.following_regex(),rm[1]):
         
             template_match = True
@@ -751,11 +762,12 @@ class Movement:
                     #self.helping = [rm[0]]
                     
                     self.help_status_info[0] = [rm[0]]
+                    self.help_status_info[6] = []
                     self.help_status = self.HelpState.helping
                     
                     print("HELPING")
                     break      
-            
+        """    
         if MessagePattern.carry_help_cancel() in rm[1] or MessagePattern.carry_help_reject(self.env.robot_id) in rm[1] or MessagePattern.carry_help_finish() in rm[1] or MessagePattern.carry_help_complain() in rm[1]:
         
             template_match = True
@@ -771,6 +783,11 @@ class Movement:
                 #self.accepted_help = ""
                 self.help_status = self.HelpState.no_request
                 self.help_status_info[0] = []
+                
+                
+            if MessagePattern.carry_help_reject(self.env.robot_id) in rm[1]:
+                if self.help_status == self.HelpState.being_helped and rm[0] in self.help_status_info[0]:
+                    self.help_status = self.HelpState.no_request
         
         if re.search(MessagePattern.object_not_found_regex(), rm[1]):
             template_match = True
@@ -778,15 +795,17 @@ class Movement:
             rematch = re.search(MessagePattern.object_not_found_regex(),rm[1])
               
             if rematch.group(1) == str(self.env.robot_id):
-                if self.help_status == self.HelpState.being_helped and self.help_status_info[0] == rm[0]:
+                if self.help_status == self.HelpState.being_helped and rm[0] in self.help_status_info[0]:
                     self.help_status = self.HelpState.no_request
+        
+        
                     
         #if MessagePattern.carry_help_participant_reject(self.env.robot_id) in rm[1]:
         #    #self.asked_help = False
         #    self.asked_time = time.time()
         
         
-        return action_index,template_match
+        return action_index,template_match,message
         
     def message_processing_location(self, rm, robotState, info, other_agents, target_location, action_index, message_text, initial_state, next_loc):
     
@@ -844,7 +863,7 @@ class Movement:
                 if agent_idx not in self.ignore_robots:
                     self.ignore_robots.append(agent_idx)
                     
-                if target_location == other_target_location and not action_index == self.State.follow and not action_index == self.State.obey: #Change destination
+                if target_location == other_target_location and not action_index == self.State.follow and not action_index == self.State.obey and not self.help_status == self.HelpState.helping: #Change destination
                     action_index = initial_state
                     print("Changed -1")
                     if self.help_status == self.HelpState.being_helped: #self.being_helped:
@@ -1042,7 +1061,7 @@ class Movement:
     
             
             
-    def message_processing_move_request(self, rm, robotState, info, action_index, message_text):
+    def message_processing_move_request(self, rm, robotState, info, action_index, message_text, other_agents):
     
         template_match = False
         
@@ -1053,7 +1072,7 @@ class Movement:
             agent_idx = info['robot_key_to_index'][rm[0]]
             other_robot_location = robotState.robots[agent_idx]["neighbor_location"]
             
-            if not (other_robot_location[0] == -1 and other_robot_location[1] == -1) and not robotState.object_held and not self.help_status == self.HelpState.being_helped and (not self.help_status == self.HelpState.helping or (self.help_status == self.HelpState.helping and self.help_status_info[0][0] == rm[0])):#not self.being_helped and (not self.helping or (self.helping and self.helping[0] == rm[0])): #This condition is true only when robots have no teams and are not carrying any object
+            if not (other_robot_location[0] == -1 and other_robot_location[1] == -1) and ((not robotState.object_held and not self.help_status == self.HelpState.being_helped and (not self.help_status == self.HelpState.helping or (self.help_status == self.HelpState.helping and (self.help_status_info[0][0] == rm[0] or rm[0] in self.help_status_info[6])))) or other_agents[agent_idx].carrying):#not self.being_helped and (not self.helping or (self.helping and self.helping[0] == rm[0])): #This condition is true only when robots have no teams and are not carrying any object
                         
                 print("MOVING")
                 
@@ -1163,105 +1182,127 @@ class Movement:
         wait_for_others = False    
         combinations_found = True
         within_comms_range = True
+        previous_agent_location = []
+        
+        ego_location = [ego_location[0][0],ego_location[1][0]]
                                 
         if self.help_status == self.HelpState.being_helped: #self.being_helped:
         
+            ai_robots = []
+            human_robots_idx = []
+            for agent_id in self.help_status_info[0]:
+                agent_idx = info['robot_key_to_index'][agent_id]
+                        
+                if robotState.robots[agent_idx]["neighbor_type"]:
+                    ai_robots.append(agent_id)
+                else:
+                    human_robots_idx.append(agent_idx)
             
-        
+            
+            humans_close = [self.env.compute_real_distance(robotState.robots[ag_idx]["neighbor_location"],ego_location) < self.env.map_config["strength_distance_limit"]-1 for ag_idx in human_robots_idx]
             wait_for_others = True
             
             #pdb.set_trace()
 
-            if self.help_status_info[2]: #self.being_helped_locations:
+            if self.help_status_info[2] or self.help_status_info[7]: #self.being_helped_locations:
             
-                if not next_locations:
-                    help_idx = len(self.help_status_info[2])-1 #len(self.being_helped_locations)-1
-                else:
-                    comb_idx = len(self.help_status_info[2])-1 #len(self.being_helped_locations)-1
-                    help_idx = self.help_status_info[3][comb_idx][0] #self.being_helped_combinations[comb_idx][0]
-                
-                agent_id = self.help_status_info[0][help_idx] #self.being_helped[help_idx]
-                agent_idx = info['robot_key_to_index'][agent_id]
-                previous_agent_location = robotState.robots[agent_idx]["neighbor_location"]
+                if ai_robots:
+                    if not next_locations:
+                        help_idx = len(self.help_status_info[2])-1 #len(self.being_helped_locations)-1
+                    else:
+                        comb_idx = len(self.help_status_info[2])-1 #len(self.being_helped_locations)-1
+                        help_idx = self.help_status_info[3][comb_idx][0] #self.being_helped_combinations[comb_idx][0]
+                    
+                    agent_id = ai_robots[help_idx] #self.being_helped[help_idx]
+                    agent_idx = info['robot_key_to_index'][agent_id]
+                    previous_agent_location = robotState.robots[agent_idx]["neighbor_location"]
                 
             
             elif next_locations: #At the beginning choose the order of path assignment
             
                 #According to next step, we have all the possible cells helping robots may move into
         
-                ego_location = [ego_location[0][0],ego_location[1][0]]
-                
-                res = np.array(next_locations[0]) - np.array(ego_location) 
-                
+                if not all(humans_close):
+                    for hc in range(len(humans_close)):
+                        if not humans_close[hc]:
+                            robot_id = robot_index_to_key[list(info['robot_key_to_index'].values()).index(human_robots_idx[hc])]
+                            message_text += MessagePattern.come_closer(robot_id)
+                            self.help_status_info[7].append(robot_id)
         
-                if int(res[0]) == 0 and res[1] > 0: #Left movement
-                    range1_1 = ego_location[0]-1
-                    range1_2 = ego_location[0]+2
-                    range2_1 = ego_location[1]-1
-                    range2_2 = ego_location[1]+3
-                    additional_goal_loc = [ego_location[0],ego_location[1]-1]
+                if ai_robots:
+                
+                    res = np.array(next_locations[0]) - np.array(ego_location) 
                     
-                elif int(res[0]) == 0 and res[1] < 0: #Right movement
-                    range1_1 = ego_location[0]-1
-                    range1_2 = ego_location[0]+2
-                    range2_1 = ego_location[1]-2
-                    range2_2 = ego_location[1]+2
-                    additional_goal_loc = [ego_location[0],ego_location[1]+1]
-                elif res[0] > 0 and int(res[1]) == 0: #Up movement
-                    range1_1 = ego_location[0]-1
-                    range1_2 = ego_location[0]+3
-                    range2_1 = ego_location[1]-1
-                    range2_2 = ego_location[1]+2
-                    additional_goal_loc = [ego_location[0]-1,ego_location[1]]
-                elif res[0] < 0 and int(res[1]) == 0: #Down movement
-                    range1_1 = ego_location[0]-2
-                    range1_2 = ego_location[0]+2
-                    range2_1 = ego_location[1]-1
-                    range2_2 = ego_location[1]+2
-                    additional_goal_loc = [ego_location[0]+1,ego_location[1]]
-                else:
-                    pdb.set_trace()
-                    
-                goal_locations = [[x,y] for x in range(next_locations[0][0]-1,next_locations[0][0]+2,1) for y in range(next_locations[0][1]-1,next_locations[0][1]+2,1) if not (x == next_locations[0][0] and y == next_locations[0][1]) and not (x == ego_location[0] and y == ego_location[1])]
-                
-                goal_locations.append(additional_goal_loc)
-                
-                limited_occ_map = np.ones(occMap.shape,int)
-                limited_occ_map[range1_1:range1_2,range2_1:range2_2] = occMap[range1_1:range1_2,range2_1:range2_2]
-                
-                limited_occ_map[ego_location[0],ego_location[1]] = 1
-                limited_occ_map[next_locations[0][0],next_locations[0][1]] = 1
-                
-                for agent_id in self.help_status_info[0]: #self.being_helped: #locations with teammates
-
-                    agent_idx = info['robot_key_to_index'][agent_id]
-                    other_robot_location = robotState.robots[agent_idx]["neighbor_location"]
-                    if not (other_robot_location[0] == -1 and other_robot_location[1] == -1):
-                        limited_occ_map[other_robot_location[0],other_robot_location[1]] = 1
-
             
-                possible_permutations = list(itertools.permutations(list(range(len(self.help_status_info[0])))))
-                
-                solution_found = []
-                for perm in possible_permutations:
-
-                    possible_perm = self.find_order_team_rec(perm,0,robotState,info,goal_locations,limited_occ_map, len(self.help_status_info[0]))
-                    
-                    if possible_perm:
-                        solution_found = perm
-                        break
+                    if int(res[0]) == 0 and res[1] > 0: #Left movement
+                        range1_1 = ego_location[0]-1
+                        range1_2 = ego_location[0]+2
+                        range2_1 = ego_location[1]-1
+                        range2_2 = ego_location[1]+3
+                        additional_goal_loc = [ego_location[0],ego_location[1]-1]
                         
-                if solution_found:
-                    possible_perm.reverse()
+                    elif int(res[0]) == 0 and res[1] < 0: #Right movement
+                        range1_1 = ego_location[0]-1
+                        range1_2 = ego_location[0]+2
+                        range2_1 = ego_location[1]-2
+                        range2_2 = ego_location[1]+2
+                        additional_goal_loc = [ego_location[0],ego_location[1]+1]
+                    elif res[0] > 0 and int(res[1]) == 0: #Up movement
+                        range1_1 = ego_location[0]-1
+                        range1_2 = ego_location[0]+3
+                        range2_1 = ego_location[1]-1
+                        range2_2 = ego_location[1]+2
+                        additional_goal_loc = [ego_location[0]-1,ego_location[1]]
+                    elif res[0] < 0 and int(res[1]) == 0: #Down movement
+                        range1_1 = ego_location[0]-2
+                        range1_2 = ego_location[0]+2
+                        range2_1 = ego_location[1]-1
+                        range2_2 = ego_location[1]+2
+                        additional_goal_loc = [ego_location[0]+1,ego_location[1]]
+                    else:
+                        pdb.set_trace()
+                        
+                    goal_locations = [[x,y] for x in range(next_locations[0][0]-1,next_locations[0][0]+2,1) for y in range(next_locations[0][1]-1,next_locations[0][1]+2,1) if not (x == next_locations[0][0] and y == next_locations[0][1]) and not (x == ego_location[0] and y == ego_location[1])]
                     
-                    #self.being_helped_combinations = [[solution_found[p_idx],possible_perm[p_idx]] for p_idx in range(len(possible_perm))]
-                    self.help_status_info[3] = [[solution_found[p_idx],possible_perm[p_idx]] for p_idx in range(len(possible_perm))]
-                    print("Combinaionts", self.help_status_info[3])                    
+                    goal_locations.append(additional_goal_loc)
+                    
+                    limited_occ_map = np.ones(occMap.shape,int)
+                    limited_occ_map[range1_1:range1_2,range2_1:range2_2] = occMap[range1_1:range1_2,range2_1:range2_2]
+                    
+                    limited_occ_map[ego_location[0],ego_location[1]] = 1
+                    limited_occ_map[next_locations[0][0],next_locations[0][1]] = 1
+                    
+                    for agent_id in ai_robots: #self.being_helped: #locations with teammates
 
-                else:
-                    combinations_found = False
-                    message_text += MessagePattern.carry_help_finish()
-                    print("No possible combinations 1")
+                        agent_idx = info['robot_key_to_index'][agent_id]
+                        other_robot_location = robotState.robots[agent_idx]["neighbor_location"]
+                        if not (other_robot_location[0] == -1 and other_robot_location[1] == -1):
+                            limited_occ_map[other_robot_location[0],other_robot_location[1]] = 1
+
+                
+                    
+                    possible_permutations = list(itertools.permutations(list(range(len(ai_robots)))))
+                    
+                    solution_found = []
+                    for perm in possible_permutations:
+
+                        possible_perm = self.find_order_team_rec(perm,0,robotState,info,goal_locations,limited_occ_map, len(ai_robots))
+                        
+                        if possible_perm:
+                            solution_found = perm
+                            break
+                            
+                    if solution_found:
+                        possible_perm.reverse()
+                        
+                        #self.being_helped_combinations = [[solution_found[p_idx],possible_perm[p_idx]] for p_idx in range(len(possible_perm))]
+                        self.help_status_info[3] = [[solution_found[p_idx],possible_perm[p_idx]] for p_idx in range(len(possible_perm))]
+                        print("Combinaionts", self.help_status_info[3])                    
+
+                    else:
+                        combinations_found = False
+                        message_text += MessagePattern.carry_help_finish()
+                        print("No possible combinations 1")
                 
             else: #To wait for others to get into communication range
                 agent_sum = 0
@@ -1275,11 +1316,9 @@ class Movement:
                     within_comms_range = False
                     
                 
-                if within_comms_range: #Compute feasible paths
+                if within_comms_range and ai_robots: #Compute feasible paths if in communication range
                 
         
-                    ego_location = [ego_location[0][0],ego_location[1][0]]
-                    
                     limited_occ_map = np.copy(occMap)
                     
                     range1_1 = ego_location[0]-1
@@ -1290,7 +1329,9 @@ class Movement:
                     goal_locations = [[x,y] for x in range(ego_location[0]-1,ego_location[0]+2,1) for y in range(ego_location[1]-1,ego_location[1]+2,1) if not (x == ego_location[0] and y == ego_location[1])]
                     limited_occ_map[ego_location[0],ego_location[1]] = 1
                     
-                    for agent_id in self.help_status_info[0]: #self.being_helped: #locations with teammates
+                    
+                    
+                    for agent_id in ai_robots: #self.being_helped: #locations with teammates
 
                         agent_idx = info['robot_key_to_index'][agent_id]
                         other_robot_location = robotState.robots[agent_idx]["neighbor_location"]
@@ -1298,12 +1339,12 @@ class Movement:
                             limited_occ_map[other_robot_location[0],other_robot_location[1]] = 1
 
             
-                    possible_permutations = list(itertools.permutations(list(range(len(self.help_status_info[0])))))
+                    possible_permutations = list(itertools.permutations(list(range(len(ai_robots)))))
                     
                     solution_found = []
                     for perm in possible_permutations:
 
-                        possible_perm = self.find_order_team_rec(perm,0,robotState,info,goal_locations,limited_occ_map, len(self.help_status_info[0]))
+                        possible_perm = self.find_order_team_rec(perm,0,robotState,info,goal_locations,limited_occ_map, len(ai_robots))
                         
                         if possible_perm:
                             solution_found = perm
@@ -1321,10 +1362,11 @@ class Movement:
                         message_text += MessagePattern.carry_help_finish()
                         print("No possible combinations 2")
                 
-            print("Expected locations:", self.help_status_info[2])
+            print("Expected locations:", self.help_status_info, previous_agent_location)
                
-        
-            if within_comms_range and combinations_found and (not self.help_status_info[2] or (self.help_status_info[2] and self.help_status_info[2][-1] == previous_agent_location and len(self.help_status_info[2]) != len(self.help_status_info[0]))): #(not self.being_helped_locations or (self.being_helped_locations and self.being_helped_locations[-1] == previous_agent_location and len(self.being_helped_locations) != len(self.being_helped))):
+            
+            
+            if within_comms_range and combinations_found and ai_robots and (not self.help_status_info[2] or (self.help_status_info[2] and self.help_status_info[2][-1] == previous_agent_location and len(self.help_status_info[2]) != len(ai_robots))): #(not self.being_helped_locations or (self.being_helped_locations and self.being_helped_locations[-1] == previous_agent_location and len(self.being_helped_locations) != len(self.being_helped))):
 
                 """
                 if not next_locations:
@@ -1362,6 +1404,8 @@ class Movement:
                     
                 else:
                 """
+                
+                
                 comb_idx = len(self.help_status_info[2]) #len(self.being_helped_locations)
                 new_location = self.help_status_info[3][comb_idx][1] #self.being_helped_combinations[comb_idx][1]
 
@@ -1370,16 +1414,16 @@ class Movement:
                 
                 help_idx = self.help_status_info[3][comb_idx][0] #self.being_helped_combinations[comb_idx][0]
                 
-                agent_id = self.help_status_info[0][help_idx] #self.being_helped[help_idx]
+                agent_id = ai_robots[help_idx] #self.being_helped[help_idx]
                 message_text += MessagePattern.move_order(agent_id, new_location, self.env.convert_to_real_coordinates)
                 #self.asked_time = time.time()
                 self.help_status_info[1] = time.time()
             
-            elif len(self.help_status_info[2]) == len(self.help_status_info[0]) and self.help_status_info[2][-1] == previous_agent_location: #len(self.being_helped_locations) == len(self.being_helped) and self.being_helped_locations[-1] == previous_agent_location: #When all agents have followed orders
+            elif len(self.help_status_info[2]) == len(ai_robots) and not (ai_robots and self.help_status_info[2][-1] != previous_agent_location) and all(humans_close): #len(self.being_helped_locations) == len(self.being_helped) and self.being_helped_locations[-1] == previous_agent_location: #When all agents have followed orders
                 wait_for_others = False
                 
             
-
+            
             
             
                 
@@ -1460,7 +1504,7 @@ class Movement:
             
             agent_idx = info['robot_key_to_index'][self.help_status_info[0][0]]
             
-            if not (robotState.robots[agent_idx]["neighbor_location"][0] == -1 and robotState.robots[agent_idx]["neighbor_location"][1] == -1): 
+            if not (robotState.robots[agent_idx]["neighbor_location"][0] == -1 and robotState.robots[agent_idx]["neighbor_location"][1] == -1) and robotState.robots[agent_idx]["neighbor_disabled"] != 1: 
                 self.follow_location = robotState.robots[agent_idx]["neighbor_location"]
             
                 target_location = self.follow_location
@@ -1474,7 +1518,7 @@ class Movement:
                 if not robotState.robots[agent_idx]["neighbor_type"]: #depending on whether the robot is human controlled or not, we have different distances at which to maitain helping robots
                     distance_limit = self.env.map_config["strength_distance_limit"]-1
                 else:
-                    distance_limit = self.env.map_config['communication_distance_limit']-1
+                    distance_limit = self.env.map_config['communication_distance_limit']-2
                 
                 
                 
@@ -1485,6 +1529,7 @@ class Movement:
                 self.help_status = self.HelpState.no_request
                 action_index = initial_state
                 print("Agent not found")
+                #pdb.set_trace()
                     
         elif action_index == self.State.obey:
             print("TARGET LOCATION:", target_location)

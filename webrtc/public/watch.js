@@ -1226,7 +1226,7 @@ function update_danger_estimate(danger_data){
 	    txt_danger = 'dangerous';
     }
 
-    var label_string =  ' <p style="color:' + color + ';margin:0;"> Status: ' + txt_danger + ',  Prob. Correct: ' + removeTags(String((sensor_user.confidence*100).toFixed(1)))+"% </p>"; //" <div style=\"color:" + color + "\">&#9632;</div> "+ String((sensor_user.confidence*100).toFixed(2))+"%";
+    var label_string =  '<p style="color:' + color + ';margin:0;">Status: ' + txt_danger + ', Prob. Correct: ' + removeTags(String((sensor_user.confidence*100).toFixed(1)))+"% </p>"; //" <div style=\"color:" + color + "\">&#9632;</div> "+ String((sensor_user.confidence*100).toFixed(2))+"%";
     
     return label_string;
 
@@ -1323,7 +1323,7 @@ function update_objects_info(object_key, timer, danger_data, position, weight, c
  			    const divmod_results = divmod(object_list_store[ob_idx][5], 60);
 	            const divmod_results2 = divmod(divmod_results[1],1);
 
- 			    label_element.children[0].rows[1].cells[0].textContent = removeTags("Last seen in (" + String(object_list_store[ob_idx][3].toFixed(1)) + "," + String(object_list_store[ob_idx][4].toFixed(1)) + ") at " + removeTags(pad(String(divmod_results[0]),2) + ":" + pad(String(divmod_results2[0]),2)));
+ 			    label_element.children[0].rows[1].cells[0].textContent = removeTags("Last seen in (" + String(object_list_store[ob_idx][3].toFixed(1)) + "," + String(object_list_store[ob_idx][4].toFixed(1)) + ") at " + removeTags(pad(String(divmod_results[0]),2) + ":" + pad(String(divmod_results2[0]),2))) + ".";
  			    
  			    if(Object.keys(object_list_store[ob_idx][2]).length > 0){
  			        var danger_string = update_danger_estimate(object_list_store[ob_idx][2]);
@@ -1398,7 +1398,7 @@ function update_objects_info(object_key, timer, danger_data, position, weight, c
 	    
 	    td3.classList.add("rr-block");
 	    
-	    td3.innerHTML = removeTags("Last seen in (" + String(object_list_store[ob_idx][3].toFixed(1)) + "," + String(object_list_store[ob_idx][4].toFixed(1)) + ") at " + removeTags(pad(String(divmod_results[0]),2) + ":" + pad(String(divmod_results2[0]),2)));
+	    td3.innerHTML = removeTags("Last seen in (" + String(object_list_store[ob_idx][3].toFixed(1)) + "," + String(object_list_store[ob_idx][4].toFixed(1)) + ") at " + removeTags(pad(String(divmod_results[0]),2) + ":" + pad(String(divmod_results2[0]),2))) + ".";
 	    
 	    const tr2 = tbl.insertRow();
         const td2 = tr2.insertCell();

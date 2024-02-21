@@ -241,6 +241,7 @@ class Simulation(Controller):
         self.max_time_unheld = 1
         self.enable_logs = False
         self.timer_limit = 0#float(self.cfg['timer'])
+        self.waiting = False
 
         """
         if float(self.cfg['timer']) > 0:
@@ -320,10 +321,20 @@ class Simulation(Controller):
         
 
         
-        self.ai_original_spawn_positions = [{"x": -2, "y": 0, "z": 1.1},{"x": -2, "y": 0, "z": 2.1}, {"x": -2, "y": 0, "z": 3.1}, {"x": -3, "y": 0, "z": 0.1}, {"x": -2, "y": 0, "z": 0.1},{"x": -2, "y": 0, "z": -1.1}, {"x": -2, "y": 0, "z": -2.1},{"x": -2, "y": 0, "z": -3.1},{"x": -3, "y": 0, "z": -1.1},{"x": -3, "y": 0, "z": -2.1}, {"x": -3, "y": 0, "z": 1.1}, {"x": -3, "y": 0, "z": 2.1}, {"x": -3.5, "y": 0, "z": 0.5}, {"x": -3.5, "y": 0, "z": 1.5}, {"x": -3.5, "y": 0, "z": 2.5}, {"x": -3.5, "y": 0, "z": 3.5}, {"x": -3.5, "y": 0, "z": -2.5}, {"x": -3.5, "y": 0, "z": -3.5}]
-        self.user_original_spawn_positions = [{"x": 0, "y": 0, "z": 1.1},{"x": 0, "y": 0, "z": 2.1}, {"x": 0, "y": 0, "z": 3.1}, {"x": 1, "y": 0, "z": 0.1}, {"x": 0, "y": 0, "z": 0.1},{"x": 0, "y": 0, "z": -1.1}, {"x": 0, "y": 0, "z": -2.1},{"x": 0, "y": 0, "z": -3.1},{"x": 1, "y": 0, "z": -3.1},{"x": 1, "y": 0, "z": -2.1}]
+        self.ai_original_spawn_positions = []#[{"x": -2, "y": 0, "z": 1.1},{"x": -2, "y": 0, "z": 2.1}, {"x": -2, "y": 0, "z": 3.1}, {"x": -3, "y": 0, "z": 0.1}, {"x": -2, "y": 0, "z": 0.1},{"x": -2, "y": 0, "z": -1.1}, {"x": -2, "y": 0, "z": -2.1},{"x": -2, "y": 0, "z": -3.1},{"x": -3, "y": 0, "z": -1.1},{"x": -3, "y": 0, "z": -2.1}, {"x": -3, "y": 0, "z": 1.1}, {"x": -3, "y": 0, "z": 2.1}, {"x": -3.5, "y": 0, "z": 0.5}, {"x": -3.5, "y": 0, "z": 1.5}, {"x": -3.5, "y": 0, "z": 2.5}, {"x": -3.5, "y": 0, "z": 3.5}, {"x": -3.5, "y": 0, "z": -2.5}, {"x": -3.5, "y": 0, "z": -3.5}]
+        self.user_original_spawn_positions = []#[{"x": 0, "y": 0, "z": 1.1},{"x": 0, "y": 0, "z": 2.1}, {"x": 0, "y": 0, "z": 3.1}, {"x": 1, "y": 0, "z": 0.1}, {"x": 0, "y": 0, "z": 0.1},{"x": 0, "y": 0, "z": -1.1}, {"x": 0, "y": 0, "z": -2.1},{"x": 0, "y": 0, "z": -3.1},{"x": 1, "y": 0, "z": -3.1},{"x": 1, "y": 0, "z": -2.1}]
         
-
+        locations = []
+        for a in range(-5,5):
+            for b in range(-5,5):
+                locations.append({"x": self.cfg['cell_size']/2 + self.cfg['cell_size']*a,  "y": 0, "z": self.cfg['cell_size']/2 + self.cfg['cell_size']*b})
+        
+        for l_idx,spawn_loc in enumerate(locations):
+            
+            if l_idx > len(locations)/2:
+                self.ai_original_spawn_positions.append(spawn_loc)
+            else:
+                self.user_original_spawn_positions.append(spawn_loc)
                 
         self.create_agents()
         print("Created agents")
@@ -546,9 +557,14 @@ class Simulation(Controller):
                     self.scenario = 1
                 @self.sio.event
                 def reset_tutorial():
+                    
                     self.reset = True
                     self.previous_scenario = self.scenario
-                    self.scenario = 2    
+                    if not self.options.no_human_test:
+                        self.scenario = 2    
+                    else:
+                        self.scenario = 1
+                        self.waiting = False
                 #Key
                 @self.sio.event
                 def key(key, agent_id_translated):
@@ -569,6 +585,7 @@ class Simulation(Controller):
                 @self.sio.event 
                 def disable(agent_id_translated):
 
+                    print("Disabling robot", agent_id_translated)
 
                     agent_id = list(self.robot_names_translate.keys())[list(self.robot_names_translate.values()).index(agent_id_translated)]
                     
@@ -585,10 +602,13 @@ class Simulation(Controller):
                 @self.sio.event
                 def report(object_list, agent_id_translated):
                 
-                    agent_id = list(self.robot_names_translate.keys())[list(self.robot_names_translate.values()).index(agent_id_translated)]
-                    agent_idx = self.user_magnebots_ids.index(agent_id)
+                    all_ids = [*self.user_magnebots_ids,*self.ai_magnebots_ids]
+                    all_magnebots = [*self.user_magnebots,*self.ai_magnebots]
                 
-                    self.user_magnebots[agent_idx].reported_objects = object_list
+                    agent_id = list(self.robot_names_translate.keys())[list(self.robot_names_translate.values()).index(agent_id_translated)]
+                    agent_idx = all_ids.index(agent_id)
+                
+                    all_magnebots[agent_idx].reported_objects = object_list
                 
                 #Enable time limit    
                 @self.sio.event
@@ -1192,16 +1212,18 @@ class Simulation(Controller):
             final_coords = {objm: [] for objm in object_models.keys()}
 
             
-
-            for m in modifications:
-                possible_locations_temp = possible_locations.copy()
-                for fc in final_coords.keys():
-                    for n_obj in range(object_models[fc]):
-                        location = random.choice(possible_locations_temp)
-                        possible_locations_temp.remove(location)
-      
-                        final_coords[fc].append(np.array(location)*m)
-
+            if not self.options.single_object:
+                for m in modifications:
+                    possible_locations_temp = possible_locations.copy()
+                    for fc in final_coords.keys():
+                        for n_obj in range(object_models[fc]):
+                            location = random.choice(possible_locations_temp)
+                            possible_locations_temp.remove(location)
+          
+                            final_coords[fc].append(np.array(location)*m)
+            
+            else:
+                final_coords = {"iron_box": [possible_locations[0]]}
 
             object_index = 0
             for fc in final_coords.keys():
@@ -2154,7 +2176,7 @@ class Simulation(Controller):
         
         magnebots_locations = np.where(self.object_type_coords_map == 3)
         
-        locations_magnebot_map = {str(j):[magnebots_locations[0][i],magnebots_locations[1][i]] for i in range(len(magnebots_locations[0])) for j in self.object_attributes_id[str(magnebots_locations[0][i])+'_'+str(magnebots_locations[1][i])]}
+        locations_magnebot_map = {str(j[1]):[magnebots_locations[0][i],magnebots_locations[1][i]] for i in range(len(magnebots_locations[0])) for j in self.object_attributes_id[str(magnebots_locations[0][i])+'_'+str(magnebots_locations[1][i])]}
 
 
         try:
@@ -2657,7 +2679,7 @@ class Simulation(Controller):
 
                 if str(pos_new[0])+'_'+str(pos_new[1]) not in self.object_attributes_id:
                     self.object_attributes_id[str(pos_new[0])+'_'+str(pos_new[1])] = []
-                self.object_attributes_id[str(pos_new[0])+'_'+str(pos_new[1])].append((self.object_names_translate[o],self.required_strength[o],int(self.danger_level[o])))
+                self.object_attributes_id[str(pos_new[0])+'_'+str(pos_new[1])].append((0,self.object_names_translate[o],self.required_strength[o],int(self.danger_level[o])))
             
             if self.options.save_map and not self.timer:
                 map_f = open("maps/map"+ str(self.reset_number) + ".json", "w")
@@ -2673,14 +2695,14 @@ class Simulation(Controller):
                 pos_new = [round((pos[0]+abs(min_pos[0]))/multiple), round((pos[2]+abs(min_pos[1]))/multiple)]
                 #3 is for other magnebots
                 
-                if o.disabled: #3 if active, 1 if not active
-                    self.object_type_coords_map[pos_new[0],pos_new[1]] = 1
-                else:
-                    self.object_type_coords_map[pos_new[0],pos_new[1]] = 3
+                #if o.disabled: #3 if active, 1 if not active
+                #    self.object_type_coords_map[pos_new[0],pos_new[1]] = 1
+                #else:
+                self.object_type_coords_map[pos_new[0],pos_new[1]] = 3
                     
                 if str(pos_new[0])+'_'+str(pos_new[1]) not in self.object_attributes_id:
                     self.object_attributes_id[str(pos_new[0])+'_'+str(pos_new[1])] = []
-                self.object_attributes_id[str(pos_new[0])+'_'+str(pos_new[1])].append((self.robot_names_translate[str(o.robot_id)]))
+                self.object_attributes_id[str(pos_new[0])+'_'+str(pos_new[1])].append((1,self.robot_names_translate[str(o.robot_id)],o.disabled))
 
             
             if self.options.log_state and self.enable_logs: # and self.timer - past_timer > 1:
@@ -2906,7 +2928,11 @@ class Simulation(Controller):
                                 
                             
                             #number_dangerous_objects_in_goal = len(um.stats.dangerous_objects_in_goal)
-                            um.stats.quality_work = max(0,(number_dangerous_objects_in_goal - number_benign_objects_in_goal - number_dropped_objects)/len(self.dangerous_objects))
+                            
+                            if len(self.dangerous_objects):
+                                um.stats.quality_work = max(0,(number_dangerous_objects_in_goal - number_benign_objects_in_goal - number_dropped_objects)/len(self.dangerous_objects))
+                            else:
+                                um.stats.quality_work = 1
                         
                         
                         team_quality_work = sum([am.stats.quality_work for am in all_magnebots])        
@@ -2966,10 +2992,16 @@ class Simulation(Controller):
                             log_results_f.close()
                             
                         #Reset automatically for tutorial
-                        if self.scenario == 2 or self.options.no_human_test:
+                        if self.scenario == 2:
                             self.previous_scenario = self.scenario
                             self.scenario = 1
                             self.reset = True
+                        elif self.options.no_human_test:
+                            self.previous_scenario = self.scenario
+                            self.scenario = 1
+                            self.reset = True
+                            self.timer_limit = 0
+                            self.waiting = True
                         else:
                             self.enable_logs = False
                             self.timer_limit = 0   
@@ -3650,7 +3682,7 @@ class Simulation(Controller):
                     if not self.local and not all_magnebots[all_idx].last_output:
                         #if any(extra_status):
                         #    print("Sending extra status")
-                        self.sio.emit('ai_output', (all_idx, json_numpy.dumps(limited_map), reduced_metadata, objects_held, item_info, ai_status, extra_status, all_magnebots[all_idx].strength, self.timer, all_magnebots[all_idx].disabled) )
+                        self.sio.emit('ai_output', (all_idx, json_numpy.dumps(limited_map), reduced_metadata, objects_held, item_info, ai_status, extra_status, all_magnebots[all_idx].strength, self.timer, all_magnebots[all_idx].disabled))
                         if all_magnebots[all_idx].disabled:
                             all_magnebots[all_idx].last_output = True
 
@@ -3724,8 +3756,12 @@ class Simulation(Controller):
 
 
     def reset_agents(self):
-        all_magnebots = [*self.user_magnebots,*self.ai_magnebots]
-        
+    
+        if self.waiting and self.options.no_human_test:
+            all_magnebots = [*self.user_magnebots]
+        else:
+            all_magnebots = [*self.user_magnebots,*self.ai_magnebots]
+            
         extra_config = self.extra_config_population()
         
         for am in all_magnebots:
@@ -3770,6 +3806,10 @@ class Simulation(Controller):
             self.ai_magnebots = []
             self.ai_magnebots_ids = []
             
+        if self.waiting and self.options.no_human_test:
+            for u_idx in range(len(self.ai_magnebots)):
+                self.sio.emit("agent_delete", (self.robot_names_translate[str(self.ai_magnebots[u_idx].robot_id)]))
+            
         '''
         #Reset user magnebots
         for u_idx in range(len(self.user_magnebots)):
@@ -3808,7 +3848,7 @@ class Simulation(Controller):
         if self.scenario != 2:
             random.shuffle(self.ai_spawn_positions)
             random.shuffle(self.user_spawn_positions)
-            ai_spawn_positions = self. ai_spawn_positions
+            ai_spawn_positions = self.ai_spawn_positions
             user_spawn_positions = self.user_spawn_positions
         else:
             cell_size = self.cfg['cell_size']
@@ -3896,6 +3936,7 @@ if __name__ == "__main__":
     parser.add_argument('--no-launch-build', action='store_true', help="Do not launch build")
     parser.add_argument('--sim-binary', default='', help="Location of binary if not auto-launched")
     parser.add_argument('--no-human-test', action='store_true', help="Do not run human tests")
+    parser.add_argument('--single-object', action='store_true', help="Single object")
     
     
     

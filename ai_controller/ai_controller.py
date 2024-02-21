@@ -8,9 +8,10 @@ import pdb
 import sys
 import random
 import cv2
+import yaml
 
 
-
+from magnebot import ActionStatus
 from gym_collab.envs.action import Action
 
 from llm_control import LLMControl
@@ -42,6 +43,7 @@ parser.add_argument("--role", default="general", help="Choose a role for the age
 parser.add_argument("--planning", default="equal", help="Choose a planning role for the agent: equal, coordinator, coordinated")
 parser.add_argument('--webcam', action="store_true", help="Use images from virtual webcam")
 parser.add_argument('--video-index', type=int, default=0, help='index of the first /dev/video device to capture frames from')
+parser.add_argument('--config', type=str, default='team_structure.yaml', help='Path to team structure configuration file')
 #parser.add_argument("--openai", action='store_true', help="Use openai.")
 #parser.add_argument("--llm", action='store_true', help="Use LLM.")
 
@@ -191,7 +193,7 @@ class RobotState:
         self.object_held = object_held
         self.items = []
         self.item_estimates = {}
-        self.robots = [{"neighbor_type": env.neighbors_info[n][1], "neighbor_location": [-1,-1], "neighbor_time": 0.0} for n in range(len(env.neighbors_info))] # 0 if human, 1 if ai
+        self.robots = [{"neighbor_type": env.neighbors_info[n][1], "neighbor_location": [-1,-1], "neighbor_time": [0.0], "neighbor_disabled": -1} for n in range(len(env.neighbors_info))] # 0 if human, 1 if ai
         self.strength = 1
         self.map_metadata = {}
         self.sensor_parameters = env.sensor_parameters
@@ -226,8 +228,8 @@ class RobotState:
                 
     def bayesian_fusion(self, item_idx):
     
-        prior_benign = 0.7
-        prior_dangerous = 0.3
+        prior_benign = 0.5#0.7
+        prior_dangerous = 0.5#0.3
         samples = False
         
         self.possible_estimates[item_idx] = {}
@@ -307,13 +309,30 @@ class RobotState:
             self.items[item_idx]["item_danger_level"] = dangerous_level + 1
             self.items[item_idx]["item_danger_confidence"] = [prior_list[dangerous_level]]
         
+    def update_robots(self, neighbor_output, robot_idx):
+    
+        if neighbor_output["neighbor_type"] >= 0:
+            self.robots[robot_idx]["neighbor_type"] = neighbor_output["neighbor_type"]
+    
+        if neighbor_output["neighbor_disabled"] >= 0:
+            self.robots[robot_idx]["neighbor_disabled"] = neighbor_output["neighbor_disabled"]
+    
+        if self.robots[robot_idx]["neighbor_time"][0] <= neighbor_output["neighbor_time"][0]:
         
+            self.robots[robot_idx]["neighbor_location"] = [int(neighbor_output["neighbor_location"][0]),int(neighbor_output["neighbor_location"][1])]
+            self.robots[robot_idx]["neighbor_time"] = neighbor_output["neighbor_time"]
+            
+            if self.latest_map[self.robots[robot_idx]["neighbor_location"][0], self.robots[robot_idx]["neighbor_location"][1]] != 5:
+                self.latest_map[self.robots[robot_idx]["neighbor_location"][0], self.robots[robot_idx]["neighbor_location"][1]] = 3
+    
     def update_items(self,item_output, item_idx, robot_idx): #Updates items
 
         information_change = False
         #We save estimates from all robots
         if item_idx >= len(self.items):
-            diff_len = item_idx - len(robotState.items)-1
+            
+            diff_len = item_idx+1 - len(self.items)
+            print("item_change", item_idx, len(self.items), diff_len)
             self.items.extend([{'item_weight': 0, 'item_danger_level': 0, 'item_danger_confidence': np.array([0.]), 'item_location': np.array([-1, -1], dtype=np.int16), 'item_time': np.array([0], dtype=np.int16)} for d in range(diff_len)])
             information_change = True
 
@@ -344,10 +363,14 @@ class RobotState:
                 self.items[item_idx]["item_location"] = [int(item_output["item_location"][0]),int(item_output["item_location"][1])]
         except:
             pdb.set_trace()
-        if self.items[item_idx]["item_time"][0] < item_output["item_time"][0]:
+        if self.items[item_idx]["item_time"][0] <= item_output["item_time"][0]:
         
             self.items[item_idx]["item_location"] = [int(item_output["item_location"][0]),int(item_output["item_location"][1])]
             self.items[item_idx]["item_time"] = item_output["item_time"]
+            
+            if self.latest_map[self.items[item_idx]["item_location"][0], self.items[item_idx]["item_location"][1]] != 5 and self.latest_map[self.items[item_idx]["item_location"][0], self.items[item_idx]["item_location"][1]] != 3 and self.latest_map[self.items[item_idx]["item_location"][0], self.items[item_idx]["item_location"][1]] != 4:
+                self.latest_map[self.items[item_idx]["item_location"][0], self.items[item_idx]["item_location"][1]] = 2
+                #print("changing object location")
             
         if item_output["item_weight"]:
             self.items[item_idx]["item_weight"] = item_output["item_weight"]
@@ -379,8 +402,10 @@ num_episodes = 600
 
 # Get the number of state observations
 
-
-
+team_structure = {}
+with open(args.config, 'r') as file:
+    team_structure = yaml.safe_load(file)
+    
 
 just_starting = True
 
@@ -398,10 +423,6 @@ while True:
             t_control = TutorialControl(num_steps, env.robot_id, env)
         just_starting = False
     
-    if args.message_loop:
-        num_robots = env.action_space["robot"].n
-    else:
-        num_robots = env.action_space["robot"].n-1
     
     print(env.neighbors_info)
     robotState = RobotState(observation['frame'].copy(), 0, env)
@@ -412,6 +433,7 @@ while True:
     last_action = [0,0]
 
     messages = []
+    message_queue = []
     
     action = env.action_space.sample()
     action["action"] = Action.get_occupancy_map.value #actions_to_take.pop(0)
@@ -435,7 +457,7 @@ while True:
 
         llm_control = LLMControl(args.control == 'openai',env, device, robotState)
     elif args.control == "decision":
-        decision_control = DecisionControl(env, robotState)
+        decision_control = DecisionControl(env, robotState, team_structure)
     elif args.control == 'heuristic':
         h_control.start()
     elif args.control == 'deepq':
@@ -445,6 +467,8 @@ while True:
         print("INITIALIAZED")
 
     last_high_action = action["action"]
+    
+    fell_down = 0
 
     while not done:
 
@@ -488,6 +512,14 @@ while True:
             process_reward += reward
             
         #print(next_observation["num_items"])
+        
+        if info["status"] == ActionStatus.tipping:
+            fell_down += 1
+            if fell_down >= 1000:
+                print("FELL DOWN")
+                done = True
+        else:
+            fell_down = 0
             
         if next_observation["num_items"] > len(robotState.items):
             diff_len = next_observation["num_items"] - len(robotState.items)
@@ -502,7 +534,17 @@ while True:
             
             ego_location = np.where(next_observation['frame'] == 5)
             previous_ego_location = np.where(robotState.latest_map == 5)
-            robotState.latest_map[previous_ego_location[0][0],previous_ego_location[1][0]] = 0
+            
+            robotState.latest_map[previous_ego_location[0][0],previous_ego_location[1][0]] = 0 #If there was an agent there it will eliminate it from the map
+            
+            for ob_key in range(len(robotState.robots)): #If the agent is not where it was last seen, mark it
+                robo_location = robotState.latest_map[robotState.robots[ob_key]["neighbor_location"][0],robotState.robots[ob_key]["neighbor_location"][1]]
+                if robotState.robots[ob_key]["neighbor_location"][0] != -1 and robotState.robots[ob_key]["neighbor_location"][1] != -1 and previous_ego_location[0][0] == robotState.robots[ob_key]["neighbor_location"][0] and previous_ego_location[1][0] == robotState.robots[ob_key]["neighbor_location"][1]:
+                    robotState.latest_map[previous_ego_location[0][0],previous_ego_location[1][0]] = 3
+                    
+                if robotState.robots[ob_key]["neighbor_disabled"] == 1 and robotState.robots[ob_key]["neighbor_location"][0] != -1 and robotState.robots[ob_key]["neighbor_location"][1] != -1:
+                    robotState.latest_map[robotState.robots[ob_key]["neighbor_location"][0],robotState.robots[ob_key]["neighbor_location"][1]] = 1
+            
             
 
             
@@ -523,10 +565,10 @@ while True:
 
                         for map_object in info['map_metadata'][m_key]:
                             m_key_xy = m_key.split('_')
-                            if isinstance(map_object, list): #Object information
+                            if not map_object[0]: #Object information
 
 
-                                ob_key = info["object_key_to_index"][map_object[0]]
+                                ob_key = info["object_key_to_index"][map_object[1]]
                              
                                 template_item_info = {'item_weight': 0, 'item_danger_level': 0, 'item_danger_confidence': np.array([0.]), 'item_location': np.array([int(m_key_xy[0]), int(m_key_xy[1])], dtype=np.int16), 'item_time': np.array([info["time"]], dtype=np.int16)}
                                 robotState.update_items(template_item_info, ob_key, -1)
@@ -534,11 +576,13 @@ while True:
                     
 
                                 
-                            elif map_object not in info['map_metadata'][str(ego_location[0][0])+'_'+str(ego_location[1][0])]: #Robot information
+                            elif map_object[1] != env.robot_id: #map_object not in info['map_metadata'][str(ego_location[0][0])+'_'+str(ego_location[1][0])]: #Robot information
                                 
-                                ob_key = info["robot_key_to_index"][map_object]
-                                robotState.robots[ob_key]["neighbor_location"] = [int(m_key_xy[0]), int(m_key_xy[1])]
-                                robotState.robots[ob_key]["neighbor_time"] = info["time"]
+                                robot_idx = info["robot_key_to_index"][map_object[1]]
+                                
+                                template_robot_info = {"neighbor_type": -1, "neighbor_location": np.array([int(m_key_xy[0]), int(m_key_xy[1])], dtype=np.int16), "neighbor_time": np.array([info["time"]], dtype=np.int16), "neighbor_disabled": map_object[2]}
+                                print("Disabled:", map_object)
+                                robotState.update_robots(template_robot_info, robot_idx)
 
                                 
                                 
@@ -554,10 +598,9 @@ while True:
                     
                 elif Action(last_action[1]) == Action.check_robot: #Make sure to update estimates and take the one with the highest confidence
                 
-                    item_idx = last_action_arguments[1]-1
-                    robotState.robots[item_idx]["neighbor_location"] = next_observation["neighbors_output"]["neighbor_location"]
-                    robotState.robots[item_idx]["neighbor_type"] = next_observation["neighbors_output"]["neighbor_type"]
-                    robotState.robots[item_idx]["neighbor_time"] = next_observation["neighbors_output"]["neighbor_time"]
+                    robot_idx = last_action_arguments[1]-1
+       
+                    robotState.update_robots(next_observation["neighbors_output"], robot_idx)
                         
 
                         
@@ -566,6 +609,7 @@ while True:
                 elif Action(last_action[1]) == Action.get_messages:
                     #print("Message arrived", info['messages'])
                     messages = info['messages']
+                    
                 
             '''
             #Fixed set of actions
@@ -586,9 +630,12 @@ while True:
             
             for ob_key in range(len(robotState.robots)): #If the agent is not where it was last seen, mark it
                 robo_location = robotState.latest_map[robotState.robots[ob_key]["neighbor_location"][0],robotState.robots[ob_key]["neighbor_location"][1]]
-                if robo_location != 5 and robo_location != 3:
+                if robo_location != 5 and robo_location != 3 and robotState.robots[ob_key]["neighbor_location"][0] != -1 and robotState.robots[ob_key]["neighbor_location"][1] != -1 and robotState.robots[ob_key]["neighbor_disabled"] != 1:
+                    #pdb.set_trace()
+                    print("ROBOT NOT FOUND", ob_key, robotState.robots[ob_key]["neighbor_location"])
                     robotState.robots[ob_key]["neighbor_location"] = [-1,-1]
-                    robotState.robots[ob_key]["neighbor_time"] = info["time"]
+                    
+                    #robotState.robots[ob_key]["neighbor_time"] = info["time"]
                     
             for ob_key in range(len(robotState.items)): #If the agent is not where it was last seen, mark it
                 try:
@@ -621,9 +668,27 @@ while True:
                     elif args.control == "decision":
                         action,terminated_tmp = decision_control.control(messages, robotState, info, next_observation)
                         
+                        if action["action"] == Action.send_message.value and "message_ai" in action:
+                            if action["message_ai"]:
+                                if action["message"]:
+                                    high_level_action_finished = False
+                                    message_queue.append(action["message_ai"])
+                                else:
+                                    action["message"] = action["message_ai"]
+                                    action["robot"] = -1
+                            
+                            del action["message_ai"]
+                        
+                        if terminated or truncated:
+                            break
+                        
                         if terminated_tmp:
                             disabled = True
                             env.sio.emit("disable")
+                            
+                            
+                        
+                        
                     elif args.control == 'heuristic':
                         #action["action"] = h_control.planner(robotState, process_reward, step_count, terminated or truncated)
                         
@@ -680,7 +745,14 @@ while True:
 
                     action["action"] = Action.get_occupancy_map.value
                  
-                        
+            elif message_queue:
+                action["message"] = message_queue.pop(0)
+                action["action"] = Action.send_message.value
+                action["robot"] = -1
+                
+                if not message_queue:
+                    high_level_action_finished = True
+                            
 
             '''
             if not high_level_action_finished:
@@ -733,6 +805,19 @@ while True:
 
         if terminated or truncated:
             done = True
+            
+            objects_to_report = []
+            for ob_key in range(len(robotState.items)):
+                if robotState.items[ob_key]["item_weight"] >= len(env.map_config['all_robots'])+1 and robotState.items[ob_key]["item_danger_level"] == 2:
+                    object_id = list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(ob_key)]
+                    objects_to_report.append(object_id)
+
+            if objects_to_report:
+                print("Reporting", objects_to_report)
+                env.sio.emit("report", (objects_to_report))
+                    
+                
+            
 
 
 

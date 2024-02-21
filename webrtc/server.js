@@ -387,7 +387,7 @@ io.sockets.on("connection", socket => { //When a client connects
     socket.to(all_ids[idx]).emit("ai_status",status);
   });
   
-  socket.on("ai_output", (idx, object_type_coords_map, object_attributes_id, objects_held, sensing_results, ai_status, extra_status, strength, timer, disable) => {//AI output forwarding
+  socket.on("ai_output", (idx, object_type_coords_map, object_attributes_id, objects_held, sensing_results, ai_status, extra_status, strength, timer, disable, neighbors_info) => {//AI output forwarding
     socket.to(all_ids[idx]).emit("ai_output", object_type_coords_map, object_attributes_id, objects_held, sensing_results, ai_status, extra_status, strength, timer, disable);
     
     if((! disable_list.includes(all_ids_list[idx])) && disable){
@@ -441,6 +441,7 @@ io.sockets.on("connection", socket => { //When a client connects
 		disable_list.splice(disable_index, 1);
     }
 
+    console.log(magnebot_id, simulator_id_to_socket(magnebot_id))
     socket.to(simulator_id_to_socket(magnebot_id)).emit("agent_reset", map_config);
     
     
@@ -627,8 +628,14 @@ io.sockets.on("connection", socket => { //When a client connects
 
         var client_number = all_ids_list.indexOf(magnebot_id);
 
-        clients_ids[client_number] = null
-        all_ids[client_number] = null;
+        console.log(client_number, ai_ids, all_ids)
+        if(client_number < clients_ids.length){
+            clients_ids[client_number] = null;
+            all_ids[client_number] = null;
+        }// else{
+        //    ai_ids[client_number-clients_ids.length] = null;
+        //}
+        //all_ids[client_number] = null;
         
         waiting_room = true;
         

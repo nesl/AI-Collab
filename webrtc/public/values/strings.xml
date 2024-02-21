@@ -198,7 +198,18 @@
         <title>Controls</title>
         <head><![CDATA[<b>Arrow Keys</b> to advance <br><b>A</b> to grab/drop object with left arm<br><b>D</b> to grab/drop object with right arm <br><b>S</b> to rotate camera downwards <br><b>W</b> to rotate camera upwards <br><b>Q</b> to take sensing action <br><b>E</b> to focus on an object (you need this to then grab an object)]]></head>
         
+        <title>Dialogue to AI teammates</title>
+        <head><![CDATA[Your AI teammates can understand whenever you talk to them in natural language. In order to elicit specific collaborative behaviors from your AI teammates, you have to follow the dialogue templates presented here. You or your AI teammate can assume the role of Requester or Helper at any time. You don't have to copy word by word the dialogues that are shown here, just have your message convey a similar meaning and be sure to indicate which agent you want to communicate with. In all of these example message exchanges we assume the requester is Agent A and the Helper is Agent B.]]></head>
+        
+        <list><![CDATA[<p><b>Get/offer help to carry a heavy object</b><br>If you are the Requester, the AI agent will start following you wherever you go. Make sure to tell the agent you don't need their help whenever you finish carrying the object. If you are the Helper, make sure to follow closely the AI agent until the agent tells you otherwise.<ul><li><b>Requester:</b> I need help to carry an object</li><li><b>Helper:</b> I can help you A</li><li><b>Requester:</b> Thanks, follow me B</li></ul></p>]]></list>
+        <list><![CDATA[<p><b>Get/offer help to sense an object</b><br>If you are the Requester, you should follow the agent towards the object to be sensed in your behalf. If you are the Helper, you should go sense the object being requested and then communicate the result to the requester agent by using the <i>Object to message</i> pattern substitution. The coordinate location of the object in the first message is optional.<ul><li><b>Requester:</b> Hey B, can you help me sense object 8 in location (-1.5,3.2)</li><li><b>Helper:</b> I can help you A</li><li><b>Requester:</b> Thanks, I'll follow you B</li></ul></p>]]></list>
+        <list><![CDATA[<p><b>Ask for information of an object</b><br>If you are the Helper, just apply the <i>Object to message</i> pattern substitution with the requested object, else indicate you don't have such information.<ul><li><b>Requester:</b> What do you know about object 8</li><li><b>Helper:</b> Object 8 (weight: 1) Last seen in (4.3,0.1) at 10:23. Status: dangerous, Prob. Correct: 67%</li></ul></p>]]></list>
+        <list><![CDATA[<p><b>Ask for the location of an agent</b><br>If you are the Helper, just apply the <i>Agent to message</i> pattern substitution with the requested agent, else indicate you don't have such information.<ul><li><b>Requester:</b> Where is agent B</li><li><b>Helper:</b> Agent B (type: human) Last seen in (5.6,8.8) at 01:03</li></ul></p>]]></list>
+        <list><![CDATA[<p><b>Make an agent move to stop blocking the way</b><br><ul><li><b>Requester:</b> Hey B, I need you to move.</li></ul></p>]]></list>
+        
         <title>Scenario Map</title>
+        
+        
         
         <hint><![CDATA[Sense objects and bring only the dangerous ones into the goal area]]></hint>
     </entry>
