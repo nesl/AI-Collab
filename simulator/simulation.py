@@ -3003,7 +3003,7 @@ class Simulation(Controller):
                             self.scenario = 1
                             self.reset = True
                             self.timer_limit = 0
-                            self.waiting = True
+                            #self.waiting = True #When is this necessary
                         else:
                             self.enable_logs = False
                             self.timer_limit = 0   
@@ -3684,7 +3684,7 @@ class Simulation(Controller):
                     if not self.local and not all_magnebots[all_idx].last_output:
                         #if any(extra_status):
                         #    print("Sending extra status")
-                        self.sio.emit('ai_output', (all_idx, json_numpy.dumps(limited_map), reduced_metadata, objects_held, item_info, ai_status, extra_status, all_magnebots[all_idx].strength, self.timer, all_magnebots[all_idx].disabled))
+                        self.sio.emit('ai_output', (all_idx, json_numpy.dumps(limited_map), reduced_metadata, objects_held, item_info, ai_status, extra_status, all_magnebots[all_idx].strength, self.timer, all_magnebots[all_idx].disabled, [all_magnebots[all_idx].dynamic.transform.position.tolist(), QuaternionUtils.quaternion_to_euler_angles(all_magnebots[all_idx].dynamic.transform.rotation).tolist()]))
                         if all_magnebots[all_idx].disabled:
                             all_magnebots[all_idx].last_output = True
 

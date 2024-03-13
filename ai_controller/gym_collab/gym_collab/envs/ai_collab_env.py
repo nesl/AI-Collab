@@ -240,7 +240,7 @@ class AICollabEnv(gym.Env):
 
         @self.sio.event
         def ai_output(object_type_coords_map, object_attributes_id, objects_held,
-                      sensing_results, ai_status, extra_status, strength, timer, disable):
+                      sensing_results, ai_status, extra_status, strength, timer, disable, location):
 
 
 
@@ -262,7 +262,8 @@ class AICollabEnv(gym.Env):
                     extra_status,
                     strength,
                     timer,
-                    frame)
+                    frame,
+                    location)
                 self.waiting_output = False
                 #print("Waiting output", self.waiting_output)
 
@@ -276,7 +277,8 @@ class AICollabEnv(gym.Env):
                 extra_status,
                 strength,
                 timer,
-                frame)
+                frame,
+                location)
                 
                 
             self.truncated = disable
@@ -593,6 +595,7 @@ class AICollabEnv(gym.Env):
         info['time'] = float(world_state[7])
         info['frame'] = world_state[8]
         info["status"] = world_state[4]
+        info["real_location"] = world_state[9]
         
 
         

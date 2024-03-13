@@ -496,6 +496,7 @@ while True:
         #print(action, next_observation)
         next_observation, reward, terminated, truncated, info = env.step(action)
         
+        print(info["real_location"])
 
         if args.webcam:
             pass
