@@ -1225,6 +1225,7 @@ class Movement:
                 if not all(humans_close):
                     for hc in range(len(humans_close)):
                         if not humans_close[hc]:
+                            robot_index_to_key = list(info['robot_key_to_index'].keys())
                             robot_id = robot_index_to_key[list(info['robot_key_to_index'].values()).index(human_robots_idx[hc])]
                             message_text += MessagePattern.come_closer(robot_id)
                             self.help_status_info[7].append(robot_id)

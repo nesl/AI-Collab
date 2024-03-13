@@ -2728,8 +2728,10 @@ class Simulation(Controller):
                         arms_held[0] = self.object_names_translate[magn.dynamic.held[Arm.left][0]]
                     if magn.dynamic.held[Arm.right].size > 0:
                         arms_held[1] = self.object_names_translate[magn.dynamic.held[Arm.right][0]]
+                    
+                    rot = QuaternionUtils.quaternion_to_euler_angles(magn.dynamic.transform.rotation)[1]
                         
-                    object_metadata.append([1,self.robot_names_translate[str(magn.robot_id)],round(float(pos[0]),2),round(float(pos[2]),2),magn.disabled,arms_held[0],arms_held[1],magn.strength])
+                    object_metadata.append([1,self.robot_names_translate[str(magn.robot_id)],round(float(pos[0]),2),round(float(pos[2]),2),magn.disabled,arms_held[0],arms_held[1],magn.strength,round(float(rot),2)])
                 
                 
                 self.sio.emit("log_output", (json.dumps({'metadata':object_metadata}),past_timer))

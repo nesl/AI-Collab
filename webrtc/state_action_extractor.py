@@ -5,6 +5,9 @@ from gym_collab.envs.action import Action
 import math
 import json
 import re
+import matplotlib.pyplot as plt
+import time
+import matplotlib.colors as mcolors
 
 def convert_to_grid_coords(x,y,scenario_size,cell_size):
 
@@ -70,7 +73,186 @@ def print_map(occupancy_map): #Occupancy maps require special printing so that t
     out_file.close()
     exit()
     """
+def print_results(scenario_options, agents_dict, objects_dict):
+
+    #plt.axis([-10, 10, -10, 10])  # Adjust axis limits for various functions
+    #plt.ion()
+    #plt.show()
+    plt.ion()
+    fig = plt.figure(figsize=(20,15))
+    ax = fig.add_subplot(111)
+    ax.axis([-10, 10, -10, 10])
+
+    keys = list(agents_dict.keys())
+
+    if keys and "stats" in agents_dict[keys[0]]:
+        printing_stats = True
+    else:
+        printing_stats = False
+
+    if printing_stats:
+        print("{:^50}".format(""),end=" ")
+                        
+    for w2 in scenario_options["walls"]:
+        wall = np.array(w2)
+        plt.plot(wall[:,0], wall[:,1], color="black")
+      
+    for w2 in scenario_options["env_objects"]:
+        plt.scatter(w2[0], w2[1], color="black")
+         
+    objects_to_carry = {}
     
+    ranges = [[],[]]
+    
+    for ob_key in objects_dict.keys():
+        locs = objects_dict[ob_key]["stored_locations"]
+        
+        if len(locs):
+            if objects_dict[ob_key]["danger_level"] == 1:
+                color_danger = "blue" 
+            elif objects_dict[ob_key]["danger_level"] == 2:
+                color_danger = "red"
+                
+            objects_to_carry[ob_key] = plt.scatter(locs[0][0], locs[0][1], s=500, color=color_danger, marker="$" + str(ob_key) + "\_" + str(objects_dict[ob_key]["weight"]) + "$")
+            
+        #if len(objects_dict[ob_key]["drop_times"]):             
+
+    locs = {}
+    messages = {}
+    #pdb.set_trace()
+    colors = list(mcolors.TABLEAU_COLORS.keys())
+    color_assigned = {}
+    objects_carried = {}
+    for b_idx,b_key in enumerate(agents_dict.keys()):
+        color_assigned[b_key] = colors[b_idx]
+        locs[b_key] = np.array(agents_dict[b_key]["locations"])
+        messages[b_key] = agents_dict[b_key]["sent_messages"]
+        
+        for ob_key in agents_dict[b_key]["history_objects_carried"]:
+            if ob_key not in objects_carried.keys():
+                objects_carried[ob_key] = np.array(objects_dict[ob_key]["stored_locations"])
+                
+               
+        if printing_stats:
+            print("{:^20}".format(b_key), end=" ")
+            
+        """    
+        locs = np.array(agents_dict[b_key]["locations"])
+        #pdb.set_trace()
+        if locs.size > 0:
+            plt.plot(locs[:,0], locs[:,1])
+        """
+        
+
+    lines = {}
+    
+    skip_frames = 10
+    max_history = 1000
+    texts = []
+    for l_idx in range(0,len(agents_dict[b_key]["locations"]),skip_frames):
+    
+        if texts and l_idx - texts[0][1] > 100:
+            texts[0][0].remove()
+            texts.pop(0)
+    
+        for a_key in agents_dict.keys():
+
+            if not l_idx:
+                #pdb.set_trace()
+                tmp_line, = ax.plot(locs[a_key][l_idx,0], locs[a_key][l_idx,1], color=color_assigned[a_key], label=a_key)
+                plt.legend(loc="upper left")
+                lines[a_key] = tmp_line
+            else:
+            
+                s_idx = 0
+                if l_idx > max_history:
+                    s_idx = l_idx - max_history
+            
+                lines[a_key].set_xdata(locs[a_key][s_idx:l_idx,0])
+                lines[a_key].set_ydata(locs[a_key][s_idx:l_idx,1])
+                
+            for l_sub_idx in range(l_idx-skip_frames+1,l_idx+1):
+                
+                if len(messages[a_key]) > l_sub_idx:
+                    for m in messages[a_key][l_sub_idx]:
+                        tmp_text = ax.text(locs[a_key][l_sub_idx,0], locs[a_key][l_sub_idx,1], m, fontsize = 10, bbox ={'facecolor':color_assigned[a_key], 'alpha':0.9, 'pad':1})
+                        texts.append([tmp_text,l_sub_idx])
+                        #print(m, locs[a_key][l_idx,0], locs[a_key][l_idx,1])
+            #plt.scatter(locs[l_idx][0], locs[l_idx][1])
+            #print(locs[l_idx])
+
+        for ob_key in objects_carried.keys():
+            if not l_idx:
+                #pdb.set_trace()
+                tmp_line, = ax.plot(objects_carried[ob_key][l_idx,0], objects_carried[ob_key][l_idx,1], color="yellow")
+                lines[ob_key] = tmp_line
+            else:
+            
+                s_idx = 0
+                if l_idx > max_history:
+                    s_idx = l_idx - max_history
+            
+                lines[ob_key].set_xdata(objects_carried[ob_key][s_idx:l_idx,0])
+                lines[ob_key].set_ydata(objects_carried[ob_key][s_idx:l_idx,1])
+            
+                
+            for dt in objects_dict[ob_key]["pickup_times"]:
+                if dt <= l_idx:
+                    
+                    objects_dict[ob_key]["pickup_times"].pop(0)
+                
+                    if ob_key in objects_to_carry and objects_to_carry[ob_key]:
+                        objects_to_carry[ob_key].remove()
+                        objects_to_carry[ob_key] = []
+
+                        
+            for dt in objects_dict[ob_key]["drop_times"]:
+                if dt <= l_idx:
+                    plt.scatter(objects_carried[ob_key][l_idx,0],objects_carried[ob_key][l_idx,1], marker="x", color="red")
+                    objects_dict[ob_key]["drop_times"].pop(0)
+                    
+                    if objects_dict[ob_key]["danger_level"] == 1:
+                        color_danger = "blue" 
+                    elif objects_dict[ob_key]["danger_level"] == 2:
+                        color_danger = "red"
+                        
+                    objects_to_carry[ob_key] = plt.scatter(objects_carried[ob_key][l_idx,0],objects_carried[ob_key][l_idx,1], s=500, color=color_danger, marker="$" + str(ob_key) + "\_" + str(objects_dict[ob_key]["weight"]) + "$")
+
+
+            
+                    
+        #plt.draw()
+        #plt.pause(0.001)
+        fig.canvas.draw()
+        fig.canvas.flush_events()
+        
+        plt.savefig("matplots/matplots_output_" + str(l_idx).zfill(5) + ".jpg")
+        #time.sleep(0.0001)
+        
+        
+            
+    if printing_stats:
+        print("")                 
+    
+    if printing_stats:
+        for s in agents_dict[b_key]["stats"].keys():
+            print("{:^50}".format(s),end=" ")
+            for b_idx,b_key in enumerate(agents_dict.keys()):
+                                    
+                print("{:^20}".format(str(agents_dict[b_key]["stats"][s])), end=" ")
+            print("")
+    """
+    for ob_key in objects_dict.keys():
+        locs = np.array(objects_dict[ob_key]["stored_locations"])
+        if locs.size > 0:
+            plt.plot(locs[:,0], locs[:,1], color="yellow")
+    """                        
+    #plt.show()  
+    
+
+    
+    if printing_stats:
+        print("")   
 def determine_direction(origin,destination,pickup):
 
     diff = np.array(destination)-np.array(origin).tolist()
@@ -130,7 +312,7 @@ def get_settings(log_state_file, target_cell_size):
     settings = log_state_file.readline()
     
     if not settings:
-        return None,None
+        return None,None,None,None
         
     settings = eval(settings.strip())
     arguments = log_state_file.readline().strip()
@@ -189,6 +371,14 @@ def get_settings(log_state_file, target_cell_size):
         
     return scenario_options,wall_coords,settings,arguments
 
+
+def init_agents_dict(agents_dict, scenario_options):
+
+    for r in scenario_options["robots_type"]:
+        agent_id = r[0]
+        if agent_id not in agents_dict:
+            agents_dict[agent_id] = {"last_action":action_sample.copy(),"location":[],"last_grid_world":[], "changed":False, "object_carried":-1, "object_mapping":{}, "reward":0, "disabled":False, "object_manipulation":{"dangerous_dropped": 0, "non_dangerous_collected": 0, "dangerous_collected": 0, "dangerous_not_collected": 0}, "locations":[], "message_context":[], "sent_messages":[], "history_objects_carried":[]}
+
     
 """
 def get_action_index(key):
@@ -225,18 +415,27 @@ request_agent_info = 25
 
 """
 
+good_files = ["2023_11_16_14_46_50.txt","2024_01_24_16_42_47.txt","2024_01_25_10_00_40.txt","2024_01_30_15_47_09.txt","2024_01_18_16_48_46.txt","2024_01_19_06_37_37.txt","2024_01_30_15_07_42.txt","2024_01_26_15_19_22.txt","2024_02_01_17_29_04.txt","2024_01_26_10_27_40.txt","2024_01_23_13_34_24.txt","2024_01_26_15_20_28.txt","2024_01_18_14_03_02.txt","2024_01_23_14_33_58.txt","2024_01_04_14_41_25.txt","2024_01_15_10_02_48.txt","2024_01_10_15_39_25.txt","2024_01_23_13_33_59.txt","2024_01_25_15_15_34.txt","2024_01_03_14_40_35.txt","2023_11_03_14_51_11.txt","2024_01_15_16_19_21.txt","2024_01_22_14_47_18.txt"]
 
 target_cell_size = 1
+saved_results = []
+all_agents_stats = {}
 
-for d in glob.glob("*.txt"):
+
+#plt.axis([-10, 10, -10, 10])  # Adjust axis limits for various functions
+#plt.ion()
+#plt.show()
+
+for d in good_files: #glob.glob("*.txt"):
     #d = "2023_11_02_16_05_09.txt" #"2023_05_12_14_00_00.txt" #"2023_08_04_15_08_34.txt"
     
-    d = "2024_01_22_14_47_18.txt"
+    #d = "2024_01_22_14_47_18.txt"
     
     if not re.match("\d{4}_\d{2}",d):
         continue
     
-
+    print(d)
+    
     log_file = open(d)
     new_line = log_file.readline()
     messages_present = False
@@ -251,9 +450,14 @@ for d in glob.glob("*.txt"):
     individual_stats_count = 0
 
     scenario_options,wall_coords,settings,arguments = get_settings(log_state_file, target_cell_size)
-        
-    grid_map = init_grid_map(wall_coords, scenario_options["scenario_size"]) #[[0 for y in range(scenario_options["scenario_size"])] for y in range(scenario_options["scenario_size"])]
     agents_dict = {}
+    
+    
+    if "robots_type" in scenario_options:
+        init_agents_dict(agents_dict, scenario_options)
+                    
+    grid_map = init_grid_map(wall_coords, scenario_options["scenario_size"]) #[[0 for y in range(scenario_options["scenario_size"])] for y in range(scenario_options["scenario_size"])]
+    
     #agents_dict = {robot[0]:{"last_action":action_sample.copy(),"location":[],"last_grid_world":[], "changed":False, "object_carried":-1, "object_mapping":{}, "reward":0, "disabled":False} for robot in scenario_options["robots_type"]}
     
     objects_dict = {}
@@ -267,6 +471,7 @@ for d in glob.glob("*.txt"):
     legacy_list_carrying_objects = {}
     
     just_reset = []
+    session_num = 0
     
     while new_line:
         split_line = new_line.strip().split(',')
@@ -322,8 +527,9 @@ for d in glob.glob("*.txt"):
                         coordinate_x,coordinate_y = convert_to_grid_coords(real_x,real_y,scenario_options["scenario_size"],target_cell_size)
                 
                     if object_id not in objects_dict:
-                        objects_dict[object_id] = {"real_location":[],"location":[], "weight":weight, "danger_level":danger_level}
+                        objects_dict[object_id] = {"real_location":[],"location":[], "weight":weight, "danger_level":danger_level, "stored_locations":[], "drop_times":[], "pickup_times":[]}
                 
+                    objects_dict[object_id]["stored_locations"].append([real_x,real_y])
                     
                     new_grid_map[int(coordinate_x)][int(coordinate_y)] = 2
                     
@@ -361,11 +567,13 @@ for d in glob.glob("*.txt"):
                     #    agent_id = scenario_options["robots_type"][agent_number-1][0]
                         
                     if agent_id not in agents_dict:
-                        agents_dict[agent_id] = {"last_action":action_sample.copy(),"location":[],"last_grid_world":[], "changed":False, "object_carried":-1, "object_mapping":{}, "reward":0, "disabled":False, "object_manipulation":{"dangerous_dropped": 0, "non_dangerous_collected": 0, "dangerous_collected": 0, "dangerous_not_collected": 0}}
+                        init_agents_dict(agents_dict,{"robots_type":[[agent_id]]})
+                        #agents_dict[agent_id] = {"last_action":action_sample.copy(),"location":[],"last_grid_world":[], "changed":False, "object_carried":-1, "object_mapping":{}, "reward":0, "disabled":False, "object_manipulation":{"dangerous_dropped": 0, "non_dangerous_collected": 0, "dangerous_collected": 0, "dangerous_not_collected": 0}}
                     
                     agents_dict[agent_id]["last_action"] = action_sample.copy()
                     agents_dict[agent_id]["reward"] = 0
-                    
+                    agents_dict[agent_id]["locations"].append([m[2],m[3]])
+                    agents_dict[agent_id]["sent_messages"].append([])
                     if legacy:
                         x_orig,y_orig = convert_to_real_coords(m[0],m[1],scenario_options["scenario_size"],settings["cell_size"])
                     else:
@@ -428,6 +636,10 @@ for d in glob.glob("*.txt"):
                             object_id = carrying_objects[1]
                             
                         agents_dict[agent_id]["object_carried"] = object_id
+                        objects_dict[object_id]["pickup_times"].append(len(agents_dict[agent_id]["locations"]))
+                        
+                        if object_id not in agents_dict[agent_id]["history_objects_carried"]:
+                            agents_dict[agent_id]["history_objects_carried"].append(object_id)
                         
                         if agents_dict[agent_id]["location"][-1] != objects_dict[object_id]["location"][0]:
                             agent_location = agents_dict[agent_id]["location"][-1]
@@ -479,6 +691,7 @@ for d in glob.glob("*.txt"):
                             
                         agents_dict[agent_id]["changed"] = True
                         agents_dict[agent_id]["object_carried"] = -1
+                        objects_dict[object_id]["drop_times"].append(len(agents_dict[agent_id]["locations"]))
                             
                     
                     if agents_dict[agent_id]["location"]:
@@ -520,18 +733,24 @@ for d in glob.glob("*.txt"):
                     current_state["grid_map"] = grid_map
                     next_state["grid_map"] = new_grid_map
                     object_carried = agents_dict[a_key]["object_carried"] > -1
-                    log_memory.append([a_key,current_state,agents_dict[a_key]["last_action"],next_state,agents_dict[a_key]["reward"]])
+                    log_memory.append([a_key,current_state,agents_dict[a_key]["last_action"],next_state,agents_dict[a_key]["reward"],agents_dict[a_key]["message_context"]])
+                    agents_dict[a_key]["message_context"] = []
                     #print(a_key,grid_map,Action(agents_dict[a_key]["last_action"]),new_grid_map,0)
                     
                     
+                    """
                     if a_key == "A":
                         print(a_key,Action(agents_dict[a_key]["last_action"]["action"]), "REWARD", agents_dict[a_key]["reward"], "CARRYING", object_carried)
 
                         #print_map(np.array(grid_map))
                         print_map(np.array(new_grid_map))
-                    
+                    """
 
             grid_map = new_grid_map
+            
+
+            
+
                     
             
                     
@@ -547,7 +766,8 @@ for d in glob.glob("*.txt"):
                 current_state = state_sample.copy()
                 current_state["grid_map"] = grid_map
                 
-                log_memory.append([a_key,current_state,agent_action,current_state,0])
+                log_memory.append([a_key,current_state,agent_action,current_state,0,agents_dict[a_key]["message_context"]])
+                agents_dict[a_key]["message_context"] = []
                 #print(Action.danger_sensing)
                 #agents_dict[a_key]["activate_sensor"] = True
                 
@@ -585,6 +805,7 @@ for d in glob.glob("*.txt"):
         elif log_line_type == 2: #messages sent
             if not messages_present:
                 messages_present = True
+                session_num += 1
             
             
             last_q = new_line.rfind('"')
@@ -592,17 +813,31 @@ for d in glob.glob("*.txt"):
             third_last_q = new_line[:second_last_q].rfind('"')
             first_q = new_line.index('"')
             
-            strings_extract = [first_q,third_last_q,second_last_q,last_q]
+            strings_extract = [first_q+1,third_last_q,second_last_q+1,last_q]
             
             agent_action = action_sample.copy()
             agent_action["action"] = Action.send_message.value
-            agent_action["message"] = new_line[strings_extract[0]:strings_extract[1]]
+            sent_message = new_line[strings_extract[0]:strings_extract[1]]
+            agent_action["message"] = sent_message
             a_key = split_line[2]
+            
+            agents_dict[a_key]["sent_messages"].append([sent_message])
+            
+            if new_line[strings_extract[2]:strings_extract[3]]: #get recipients of message
+                recipients = new_line[strings_extract[2]:strings_extract[3]].split(',')[:-1]
+                
+                for r in recipients:
+                    agents_dict[r]["message_context"].append([a_key,agent_action["message"]])
+
+                
+            
             current_state = state_sample.copy()
             current_state["grid_map"] = grid_map
 
 
-            log_memory.append([a_key,current_state,agent_action,current_state,0])
+
+            log_memory.append([a_key,current_state,agent_action,current_state,0,agents_dict[a_key]["message_context"]])
+            agents_dict[a_key]["message_context"] = []
             #print(agent_action)
                 
         elif log_line_type == 3 and agents_dict: #objects and teammates
@@ -657,7 +892,7 @@ for d in glob.glob("*.txt"):
                                 
             
                 weight = object_results[ob_key]["weight"]
-                time = object_results[ob_key]["time"]
+                time_object = object_results[ob_key]["time"]
                 location = object_results[ob_key]["location"]
 
                 if object_results[ob_key]["sensor"] and a_key in object_results[ob_key]["sensor"]:   
@@ -669,11 +904,11 @@ for d in glob.glob("*.txt"):
 
                 if int(ob_key) not in agents_dict[a_key]["object_mapping"].keys():
                     new_idx = len(agents_dict[a_key]["object_mapping"].keys())
-                    agents_dict[a_key]["object_mapping"][int(ob_key)] = {"index":new_idx,"time":time,"location":location}
+                    agents_dict[a_key]["object_mapping"][int(ob_key)] = {"index":new_idx,"time":time_object,"location":location}
                     new_measurement = True
                 else:
-                    if agents_dict[a_key]["object_mapping"][int(ob_key)]["time"] < time and location[0] != agents_dict[a_key]["object_mapping"][int(ob_key)]["location"][0] and location[1] != agents_dict[a_key]["object_mapping"][int(ob_key)]["location"][1]:
-                        agents_dict[a_key]["object_mapping"][int(ob_key)]["time"] = time
+                    if agents_dict[a_key]["object_mapping"][int(ob_key)]["time"] < time_object and location[0] != agents_dict[a_key]["object_mapping"][int(ob_key)]["location"][0] and location[1] != agents_dict[a_key]["object_mapping"][int(ob_key)]["location"][1]:
+                        agents_dict[a_key]["object_mapping"][int(ob_key)]["time"] = time_object
                         agents_dict[a_key]["object_mapping"][int(ob_key)]["location"] = location
                         new_measurement = True
                 
@@ -686,7 +921,8 @@ for d in glob.glob("*.txt"):
                         next_state["object_danger_level"] = danger_level
                         next_state["object_confidence"] = confidence
                     
-                    log_memory.append([a_key,current_state,agent_action,next_state,0])
+                    log_memory.append([a_key,current_state,agent_action,next_state,0,agents_dict[a_key]["message_context"]])
+                    agents_dict[a_key]["message_context"] = []
                     #print(agent_action, weight,danger_level,confidence,location)
                     
                     current_state = next_state
@@ -703,23 +939,28 @@ for d in glob.glob("*.txt"):
             
             just_reset.append(log_line_agent)
             
-            
+            #print(just_reset)
             if all(robot[0] in just_reset for robot in scenario_options["robots_type"] if robot[1] == "human"): #Check robot is real
             
                 print("Resetting")
-                scenario_options_tmp,wall_coords_tmp,settings,arguments = get_settings(log_state_file, target_cell_size)
+                scenario_options_tmp,wall_coords_tmp,settings_tmp,arguments_tmp = get_settings(log_state_file, target_cell_size)
                     
                 if scenario_options_tmp:
                     scenario_options = scenario_options_tmp
                     wall_coords = wall_coords_tmp
+                    settings = settings_tmp
+                    arguments = arguments_tmp
                     
                 grid_map = init_grid_map(wall_coords, scenario_options["scenario_size"])
                 agents_dict = {}
+                if "robots_type" in scenario_options:
+                    init_agents_dict(agents_dict, scenario_options)
                 objects_dict = {}
                 rewarded_objects = []
                 legacy_objects = {}
                 legacy_keys = {}
                 legacy_list_carrying_objects = {}
+                log_memory = []
                 individual_stats_count = 0
                 
                 just_reset = [] #multiple resets
@@ -727,7 +968,7 @@ for d in glob.glob("*.txt"):
         elif log_line_type == 5: #statistics
             a_key = split_line[2]
 
-
+            #print(a_key)
             if '{' in new_line: #else it is a legacy format
                 m_idx1 = new_line.index('{')
                 m_idx2 = new_line.rfind('}')+1
@@ -770,9 +1011,12 @@ for d in glob.glob("*.txt"):
                     agents_dict[a_key]["quality"] = individual_quality
                     """
                     
+                    
                     agents_dict[a_key]["effort"] = stats["effort"]
                     agents_dict[a_key]["quality"] = stats["quality_work"]
                     agents_dict[a_key]["payment"] = stats["individual_payment"]
+                    agents_dict[a_key]["stats"] = stats.copy()
+                                       
                 
                 if individual_stats_count == len(agents_dict.keys()):
                 
@@ -813,13 +1057,162 @@ for d in glob.glob("*.txt"):
                     print('Maximum Payment:', maxPayment, "Total Payment:", acc_individual_payment)
                     """
                     
-                    for b_idx,b_key in enumerate(agents_dict.keys()):
-                        print(b_key, "Effort:", agents_dict[b_key]["effort"], "Quality:", agents_dict[b_key]["quality"], "Payment:", agents_dict[a_key]["payment"])
+                    #for b_idx,b_key in enumerate(agents_dict.keys()):
+                    #    print(b_key, "Effort:", agents_dict[b_key]["effort"], "Quality:", agents_dict[b_key]["quality"], "Payment:", agents_dict[a_key]["payment"])
+                    #    #print(b_key, 
                     
-                    print("Team Quality:", stats["team_quality_work"], "Dangerous objects in goal:", stats["team_dangerous_objects_in_goal"], "Total dangerous objects:", stats["total_dangerous_objects"])   
-                    print("Total Effort:", stats["human_team_effort"])
-                    print("Total Team Payment:", stats["team_payment"])
                     
+                    objects_in_goal = []
+                    total_distance_traveled = 0
+                    total_messages_exchanged = 0
+                    total_pickup_times = 0
+                    total_dropped_times = 0
+                    
+                    time_in_company = {}
+                    
+                    lifter_role = {}
+                    sensing_role = {}
+                    
+                    
+                    
+                    if not ("token" in stats and not stats["token"]):  
+                    
+                              
+                        for b_idx,b_key in enumerate(agents_dict.keys()):        
+                            agents_dict[b_key]["stats"]["quality_choosing"] = 0
+                            agents_dict[b_key]["stats"]["quality_moving"] = 0
+                            agents_dict[b_key]["stats"]["quality_communication"] = 0
+                            agents_dict[b_key]["stats"]["quality_carrying"] = 0
+                            agents_dict[b_key]["stats"]["task_completion"] = len(agents_dict[b_key]["stats"]["dangerous_objects_in_goal"]) / agents_dict[b_key]["stats"]["total_dangerous_objects"]
+                            agents_dict[b_key]["stats"]["team_completion"] = agents_dict[b_key]["stats"]["team_dangerous_objects_in_goal"]/agents_dict[b_key]["stats"]["total_dangerous_objects"]
+                            agents_dict[b_key]["stats"]["team_quality_choosing"] = 0
+                            agents_dict[b_key]["stats"]["team_quality_moving"] = float("inf")
+                            agents_dict[b_key]["stats"]["team_quality_carrying"] = float("inf")
+                            agents_dict[b_key]["stats"]["team_quality_communication"] = float("inf")
+                            agents_dict[b_key]["stats"]["team_task_interdependence"] = 0
+                            agents_dict[b_key]["stats"]["team_role_specialization"] = 0
+                            
+                            
+                            if not (agents_dict[b_key]["stats"]["grabbed_objects"] == 0 and agents_dict[b_key]["stats"]["objects_sensed"] == 0):
+                                lifter_role[b_key] = agents_dict[b_key]["stats"]["grabbed_objects"]
+                                sensing_role[b_key] = agents_dict[b_key]["stats"]["objects_sensed"]
+                            
+                            for c_key in agents_dict[b_key]["stats"]["time_with_teammates"].keys():
+                                if c_key + "_" + b_key not in time_in_company.keys() and b_key + "_" + c_key not in time_in_company.keys():
+                                    time_in_company[c_key + "_" + b_key] = agents_dict[b_key]["stats"]["time_with_teammates"][c_key]
+                            
+                            
+                            total_distance_traveled += agents_dict[b_key]["stats"]["distance_traveled"]
+                            total_messages_exchanged += agents_dict[b_key]["stats"]["num_messages_sent"]
+                            if len(agents_dict[b_key]["stats"]["objects_in_goal"]) > 0:
+                            
+                                for ob in agents_dict[b_key]["stats"]["objects_in_goal"]:
+                                    if ob not in objects_in_goal:
+                                        objects_in_goal.append(ob)
+                            
+                                agents_dict[b_key]["stats"]["quality_choosing"] = len(agents_dict[b_key]["stats"]["dangerous_objects_in_goal"])/len(agents_dict[b_key]["stats"]["objects_in_goal"])
+                                agents_dict[b_key]["stats"]["quality_moving"] = agents_dict[b_key]["stats"]["distance_traveled"]/len(agents_dict[b_key]["stats"]["objects_in_goal"])
+                            
+                            if len(agents_dict[b_key]["stats"]["dangerous_objects_in_goal"]) > 0:
+                                agents_dict[b_key]["stats"]["quality_communication"] = agents_dict[b_key]["stats"]["num_messages_sent"]/len(agents_dict[b_key]["stats"]["dangerous_objects_in_goal"])
+                            
+                            pickup_times = len(agents_dict[b_key]["stats"]["dropped_outside_goal"]) + len(agents_dict[b_key]["stats"]["objects_in_goal"])
+                            total_pickup_times += pickup_times
+                            total_dropped_times += len(agents_dict[b_key]["stats"]["dropped_outside_goal"])
+                            if pickup_times > 0:
+                                agents_dict[b_key]["stats"]["quality_carrying"] = len(agents_dict[b_key]["stats"]["dropped_outside_goal"])/pickup_times
+             
+                        time_in_company_avg = np.average(list(time_in_company.values()))/stats["team_end_time"]
+             
+                        """
+                        n = len(lifter_role.values())
+                        out_diff = np.abs(np.sum(np.array(list(lifter_role.values())) * np.arange(n-1, -n, -2) ) / (n*(n-1) / 2)) #Mean difference
+                        
+                        sum_diff = np.sum(list(lifter_role.values()))
+                        if sum_diff > 0:
+                            lifter_diff = out_diff/sum_diff
+                        else:
+                            lifter_diff = 0
+                        
+                        
+                        out_diff = np.abs(np.sum(np.array(list(sensing_role.values())) * np.arange(n-1, -n, -2) ) / (n*(n-1) / 2))
+                        sum_diff = np.sum(list(sensing_role.values()))
+                        if sum_diff > 0:
+                            sensing_diff = out_diff/sum_diff
+                        else:
+                            sensing_diff = 0
+                        """
+                        if list(sensing_role.values()) and max(list(lifter_role.values())) and max(list(sensing_role.values())):
+                            role_specialization = ((max(list(lifter_role.values())) - np.average(list(lifter_role.values())))/max(list(lifter_role.values())) + (max(list(sensing_role.values())) - np.average(list(sensing_role.values())))/max(list(sensing_role.values())))/2#(sensing_diff + lifter_diff)/2
+                        else:
+                            role_specialization = 0
+                 
+             
+                        agents_stats = {}
+                        for b_idx,b_key in enumerate(agents_dict.keys()):
+                        
+                            agents_dict[b_key]["stats"]["team_objects_in_goal"] = objects_in_goal
+                            agents_dict[b_key]["stats"]["total_distance_traveled"] = total_distance_traveled
+                            if total_distance_traveled > 0:
+                                agents_dict[b_key]["stats"]["productivity"] = agents_dict[b_key]["stats"]["team_dangerous_objects_in_goal"]/total_distance_traveled
+                            else:
+                                agents_dict[b_key]["stats"]["productivity"] = 0
+                            
+                            agents_dict[b_key]["stats"]["team_other_quality_work"] = (agents_dict[b_key]["stats"]["team_dangerous_objects_in_goal"]-(len(objects_in_goal)-agents_dict[b_key]["stats"]["team_dangerous_objects_in_goal"]))/agents_dict[b_key]["stats"]["total_dangerous_objects"]
+                            
+                            
+                            agents_dict[b_key]["stats"]["team_task_interdependence"] = time_in_company_avg
+                            agents_dict[b_key]["stats"]["team_role_specialization"] = role_specialization
+                            
+                            if objects_in_goal:    
+                                agents_dict[b_key]["stats"]["team_quality_choosing"] = agents_dict[b_key]["stats"]["team_dangerous_objects_in_goal"]/len(objects_in_goal)
+                                
+                                agents_dict[b_key]["stats"]["team_quality_moving"] = total_distance_traveled/len(objects_in_goal)
+                                
+                            if agents_dict[b_key]["stats"]["team_dangerous_objects_in_goal"] > 0:
+                                agents_dict[b_key]["stats"]["team_quality_communication"] = total_messages_exchanged/agents_dict[b_key]["stats"]["team_dangerous_objects_in_goal"]
+                            
+                            if total_pickup_times > 0:    
+                                agents_dict[b_key]["stats"]["team_quality_carrying"] = total_dropped_times/total_pickup_times
+                                
+                            agents_stats[b_key] = agents_dict[b_key]["stats"]
+                            
+                            
+                        if d not in agents_stats:
+                            all_agents_stats[d] = {}
+                        all_agents_stats[d][session_num] = agents_stats.copy()
+                                    
+                        action_stats = {}
+                        num_actions = 27
+                        for lm in log_memory:
+                            if lm[0] not in action_stats.keys():
+                                action_stats[lm[0]] = [0]*num_actions
+                            action_stats[lm[0]][lm[2]["action"]] += 1
+                   
+                        
+                        print_session = False
+                        """
+                        if len(list(agents_dict.keys())) > 2:
+                            for object_id in objects_in_goal:
+                                if objects_dict[int(object_id)]["weight"] > 1:
+                                    print_session = True
+                                    break
+                                
+                        if print_session:
+                            print_results(scenario_options, agents_dict, objects_dict)  
+                            quit()  
+                        """
+                        
+                        if agents_dict[b_key]["stats"]["team_end_time"] > 900 and agents_dict[b_key]["stats"]["total_distance_traveled"] > 0 and all(so[1] == "human" for so in scenario_options["robots_type"]): #No tutorials
+                            saved_results.append([scenario_options.copy(),agents_dict.copy(), objects_dict.copy(), action_stats.copy(), d])
+                        
+                        
+                        
+                        #print("Team Quality:", stats["team_quality_work"], "Dangerous objects in goal:", stats["team_dangerous_objects_in_goal"], "Total dangerous objects:", stats["total_dangerous_objects"])   
+                        #print("Total Effort:", stats["human_team_effort"])
+                        #print("Total Team Payment:", stats["team_payment"])
+                        
+                        
                     
                 if a_key in legacy_objects:
                     for lo in legacy_objects[a_key]: #Rewrite log file for legacy cases were we only know the dangerous objects until the end
@@ -831,4 +1224,121 @@ for d in glob.glob("*.txt"):
         
         new_line = log_file.readline()
     
-    break
+    #break
+
+"""
+scores = {"team_score":{2:[],3:[],4:[]},"frac_dangerous":{2:[],3:[],4:[]},"frac_collected":{2:[],3:[],4:[]},"sensor_activations":{2:[],3:[],4:[]},"distance_traveled":{2:[],3:[],4:[]},"productivity":{2:[],3:[],4:[]}}
+for s in saved_results:
+    if len(s[1].keys()) >= 2:
+        a_key = list(s[1].keys())[0]
+        
+        scores["team_score"][len(s[1].keys())].append(s[1][a_key]["stats"]["team_other_quality_work"])
+        if s[1][a_key]["stats"]["total_dangerous_objects"]:
+            scores["frac_dangerous"][len(s[1].keys())].append(s[1][a_key]["stats"]["team_dangerous_objects_in_goal"]/s[1][a_key]["stats"]["total_dangerous_objects"])
+        else:
+            scores["frac_dangerous"][len(s[1].keys())].append(0)
+            
+        if s[1][a_key]["stats"]["team_objects_in_goal"]:
+            scores["frac_collected"][len(s[1].keys())].append(s[1][a_key]["stats"]["team_dangerous_objects_in_goal"]/len(s[1][a_key]["stats"]["team_objects_in_goal"]))
+        else:
+            scores["frac_collected"][len(s[1].keys())].append(0)
+            
+        scores["sensor_activations"][len(s[1].keys())].append(s[1][a_key]["stats"]["sensor_activation"])
+        scores["distance_traveled"][len(s[1].keys())].append(s[1][a_key]["stats"]["total_distance_traveled"])
+        scores["productivity"][len(s[1].keys())].append(s[1][a_key]["stats"]["team_dangerous_objects_in_goal"]/s[1][a_key]["stats"]["total_distance_traveled"])
+
+
+print(scores)
+for t_key in scores["team_score"].keys():
+    print(t_key, len(scores["team_score"][t_key]))
+
+for s_key in scores.keys():
+    for t_key in scores[s_key].keys():
+            
+        print(s_key, t_key, np.average(scores[s_key][t_key]))
+"""
+
+
+'''
+best_team_metrics = [0,0,float("inf"),float("inf"),float("inf")]
+best_team = [[],[],[],[],[]]
+colors = list(mcolors.TABLEAU_COLORS.keys())
+legends_labels = []
+series = {}
+for s in saved_results:
+    if len(s[1].keys()) == 4:
+        for k in s[1].keys():
+            team_completion = s[1][k]["stats"]["team_completion"]
+            team_quality_choosing = s[1][k]["stats"]["team_quality_choosing"]
+            team_quality_moving = s[1][k]["stats"]["team_quality_moving"]
+            team_quality_carrying = s[1][k]["stats"]["team_quality_carrying"]
+            team_quality_communication = s[1][k]["stats"]["team_quality_communication"]
+            team_interdependece = s[1][k]["stats"]["team_task_interdependence"]
+            team_other_quality = s[1][k]["stats"]["team_other_quality_work"]
+            productivity = s[1][k]["stats"]["productivity"]
+            break
+        
+        label = str(len(s[1].keys()))
+        if label not in legends_labels:
+            legends_labels.append(label)
+            
+            series[label] = {"x":[],"y":[]}
+            
+            
+        series[label]["x"].append(team_interdependece)
+        series[label]["y"].append(productivity)
+        
+        #plt.scatter(team_interdependece, productivity, color=colors[len(s[1].keys())], label=label)
+        
+        print(team_interdependece, productivity, s[4])
+        if team_interdependece > best_team_metrics[0]:
+            best_team_metrics[0] = team_interdependece
+            best_team[0] = s
+        if team_interdependece < best_team_metrics[3]:
+            best_team_metrics[3] = 1-team_interdependece
+            best_team[3] = s
+        """
+        if team_completion > best_team_metrics[0]:
+            best_team_metrics[0] = team_completion
+            best_team[0] = s
+        if team_quality_choosing > best_team_metrics[1]:
+            best_team_metrics[1] = team_quality_choosing
+            best_team[1] = s
+        if team_quality_moving < best_team_metrics[2]:
+            best_team_metrics[2] = team_quality_moving
+            best_team[2] = s
+        if team_quality_carrying < best_team_metrics[3]:
+            best_team_metrics[3] = 1-team_quality_carrying
+            best_team[3] = s
+        if team_quality_communication < best_team_metrics[4]:
+            best_team_metrics[4] = team_quality_communication
+            best_team[4] = s
+        """
+        
+"""
+for s_key in series.keys():
+    indices = np.argsort(series[s_key]["x"])
+    x = []
+    y = []
+    for i in indices:
+        x.append(series[s_key]["x"][i])
+        y.append(series[s_key]["y"][i])
+        
+    z = np.polyfit(x, y, 1)
+    p = np.poly1d(z)
+    
+    plt.plot(x, p(x), color=colors[int(s_key)])
+
+
+plt.xlabel("Task Interdependence", fontsize=20)
+plt.ylabel("Productivity (objects/m)", fontsize=20)
+plt.ylim([0, 0.02])
+plt.axhline(y=0.0193, color='r', linestyle='--')
+plt.show()  
+"""     
+print_results(best_team[3][0], best_team[3][1], best_team[3][2])
+#for b in best_team:
+#    print_results(b[0], b[1], b[2])
+'''
+out_file = open('agents_stats.json', "w") 
+json.dump(all_agents_stats, out_file)
