@@ -213,5 +213,31 @@
         
         <hint><![CDATA[Sense objects and bring only the dangerous ones into the goal area]]></hint>
     </entry>
-</session>       
+</session>
+<cnl>
+    <entry name="Agent to message">[agent_all]</entry>
+    <entry name="Object to message">[object_all]</entry>
+    <entry name="Ask about object">What do you know about object [object_id]</entry>
+    <entry name="Help sense object">Hey [agent_id], can you help me sense object [object_id] in location [object_location], last seen at [object_time]</entry>
+    <entry name="Ask about agent">Where is agent [agent_id]</entry>
+    <entry name="No knowledge of agent">I don't know where is agent [agent_id]</entry>
+    <entry name="Help carry object">I need 1 more robots to help carry object [object_id]</entry>
+    <entry name="Accept request for help">I can help you [agent_id]</entry>
+    <entry name="Reject request for help">I cannot help you [agent_id]</entry>
+    <entry name="Reject help">Nevermind [agent_id]</entry>
+    <entry name="Abort collaboration">No need for more help. </entry>
+    <entry name="Be followed">Thanks, follow me [agent_id]</entry>
+    <entry name="Follow">Thanks, I'll follow you [agent_id]</entry>
+    <entry name="Request to move">Hey [agent_id], I need you to move</entry>
+    <entry name="End participation">Let's end participation. </entry>
+    <entry name="Don't end participation">Wait, let's not end participation yet. </entry>
+    <entry name="Object not found">Hey [agent_id], I didn't find object [object_id]</entry>
+    <entry name="Order sense">[agent_id], sense location [object_location]</entry>
+    <entry name="Order collect">[agent_id], collect object [object_id]</entry>
+    <entry name="Incorrect request for help">I didn't offer my help to you [agent_id]</entry>
+    <entry name="Come closer">Come closer [agent_id]</entry>
+    
+    
+    
+</cnl>   
 </simulation>

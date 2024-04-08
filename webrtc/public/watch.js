@@ -3,6 +3,11 @@ let peerConnection;
 var xmlDoc;
 var first_state;
 
+var only_cnl = true;
+
+
+
+
 //Load xml doc with strings
 function loadXMLDoc() {
     let xmlhttp = new XMLHttpRequest();
@@ -15,12 +20,51 @@ function loadXMLDoc() {
             if(first_state){
                 tutorial_popup(first_state);
             }
+            set_cnl();
         }
     };
  
     // employee.xml is the external xml file
     xmlhttp.open("GET", "values/strings.xml", true);
     xmlhttp.send();
+}
+
+function set_cnl(){
+    const cnl_entries_doc = document.getElementById("cnl");
+    const cnl_xml = xmlDoc.getElementsByTagName("cnl")[0];
+    
+    const cnl_entries = cnl_xml.children;
+    
+    for(let z=0; z < cnl_entries.length; z++){
+    
+        cnl_name = cnl_entries[z].getAttribute("name");
+        
+        if(only_cnl || cnl_name == "Agent to message" || cnl_name == "Object to message"){
+        
+            var div_cnl = document.createElement('div');
+            div_cnl.classList.add('wrapper');
+            var button_cnl = document.createElement('button');
+            button_cnl.classList.add('command-btn');
+            button_cnl.setAttribute("name", cnl_name);
+            button_cnl.textContent = cnl_name;
+            
+            button_cnl.classList.add("tooltip");
+            
+            button_cnl.onclick = function(){setCommand(cnl_entries[z].textContent)};
+            
+            var span_cnl = document.createElement('span');
+            span_cnl.classList.add("tooltiptext");
+            span_cnl.textContent = cnl_entries[z].textContent;
+            
+            button_cnl.appendChild(span_cnl);
+            
+            div_cnl.appendChild(button_cnl);
+            
+            cnl_entries_doc.appendChild(div_cnl);
+        }
+    }
+    
+    
 }
  
 loadXMLDoc(); 
@@ -433,6 +477,10 @@ chat_input_text.addEventListener("keydown", (event) => {
 	}
 
 });
+
+if(only_cnl){
+    chat_input_text.setAttribute('readonly', true);
+}
 
 
 let pass_input_text = document.getElementById("pass-text");
@@ -1561,18 +1609,62 @@ function update_neighbors_info(agent_key, timer, position, convert_coordinates){
 function findCheckedRadio(radio_elements,final_string,pattern){
 
 	var command_string, extra_info;
+	
+	match_results = final_string.matchAll(/\[(\w+)\]/g);
+	
 	for(i = 0; i < radio_elements.length; i++) {
 		if(radio_elements[i].checked){
 			command_string = radio_elements[i].value;
-			if(pattern == 'Object to message'){
+			if(pattern == 'object'){
 			    const child_table = document.getElementById("object_entries").children[i].children[1].children[0];
 			    command_string = "";
 			    for(j = 0; j < child_table.rows.length; j++) {
 				    command_string += child_table.rows[j].cells[0].textContent + " ";
 				}
-			} else {
+				
+				if(match_results){
+                    for (const itItem of match_results) {
+                    
+                        switch(itItem[1]){
+                            case 'object_all':
+                                final_string = final_string.replace('[object_all]', command_string);
+                                break;
+                            case 'object_id':
+                                final_string = final_string.replace('[object_id]', command_string.match(/Object (\d+)/)[1]);
+                                break;
+                            case 'object_location':
+                                final_string = final_string.replace('[object_location]', command_string.match(/Last seen in (\(-?\d+\.\d+,-?\d+\.\d+\))/)[1]);
+                                break;
+                            case 'object_time':
+                                final_string = final_string.replace('[object_time]', command_string.match(/at (\d+:\d+)/)[1]);
+                                break;
+                        }
+                    
+                    }
+                }
+				
+			} else if(pattern == 'agent'){
 				if(i > 0){
-					 command_string = "Agent " + command_string + " " + document.getElementById(neighbors_list_store[i-1][0] + '_entry').children[0].rows[1].cells[0].textContent;
+				    command_string = "Agent " + command_string + " " + document.getElementById(neighbors_list_store[i-1][0] + '_entry').children[0].rows[1].cells[0].textContent;
+					
+                    if(match_results){
+                        for (const itItem of match_results) {
+  
+                        
+                            switch(itItem[1]){
+                                case 'agent_all':
+                                    final_string = final_string.replace('[agent_all]', command_string);
+                                    break;
+                                case 'agent_id':
+                                    final_string = final_string.replace('[agent_id]', command_string.match(/Agent (\w+)/)[1]);
+                                    break;
+                            }
+                        
+                        }
+                    }
+				} else{
+				    command_string = null;
+				    break;
 				}
 			}
 			
@@ -1583,9 +1675,9 @@ function findCheckedRadio(radio_elements,final_string,pattern){
 	if(command_string == null){
 		return "";
 	}
-	var result = final_string.replace(pattern,command_string);
+	//var result = final_string.replace(pattern,command_string);
 
-	return result;
+	return final_string;
 
 }
 
@@ -1643,8 +1735,25 @@ function set_text(text_string){
 var help_requests = {};
 
 //Set Command based on templates
-function setCommand (num){
+function setCommand (final_string){
 
+    if(final_string.includes('[agent')){
+        var agents = document.getElementsByName('neighbors');
+		final_string = findCheckedRadio(agents,final_string,'agent');
+    }
+    
+    if(final_string.includes('[object')){
+        var objects = document.getElementsByName('objects');
+		final_string = findCheckedRadio(objects,final_string,'object');
+    }
+
+    if(final_string.length == 0){
+		return;
+	}
+	
+	document.getElementById('command_text').value = final_string;
+
+    /*
 	var final_string = "";
 
 	var ele = document.getElementsByName('command');
@@ -1667,6 +1776,7 @@ function setCommand (num){
 	
 	document.getElementById('command_text').value = final_string;
 
+    */
 	
 }
 
