@@ -355,6 +355,7 @@ class Movement:
                     action = -1
                     if not checking:
                         print("Waiting: Couldn't go to", x,y, path_to_follow)
+                        #pdb.set_trace()
                         self.ignore_go_location = []
                     
                     #self.stuck_retries += 1
@@ -393,7 +394,7 @@ class Movement:
 
                     self.ignore_go_location.append(path_to_follow[0])
                     path_to_follow = self.findPath(np.array([ego_location[0][0],ego_location[1][0]]),np.array([x,y]),occMap, ignore=self.ignore_go_location, all_movements=all_movements)
-                    print(path_to_follow, self.ignore_go_location)
+                    print("stuck1?", path_to_follow, self.ignore_go_location)
                     if not path_to_follow: #stuck
                         action = -1
                         print("I'm stuck!")
@@ -401,6 +402,7 @@ class Movement:
                     self.go_retries = 0
                 else:
                     self.go_retries += 1
+                    print("stuck2?", path_to_follow, self.ignore_go_location, self.go_retries)
             else:
                 self.go_retries = 0
                 self.ignore_go_location = []
@@ -410,7 +412,7 @@ class Movement:
                 action = self.position_to_action(current_location,path_to_follow[0],False)
                        
         if not checking:
-            print("Retreis:", self.go_retries, self.previous_go_location)   
+            #print("Retreis:", self.go_retries, self.previous_go_location)   
             
             if action == -1:
                 self.stuck_moving += 1
@@ -429,7 +431,7 @@ class Movement:
                 occMap[carried_objects[0][c_idx],carried_objects[1][c_idx]] = 0
             
 
-        print(self.occupied_locations)
+        #print(self.occupied_locations)
 
         for rob_loc_idx in reversed(range(len(self.occupied_locations))): #Make sure agents don't move to locations already occupied
         
@@ -439,6 +441,7 @@ class Movement:
                     del self.occupied_locations[rob_loc_idx]  
                 elif occMap[other_robot_location[0],other_robot_location[1]] == 3 and next_loc and next_loc[0][0] == other_robot_location[0] and next_loc[0][1] == other_robot_location[1]:
                     occMap[other_robot_location[0],other_robot_location[1]] = 1
+                    print("modifying occmap 1", other_robot_location)
             else:
                 del self.occupied_locations[rob_loc_idx]
 
@@ -454,6 +457,7 @@ class Movement:
                 del self.ignore_robots[rob_loc_idx]
             elif occMap[other_robot_location[0],other_robot_location[1]] != 5:
                 occMap[other_robot_location[0],other_robot_location[1]] = 1
+                print("modifying occmap 2", other_robot_location)
         
         #Make sure possible directions are not blocked by other robots
         for direction in [[0,1],[1,0],[-1,0],[0,-1]]:
@@ -464,23 +468,26 @@ class Movement:
             
             if occMap[new_direction[0],new_direction[1]] == 3: 
                 occMap[new_direction[0],new_direction[1]] = 1
+                print("modifying occmap 3", new_direction)
                 
                 
-        print("Potential locations before", self.potential_occupied_locations)
+        #print("Potential locations before", self.potential_occupied_locations)
         for pot_idx in reversed(range(len(self.potential_occupied_locations))): #Potentially occupied locations, eliminate after some time
             
             if time.time() - self.potential_occupied_locations[pot_idx][1] > 5 or occMap[self.potential_occupied_locations[pot_idx][0][0],self.potential_occupied_locations[pot_idx][0][1]]: #Seconds to eliminate
                 del self.potential_occupied_locations[pot_idx]
             else:
                 occMap[self.potential_occupied_locations[pot_idx][0][0],self.potential_occupied_locations[pot_idx][0][1]] = 1
+                print("modifying occmap 4", self.potential_occupied_locations[pot_idx][0])
         
-        print("Potential locations", self.potential_occupied_locations)
+        #print("Potential locations", self.potential_occupied_locations)
         
                 
         #Make sure the ego location is always there
         
         occMap[ego_location[0][0],ego_location[1][0]] = 5
         
+        print(occMap)
      
     def wait_movement(self, agent_idx, agent, action_index):
     
@@ -540,17 +547,19 @@ class Movement:
         else:
             helping = [] #self.helping
     
-        print("Helping", helping, self.help_status)
+        #print("Helping", helping, self.help_status)
     
         changed = False
         
         
         for n_idx in nearby_other_agents: #If any piece of information changes, send message
         
-            
-            if other_agents[n_idx].my_location["goal_location"] != target_loc:
-                other_agents[n_idx].my_location["goal_location"] = target_loc
-                changed = True  
+            try:
+                if other_agents[n_idx].my_location["goal_location"] != target_loc:
+                    other_agents[n_idx].my_location["goal_location"] = target_loc
+                    changed = True  
+            except:
+                pdb.set_trace()
             
             if other_agents[n_idx].my_carrying != robotState.object_held:
                 other_agents[n_idx].my_carrying = robotState.object_held
@@ -618,7 +627,8 @@ class Movement:
             #self.asked_time = time.time()
             self.help_status_info[1] = time.time()
             
-            if self.help_status == self.HelpState.asking and not (following and rm[0] not in self.help_status_info[0]):
+            
+            if (self.help_status == self.HelpState.asking and not (following and rm[0] not in self.help_status_info[0])) or (self.help_status == self.HelpState.being_helped and len(self.help_status_info[0])+1 < target_object["weight"]):
                 
                 #teammate_number = len(self.being_helped)
                 
@@ -632,16 +642,16 @@ class Movement:
                     self.help_status_info[0].append(rm[0])
                 
                 
-                if len(self.help_status_info[0])+1 >= target_object["weight"]: #len(self.being_helped)+1 >= target_object["weight"]:
-                    #self.asked_help = False
+                #if len(self.help_status_info[0])+1 >= target_object["weight"]: #len(self.being_helped)+1 >= target_object["weight"]:
+                #self.asked_help = False
                     
-                    self.help_status = self.HelpState.being_helped
+                self.help_status = self.HelpState.being_helped
                     
                     
-                    self.help_status_info[2] = []
+                self.help_status_info[2] = []
                     
-                    #self.being_helped_locations = []
-                    return_value = 1
+                #self.being_helped_locations = []
+                return_value = 1
                     
                 
                 match_pattern = re.search(MessagePattern.location_regex(),message_text)
@@ -1542,6 +1552,7 @@ class Movement:
             
             if not (helping_location[0] == -1 and helping_location[1] == -1):
                 occMap[helping_location[0],helping_location[1]] = 1
+                print("modifying occmap 10",helping_location )
             
             action,next_loc,message_text,action_index = self.go_to_location(target_location[0],target_location[1],occMap,robotState,info, ego_location, action_index,end=True)
             if (not action and isinstance(action, list)):

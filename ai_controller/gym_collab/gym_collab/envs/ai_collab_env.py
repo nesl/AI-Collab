@@ -240,7 +240,7 @@ class AICollabEnv(gym.Env):
 
         @self.sio.event
         def ai_output(object_type_coords_map, object_attributes_id, objects_held,
-                      sensing_results, ai_status, extra_status, strength, timer, disable, location):
+                     sensing_results, ai_status, extra_status, strength, timer, disable, location):
 
 
 
@@ -302,6 +302,15 @@ class AICollabEnv(gym.Env):
         def agent_reset(config):
             self.agent_reset = True
             self.map_config = config
+            
+            remove_self = -1
+            for robot_idx, robot in enumerate(
+                    self.map_config['all_robots']):
+                if robot[0] == str(self.robot_id):
+                    remove_self = robot_idx
+                    break
+            del self.map_config['all_robots'][robot_idx] #Remove self from list of robots received
+            
             self.disabled = False
             print("Agent reset")
             
@@ -888,7 +897,7 @@ class AICollabEnv(gym.Env):
         return ["send_danger_sensor_reading"]
 
     def get_occupancy_map(self):
-        print("get_occupancy_map")
+        #print("get_occupancy_map")
         return ["send_occupancy_map"]
 
     def get_objects_held_status(self):
@@ -923,7 +932,7 @@ class AICollabEnv(gym.Env):
             action, self.old_output, self.internal_state, self.internal_data)
 
         if action_message:  # Action message is an action to take by the robot that will be communicated to the simulator
-            print("action", action_message)
+            #print("action", action_message)
             self.sio.emit("ai_action", (action_message))
 
         while not self.new_output and not self.delete:  # Sync with simulator
@@ -1116,10 +1125,10 @@ class AICollabEnv(gym.Env):
 
             # or action_status == ActionStatus.success:
             if action_status == ActionStatus.ongoing:
-                print("waiting", action_status, timer)
+                #print("waiting", action_status, timer)
                 state = data["next_state"]
             elif time.time() - data['timer_locomotion'] > 5 and action_status == ActionStatus.success:
-                print("waiting", action_status, timer)
+                #print("waiting", action_status, timer)
                 state = data["next_state"]
             elif time.time() - data['timer_locomotion'] > 10 and action_status == ActionStatus.collision:
                 truncated[0] = True
@@ -1153,7 +1162,7 @@ class AICollabEnv(gym.Env):
 
         elif state == self.State.action_end:
             if action_status != ActionStatus.ongoing:
-                print("action end", action_status, timer)
+                #print("action end", action_status, timer)
                 terminated[0] = True
 
         if terminated[0] or truncated[0]:

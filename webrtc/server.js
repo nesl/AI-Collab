@@ -725,6 +725,14 @@ io.sockets.on("connection", socket => { //When a client connects
     socket.to(simulator).emit("report", object_list, socket_to_simulator_id(socket.id));
   });
   
+  socket.on("survey", (timer, survey_responses, token) => {
+  
+    if(command_line_options.log){
+    	fs.appendFile(dir + dateTime + '.txt', String(timer.toFixed(2)) + ',8,' + JSON.stringify(survey_responses) + ',' + String(token) + '\n', err => {});
+    }
+    console.log("Survey:", survey_responses, token)
+  });
+  
   socket.on("join_wait", () => {
   
     var cookie = getCookie(socket.request.headers.cookie,'simulator_cookie');

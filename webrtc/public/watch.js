@@ -4,7 +4,8 @@ var xmlDoc;
 var first_state;
 
 var only_cnl = true;
-
+var completed_survey = false;
+var token;
 
 
 
@@ -39,7 +40,7 @@ function set_cnl(){
     
         cnl_name = cnl_entries[z].getAttribute("name");
         
-        if(only_cnl || cnl_name == "Agent to message" || cnl_name == "Object to message"){
+        if((only_cnl && cnl_name != "Title") || cnl_name == "Agent to message" || cnl_name == "Object to message"){
         
             var div_cnl = document.createElement('div');
             div_cnl.classList.add('wrapper');
@@ -61,10 +62,60 @@ function set_cnl(){
             div_cnl.appendChild(button_cnl);
             
             cnl_entries_doc.appendChild(div_cnl);
+            
+        } else if(only_cnl && cnl_name == "Title"){
+        
+            var div_cnl = document.createElement('div');
+            div_cnl.classList.add('wrapper');
+            var p_cnl = document.createElement('p');
+            p_cnl.textContent = cnl_entries[z].textContent;
+            p_cnl.classList.add('command-title');
+            div_cnl.appendChild(p_cnl);
+            
+            cnl_entries_doc.appendChild(div_cnl);
         }
     }
     
     
+}
+
+function explain_cnl(){
+    const cnl_entries_doc = document.getElementById("cnl");
+    const cnl_xml = xmlDoc.getElementsByTagName("cnl")[0];
+    
+    const cnl_entries = cnl_xml.children;
+    
+    var div = document.createElement("div");
+    var ol;
+    
+    for(let z=0; z < cnl_entries.length; z++){
+    
+        cnl_name = cnl_entries[z].getAttribute("name");
+        
+        if(cnl_name == "Title"){
+        
+            if(ol){
+                div.appendChild(ol);
+            }
+            
+            h3 = document.createElement("h3");
+            h3.textContent = cnl_entries[z].textContent;
+            div.appendChild(h3)
+            var ol = document.createElement('ol');
+            
+        } else{
+        
+            let li = document.createElement('li');
+            li.innerHTML += "<b>" + cnl_entries[z].getAttribute("name") + ":</b> " + cnl_entries[z].textContent;
+            
+            ol.appendChild(li);
+        }
+    
+    }
+    
+    div.appendChild(ol);
+    return div;
+
 }
  
 loadXMLDoc(); 
@@ -291,6 +342,7 @@ function tutorial_popup(state){
   var start_of_list = true;
   var list_index = 0;
   var first_title = false;
+  var cnl_title = false;
   
   for (let i = 0; i < child_entries.length; i++) {
   
@@ -329,10 +381,22 @@ function tutorial_popup(state){
               
             popup_text.innerHTML += "<h1>" + child_entries[i].textContent + "</h1>";
             first_title = true;
+            
+            if(child_entries[i].textContent  == "Controlled Natural Language"){
+                cnl_title = true;
+            }
+            
             break;
         
         case "head":
             popup_text.innerHTML += child_entries[i].textContent;
+            
+            if(only_cnl && cnl_title){
+                ol = explain_cnl();
+                start_of_list = false;
+                cnl_title = false;
+            }
+            
             break;
             
         case "list":
@@ -531,6 +595,7 @@ function reset(config_options){
 
     map_config = config_options;
     tutorial_mode = false;
+    completed_survey = false;
     
     document.getElementById("agent_name").innerText = "Agent " + client_id;
     for(ob_idx = 0; ob_idx < map_config['all_robots'].length; ob_idx++){ //Remove self
@@ -553,6 +618,7 @@ function reset(config_options){
     own_neighbors_info_entry = [client_id, 0, 0, 0, -1];
     
     document.getElementById("popup-report").classList.remove("active");
+    document.getElementById("popup-survey").classList.remove("active");
     document.getElementById("popup-reset").classList.remove("active");
     document.getElementById("popup-stats").classList.remove("active");
     document.getElementById("popup-stats-content").innerHTML = ""; //"<h1>Stats</h1><br>";
@@ -716,8 +782,10 @@ socket.on("sim_crash", () => {
 socket.on("stats", (stats_dict, final) => {
 
     document.getElementById("popup-report").classList.remove("active");
-    document.getElementById("popup-stats").classList.add("active");
-
+    
+    if(! completed_survey){
+        document.getElementById("popup-survey").classList.add("active");
+    }
     
     
     const popup_content = document.getElementById("popup-stats-content");
@@ -868,6 +936,8 @@ socket.on("stats", (stats_dict, final) => {
                 bold_el.setAttribute("class", "token");
                 bold_el.appendChild(document.createTextNode(stats_dict[key]));
                 td1.appendChild(bold_el);
+                
+                token = stats_dict[key];
             }
         } else if(Object.keys(key_to_text).includes(key)){
         
@@ -1626,8 +1696,8 @@ function findCheckedRadio(radio_elements,final_string,pattern){
                     for (const itItem of match_results) {
                     
                         switch(itItem[1]){
-                            case 'object_all':
-                                final_string = final_string.replace('[object_all]', command_string);
+                            case 'object':
+                                final_string = final_string.replace('[object]', command_string);
                                 break;
                             case 'object_id':
                                 final_string = final_string.replace('[object_id]', command_string.match(/Object (\d+)/)[1]);
@@ -1652,8 +1722,8 @@ function findCheckedRadio(radio_elements,final_string,pattern){
   
                         
                             switch(itItem[1]){
-                                case 'agent_all':
-                                    final_string = final_string.replace('[agent_all]', command_string);
+                                case 'agent':
+                                    final_string = final_string.replace('[agent]', command_string);
                                     break;
                                 case 'agent_id':
                                     final_string = final_string.replace('[agent_id]', command_string.match(/Agent (\w+)/)[1]);
@@ -2003,6 +2073,37 @@ function submitReport(){
 
 }
 
+
+function submitSurvey(){
+
+    
+    
+    var collab_likert = document.getElementsByName('collab');
+    var comms_likert = document.getElementsByName('comms');
+	
+	var collab_value;
+	for(i = 0; i < collab_likert.length; i++) {
+	    if(collab_likert[i].checked){
+	        collab_value = collab_likert[i].value;
+	        break;
+	    }
+	}
+	
+	var comms_value;
+	for(i = 0; i < comms_likert.length; i++) {
+	    if(comms_likert[i].checked){
+	        comms_value = comms_likert[i].value;
+	        break;
+	    }
+	}
+	
+	socket.emit("survey", simulator_timer, [collab_value, comms_value],token)
+	
+	document.getElementById("popup-stats").classList.add("active");
+	document.getElementById("popup-survey").classList.remove("active");
+	
+
+}
 
 function disableRobot(){
     socket.emit("disable");

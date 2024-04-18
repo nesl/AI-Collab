@@ -1639,7 +1639,7 @@ class Simulation(Controller):
     def keyboard_output(self, key_pressed, key_hold, extra_commands, duration, keys_time_unheld, all_ids, messages, fps):
     
         if len(self.user_magnebots) <= 2:
-            max_time_unheld_lin = 2
+            max_time_unheld_lin = 5#2
             max_time_unheld_rot = 1
         elif len(self.user_magnebots) >= 5:
             max_time_unheld_lin = 5
@@ -3003,7 +3003,8 @@ class Simulation(Controller):
                             self.scenario = 1
                             self.reset = True
                             self.timer_limit = 0
-                            #self.waiting = True #When is this necessary
+                            self.waiting = True #When is this necessary
+                            self.enable_logs = False
                         else:
                             self.enable_logs = False
                             self.timer_limit = 0   
@@ -3502,6 +3503,8 @@ class Simulation(Controller):
                         self.reset = True
                         self.previous_scenario = self.scenario
                         self.scenario = 1
+                        
+                        
                 
             to_eliminate.reverse()
             for te in to_eliminate:

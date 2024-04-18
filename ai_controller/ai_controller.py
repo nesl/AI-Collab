@@ -332,7 +332,7 @@ class RobotState:
         if item_idx >= len(self.items):
             
             diff_len = item_idx+1 - len(self.items)
-            print("item_change", item_idx, len(self.items), diff_len)
+            #print("item_change", item_idx, len(self.items), diff_len)
             self.items.extend([{'item_weight': 0, 'item_danger_level': 0, 'item_danger_confidence': np.array([0.]), 'item_location': np.array([-1, -1], dtype=np.int16), 'item_time': np.array([0], dtype=np.int16)} for d in range(diff_len)])
             information_change = True
 
@@ -378,7 +378,7 @@ class RobotState:
         
         
         if information_change:
-            print(item_output)
+            #print(item_output)
             #self.average_fusion(item_idx)
             self.bayesian_fusion(item_idx)
         
@@ -496,7 +496,7 @@ while True:
         #print(action, next_observation)
         next_observation, reward, terminated, truncated, info = env.step(action)
         
-        print(info["real_location"])
+        #print(info["real_location"])
 
         if args.webcam:
             pass
@@ -509,7 +509,7 @@ while True:
         
         
         if reward != 0:
-            print('Reward', reward)
+            #print('Reward', reward)
             process_reward += reward
             
         #print(next_observation["num_items"])
@@ -582,7 +582,7 @@ while True:
                                 robot_idx = info["robot_key_to_index"][map_object[1]]
                                 
                                 template_robot_info = {"neighbor_type": -1, "neighbor_location": np.array([int(m_key_xy[0]), int(m_key_xy[1])], dtype=np.int16), "neighbor_time": np.array([info["time"]], dtype=np.int16), "neighbor_disabled": map_object[2]}
-                                print("Disabled:", map_object)
+                                #print("Disabled:", map_object)
                                 robotState.update_robots(template_robot_info, robot_idx)
 
                                 
@@ -651,8 +651,8 @@ while True:
             if high_level_action_finished: #When a high level action finishes, we sense the environment
                 if last_action[1] == Action.get_messages.value: #Action.get_occupancy_map.value:
                 
-                    print_map(robotState.latest_map)
-                    print("Held:",robotState.object_held)
+                    #print_map(robotState.latest_map)
+                    #print("Held:",robotState.object_held)
                 
                     last_action[1] = 0 #Reset last sensing action
                     step_count += 1

@@ -37,7 +37,10 @@ class DecisionControl:
         self.ask_info_time_limit = 10
         
 
-        self.other_agents = [self.Other_Agent() for r in range(len(self.env.map_config['all_robots'])-1)]
+        self.other_agents = [self.Other_Agent() for r in range(len(self.env.map_config['all_robots']))]
+        
+        print(self.other_agents)
+        
         self.message_text = ""
         self.ai_message_text = ""
         self.chosen_object_idx = -1
@@ -81,8 +84,8 @@ class DecisionControl:
         self.ending_locations.remove([8,18])
         
         self.human_to_ai_text = []
-        if not all(robot[1] for robot in env.neighbors_info): #Check if there are human peers    
-            self.human_to_ai_text = Human2AIText(env.robot_id)
+        #if not all(robot[1] for robot in env.neighbors_info): #Check if there are human peers    
+        #    self.human_to_ai_text = Human2AIText(env.robot_id)
        
     class Other_Agent:
         
@@ -133,11 +136,13 @@ class DecisionControl:
             agent_idx = info['robot_key_to_index'][rm[0]]
             
             
-            if MessagePattern.carry_help_accept(self.env.robot_id) in rm[1]:
+            if re.search(MessagePattern.carry_help_accept_regex(),rm[1]):
             
                 template_match = True
                 
-                if self.movement.help_status == self.movement.HelpState.asking:
+                rematch = re.search(MessagePattern.carry_help_accept_regex(),rm[1])
+                
+                if rematch.group(1) == str(self.env.robot_id) and self.movement.help_status == self.movement.HelpState.asking or self.movement.help_status == self.movement.HelpState.being_helped:
                     object_id = list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(self.chosen_object_idx)]
                     
                     obs_string = "Offered me help to carry object " + str(object_id)
@@ -228,7 +233,7 @@ class DecisionControl:
                         self.other_agents[agent_idx].observations.append("Asked " + rematch.group(1) + " to follow him")
                 """        
                 if MessagePattern.follow(self.env.robot_id) in rm[1] or MessagePattern.following(self.env.robot_id) in rm[1]:
-                    if self.movement.help_status == self.movement.HelpState.accepted:
+                    if self.movement.help_status == self.movement.HelpState.helping:
                         if self.helping_type == self.HelpType.carrying:
                             pass
                                 
@@ -733,6 +738,15 @@ class DecisionControl:
                 
                 self.other_agents[robot_idx].finished = False
 
+
+            if re.search(MessagePattern.come_closer_regex(),rm[1]):
+                template_match = True
+            
+                rematch = re.search(MessagePattern.come_closer_regex(),rm[1])
+                
+                if rematch.group(1) == str(self.env.robot_id):
+                    pass
+                
             
             if not template_match and not robotState.robots[info['robot_key_to_index'][rm[0]]]["neighbor_type"]: #Human sent a message, we need to translate it. We put this condition at the end so that humans can also send messages that conform to the templates
                 translated_message,message_to_user = self.human_to_ai_text.convert_to_ai(rm[1], info, robotState.items, self.message_history, True)
@@ -833,6 +847,8 @@ class DecisionControl:
             
                     self.action_index = self.State.decision_state
                     self.action_function = ""
+                    
+                    print("Cancel help")
                     
                     if self.movement.help_status == self.movement.HelpState.being_helped:
                         _,self.message_text,_ = self.movement.cancel_cooperation(self.State.decision_state,self.message_text,message=MessagePattern.carry_help_finish())
@@ -944,13 +960,13 @@ class DecisionControl:
             print("STUCK")
 
 
-        print("action index:",self.action_index, "action:", Action(action["action"]), ego_location, self.action_function, self.movement.help_status, self.top_action_sequence, self.order_status)
+        print("action index:",self.action_index, "action:", Action(action["action"]), ego_location, self.action_function, self.movement.help_status, self.top_action_sequence, self.order_status, info['time'])
         
         if "end_participation" in self.action_function:
             print("end participation")
             terminated = True
         
-        print("Finished?", [p.finished for p in self.other_agents], self.finished)
+        #print("Finished?", [p.finished for p in self.other_agents], self.finished)
         
         if all(p.finished for p in self.other_agents) and self.finished:
             print("finished participation")
@@ -1306,22 +1322,32 @@ class DecisionControl:
         elif self.top_action_sequence == 1:
             object_idx =info['object_key_to_index'][str(object_id)]
             self.helping_type = self.HelpType.carrying
-            self.message_text += MessagePattern.carry_help(str(object_id),robotState.items[object_idx]["item_weight"]-1)
+            
+            robots_already_helping = 0
+            if self.movement.help_status == self.movement.HelpState.being_helped:
+                robots_already_helping = len(self.movement.help_status_info[0])
+                action["action"] = Action.get_occupancy_map.value
+            else:
+                self.movement.help_status = self.movement.HelpState.asking
+                self.movement.help_status_info[0] = []
+                if not self.action_index == self.movement.State.wait_free and not self.action_index == self.movement.State.wait_random:
+                    self.movement.last_action_index = self.action_index
+                self.action_index = self.movement.State.wait_message
+                
+            self.message_text += MessagePattern.carry_help(str(object_id),robotState.items[object_idx]["item_weight"]-1-robots_already_helping)
             #self.movement.asked_help = True
             #self.movement.asked_time = time.time()
-            self.movement.help_status = self.movement.HelpState.asking
+            
             self.movement.help_status_info[1] = time.time()
-            self.movement.help_status_info[0] = []
-            if not self.action_index == self.movement.State.wait_free and not self.action_index == self.movement.State.wait_random:
-                self.movement.last_action_index = self.action_index
-            self.action_index = self.movement.State.wait_message
+            
+            
             self.chosen_object_idx = object_idx
             print("ASKING HELP")
             self.top_action_sequence += 1
             
         elif self.top_action_sequence == 2:
-         
-            if self.movement.help_status != self.movement.HelpState.asking or time.time() - self.movement.help_status_info[1] > self.movement.wait_time_limit:
+            object_idx =info['object_key_to_index'][str(object_id)]
+            if (self.movement.help_status != self.movement.HelpState.asking and len(self.movement.help_status_info[0])+1 >= robotState.items[object_idx]["item_weight"]) or time.time() - self.movement.help_status_info[1] > self.movement.wait_time_limit:
                 finished = True
             action["action"] = Action.get_occupancy_map.value
         
@@ -1564,7 +1590,7 @@ class DecisionControl:
             if not possible_path:
                 finished = True
                 print("WHATS HAPPENING")
-                #pdb.set_trace()
+                pdb.set_trace()
         else:
             action["action"] = low_action
             
@@ -2135,7 +2161,7 @@ class DecisionControl:
                             #diag.utility(Pickup_Utility)[{'Pickup':0}] = [[100],[0]]
                             diag.utility(Pickup_Utility)[{'Pickup':0}] = [[0],[0]]
                             #diag.utility(Pickup_Utility)[{'Pickup':1}] = [[0],[100]]
-                            diag.utility(Pickup_Utility)[{'Pickup':1}] = [[0],[100]]
+                            diag.utility(Pickup_Utility)[{'Pickup':1}] = [[-50],[100]]
 
                             diag.utility(Pickup_Cost)[{'Pickup':0}] = 0
                             diag.utility(Pickup_Cost)[{'Pickup':1}] = -robot_distance*2*len(s_comb)
@@ -2146,7 +2172,7 @@ class DecisionControl:
                             
                             
                             
-                            utility["pickup_" + str(ob_idx) + "_" + utility_str] = 100 #ie.MEU()["mean"]
+                            utility["pickup_" + str(ob_idx) + "_" + utility_str] = ie.MEU()["mean"]#100 #ie.MEU()["mean"]
                     
                         if all(not robotState.item_estimates[ob_idx][ag]["item_danger_level"] for ag in s_comb) and not any(("pickup" in pa and int(pa.split("_")[1]) == ob_idx) for pa in previously_assigned) and not any(previous_previous_assigned[pa_idx] and previous_previous_assigned[pa_idx][0] == "sense" and int(previous_previous_assigned[pa_idx][1]) == ob_idx for pa_idx in previous_previous_assigned.keys()) and not any(s in sensing_excluded for s in s_comb):
                         
@@ -2221,10 +2247,12 @@ class DecisionControl:
                             #danger_est = robotState.possible_estimates[ob_idx][s_comb[0]][1]
                             diag.cpt(Estimate_Dangerous).fillWith([1-danger_est, danger_est])
 
-                            diag.utility(Pickup_Utility_2)[{'Pickup_2':0, 'Estimate_Benign':0}] = [[0],[50]]
-                            diag.utility(Pickup_Utility_2)[{'Pickup_2':0, 'Estimate_Benign':1}] = [[50],[100]]
-                            diag.utility(Pickup_Utility_2)[{'Pickup_2':1, 'Estimate_Benign':0}] = [[100],[50]]
-                            diag.utility(Pickup_Utility_2)[{'Pickup_2':1, 'Estimate_Benign':1}] = [[50],[0]]
+                            diag.utility(Pickup_Utility_2)[{'Pickup_2':0, 'Estimate_Benign':0}] = [[0],[0]]
+                            diag.utility(Pickup_Utility_2)[{'Pickup_2':0, 'Estimate_Benign':1}] = [[0],[100]]
+                            diag.utility(Pickup_Utility_2)[{'Pickup_2':1, 'Estimate_Benign':0}] = [[100],[0]]
+                            diag.utility(Pickup_Utility_2)[{'Pickup_2':1, 'Estimate_Benign':1}] = [[0],[-50]]
+
+
 
                             diag.utility(Pickup_Cost_2)[{'Pickup_2':0}] = 0
                             diag.utility(Pickup_Cost_2)[{'Pickup_2':1}] = -robot_distance*2*len(s_comb)
@@ -2422,7 +2450,7 @@ class DecisionControl:
                     if len(cost_agents) < ob["item_weight"] -1 -number_helping:
                         continue
                     
-                    if ob["item_weight"]-1 == number_helping:
+                    if ob["item_weight"]-1 <= number_helping:
                     
                         _, next_locs, _, _ = self.movement.go_to_location(ob["item_location"][0], ob["item_location"][1], self.occMap, robotState, info, ego_location, self.action_index, checking=True)
                         distance = len(next_locs)
@@ -2495,7 +2523,7 @@ class DecisionControl:
                 
                 actual_combinations = []
                 
-                print("Not available", not_available)
+                #print("Not available", not_available)
                 for comb in all_robot_combinations:
                     comb_cost = 0
                     
@@ -2509,7 +2537,10 @@ class DecisionControl:
                                     continue
                                     
                                 if not elem_idx: 
-                                    comb_cost += ask_sensing_cost[elem]
+                                    try:
+                                        comb_cost += ask_sensing_cost[elem]
+                                    except:
+                                        pdb.set_trace()
                                 else:
                                     comb_cost += distance_object_agent[elem]*2
                         
@@ -2707,6 +2738,8 @@ class DecisionControl:
                         self.message_text += MessagePattern.carry_help_reject(self.movement.help_status_info[0][r])
                         del self.movement.help_status_info[0][r]
             
+            print("OBJECT TO CARRY:", robotState.items[ob_idx]["item_danger_level"], robotState.items[ob_idx]["item_danger_confidence"])
+            
             if robotState.items[ob_idx]["item_weight"] == 1 or (robotState.items[ob_idx]["item_weight"] > 1 and self.movement.help_status == self.movement.HelpState.being_helped and len(self.movement.help_status_info[0]) == robotState.items[ob_idx]["item_weight"]-1):
                 function_output = "collect_object('" + object_id + "')"
             else:
@@ -2743,8 +2776,10 @@ class DecisionControl:
             self.finished = False
             self.message_text += MessagePattern.finish_reject()
             
-            
-        print("UTILITY >>>>>>> ", function_output, max_utility_key, utility)
+        if max_utility_key:
+            print("UTILITY >>>>>>> ", function_output, max_utility_key, utility[max_utility_key], utility)
+        else:
+            print("No possible action utility")
         
         self.past_decision = max_utility_key
         
