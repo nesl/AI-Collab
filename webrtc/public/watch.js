@@ -6,8 +6,10 @@ var first_state;
 var only_cnl = true;
 var completed_survey = false;
 var token;
-
-
+var last_pattern_clicked;
+const pattern_regex = {"[agent_id]": "(\\w+)", "[object_id]": "(\\d+)", "[object_location]":"(\\(-?\\d+\\.\\d+,-?\\d+\\.\\d+\\))", "[object_time]":"(\\d+:\\d+)", "[agent]":"Agent (\\w+) \\(type: (\\w+)\\) Last seen in (\\(-?\\d+\\.\\d+,-?\\d+\\.\\d+\\)) at (\\d+:\\d+)", "[object]": "Object (\\d+) \\(weight: (\\d+)\\) Last seen in (\\(-?\\d+\\.\\d+,-?\\d+\\.\\d+\\)) at (\\d+:\\d+).( Status: (\\w+), Prob. Correct: (\\d+\\.\\d+)%)?", "[agent_count]": "(\\d+)"};
+var message_patterns_regex = {"normal":{},"regex":{}};
+var type_of_help = '';
 
 //Load xml doc with strings
 function loadXMLDoc() {
@@ -47,21 +49,55 @@ function set_cnl(){
             var button_cnl = document.createElement('button');
             button_cnl.classList.add('command-btn');
             button_cnl.setAttribute("name", cnl_name);
-            button_cnl.textContent = cnl_name;
+            
+            if(cnl_entries[z].getAttribute("order")){ 
+                button_cnl.textContent = cnl_name + " (" + cnl_entries[z].getAttribute("order") + ")";
+            } else{
+                button_cnl.textContent = cnl_name;
+            }
             
             button_cnl.classList.add("tooltip");
             
-            button_cnl.onclick = function(){setCommand(cnl_entries[z].textContent)};
+            let message_text = cnl_entries[z].textContent;
+            
+            if(cnl_entries[z].getAttribute("id") == "carry_help"){
+                message_text = message_text.replace("[agent_count]", "1");
+            }
+            
+            button_cnl.onclick = function(){
+                var res = setCommand(message_text, true);
+                if(res){
+                    document.getElementById('command_text').value = res;
+                    last_pattern_clicked = message_text;
+                }
+            };
             
             var span_cnl = document.createElement('span');
             span_cnl.classList.add("tooltiptext");
-            span_cnl.textContent = cnl_entries[z].textContent;
+            span_cnl.textContent = message_text;
+            span_cnl.setAttribute("id", String(z) + "_tooltip");
+            button_cnl.onmouseover = function(){
+                var res = setCommand(message_text, false);
+                
+                if(res){
+                    document.getElementById(String(z) + "_tooltip").textContent = res;
+                }
+            };
             
             button_cnl.appendChild(span_cnl);
             
             div_cnl.appendChild(button_cnl);
             
             cnl_entries_doc.appendChild(div_cnl);
+            
+            var message_template = message_text;
+            
+            Object.keys(pattern_regex).forEach(function(key) {
+                message_template = message_template.replace(key,pattern_regex[key])
+            });
+            
+            message_patterns_regex["regex"][cnl_entries[z].getAttribute("id")] = message_template;
+            message_patterns_regex["normal"][cnl_entries[z].getAttribute("id")] = message_text; 
             
         } else if(only_cnl && cnl_name == "Title"){
         
@@ -737,6 +773,14 @@ function reset(config_options){
         input_element.setAttribute("id", String(map_config['all_robots'][um_idx][0]));
         input_element.setAttribute("name", "neighbors");
         input_element.setAttribute("value", String(map_config['all_robots'][um_idx][0]));
+        input_element.onclick = function(){
+            if(document.getElementById('command_text').value && last_pattern_clicked){
+                var res = setCommand(last_pattern_clicked,false);
+                if(res){
+                    document.getElementById('command_text').value = res;
+                }
+            }
+        }
         var label_element = document.createElement("label");
         label_element.setAttribute("for", String(map_config['all_robots'][um_idx][0]));
         label_element.setAttribute("id", String(map_config['all_robots'][um_idx][0]) + '_entry');
@@ -1482,6 +1526,14 @@ function update_objects_info(object_key, timer, danger_data, position, weight, c
 	    input_element.setAttribute("id", String(object_key));
 	    input_element.setAttribute("name", "objects");
 	    input_element.setAttribute("value", String(object_key));
+	    input_element.onclick = function(){
+            if(document.getElementById('command_text').value && last_pattern_clicked){
+                var res = setCommand(last_pattern_clicked,false);
+                if(res){
+                    document.getElementById('command_text').value = res;
+                }
+            }
+        }
 	    var label_element = document.createElement("label");
 	    label_element.setAttribute("for", String(object_key));
 	    label_element.setAttribute("id", "label_" + String(object_key));
@@ -1728,6 +1780,9 @@ function findCheckedRadio(radio_elements,final_string,pattern){
                                 case 'agent_id':
                                     final_string = final_string.replace('[agent_id]', command_string.match(/Agent (\w+)/)[1]);
                                     break;
+                                case 'agent_count':
+                                    final_string = final_string.replace('[agent_count]', "1");
+                                    break;
                             }
                         
                         }
@@ -1742,23 +1797,51 @@ function findCheckedRadio(radio_elements,final_string,pattern){
 			break;
 		}
 	}
+	var not_found = false;
 	if(command_string == null){
-		return "";
+		not_found = true;
 	}
 	//var result = final_string.replace(pattern,command_string);
 
-	return final_string;
+	return [final_string,not_found];
 
 }
 
-function newMessage(message, id){
+function newMessage(message, id, yes, no){
 	const chat = document.getElementById("chat");
 	var p_element = document.createElement("p");
 	p_element.innerHTML = "<strong>"+ removeTags(String(id)) + "</strong>: " + message;
 
 	chat.appendChild(p_element);
 	
-	p_element.scrollIntoView({block: "nearest", inline: "nearest"});
+	if(yes){
+	    var yes_button = document.createElement("button");
+	    yes_button.setAttribute("class", "button_prompt");
+	    let yes_func = yes;
+	    yes_button.textContent = "✅";
+	    yes_button.onclick = yes_func;
+	    chat.appendChild(yes_button);
+	    
+	}
+	
+	if(no){
+	    var no_button = document.createElement("button");
+	    no_button.setAttribute("class", "button_prompt");
+	    let no_func = no;
+	    no_button.textContent = "❌";
+	    no_button.onclick = no_func;
+	    chat.appendChild(no_button);
+	}
+	
+	
+	
+	if(no){
+	    no_button.scrollIntoView({block: "nearest", inline: "nearest"});
+	} else if(yes){
+	    yes_button.scrollIntoView({block: "nearest", inline: "nearest"});
+	} else{
+    	p_element.scrollIntoView({block: "nearest", inline: "nearest"});
+    }
 }
 
 
@@ -1805,24 +1888,35 @@ function set_text(text_string){
 var help_requests = {};
 
 //Set Command based on templates
-function setCommand (final_string){
+function setCommand (final_string, full_string){
+
+    var not_found;
 
     if(final_string.includes('[agent')){
         var agents = document.getElementsByName('neighbors');
-		final_string = findCheckedRadio(agents,final_string,'agent');
+		results = findCheckedRadio(agents,final_string,'agent');
+		final_string = results[0];
+		not_found = results[1];
     }
     
-    if(final_string.includes('[object')){
-        var objects = document.getElementsByName('objects');
-		final_string = findCheckedRadio(objects,final_string,'object');
-    }
-
-    if(final_string.length == 0){
+    if(full_string && not_found){
 		return;
 	}
 	
-	document.getElementById('command_text').value = final_string;
+    if(final_string.includes('[object')){
+        var objects = document.getElementsByName('objects');
+		results = findCheckedRadio(objects,final_string,'object');
+		final_string = results[0];
+		not_found = results[1];
+    }
 
+    if(full_string && not_found){
+		return;
+	}
+	
+	//document.getElementById(element_id).textContent = final_string;
+	
+    return final_string;
     /*
 	var final_string = "";
 
@@ -1860,7 +1954,18 @@ function sendCommand() {
 	if(final_string){
 	
 	
-	    newMessage(final_string, client_id);
+	    newMessage(final_string, client_id, null, null);
+	    
+	    var mregex = new RegExp(message_patterns_regex["regex"]['sensing_ask_help']);
+        var mregex_match_sensing = mregex.exec(final_string);
+        var mregex = new RegExp(message_patterns_regex["regex"]['carry_help']);
+        var mregex_match_carrying = mregex.exec(final_string);
+        
+        if(mregex_match_sensing){
+            type_of_help = 'sensing_ask_help';
+        } else if(mregex_match_carrying){
+            type_of_help = 'carry_help';
+        }
 	    
 	    var popup_text = document.getElementById("popup_text");
 
@@ -1983,13 +2088,151 @@ function sendCommand() {
 
 socket.on("message", (message, timestamp, id) => {
 	console.log("Received message");
-	newMessage(message, id);
+	
 	
 	let object_info = message.match(/Object ([0-9]+) \(weight: ([0-9]+)\)/);
 	
 	if(object_info && (parseInt(object_info[2]) >= map_config['all_robots'].length+2 || (tutorial_mode && parseInt(object_info[2]) >= 3)) && ! heaviest_objects.includes(object_info[1])){
 	    heaviest_objects.push(object_info[1]);
 	}
+	
+	var yes, no;
+	
+    for (const idreg in message_patterns_regex["regex"]) {
+        var mregex = new RegExp(message_patterns_regex["regex"][idreg]);
+        let mregex_match = mregex.exec(message);
+        if(mregex_match){
+            switch(idreg){
+                case 'ask_for_agent':
+                    if(mregex_match[1] != client_id){
+                        yes = function(){
+                        
+                            let answer = "Agent " + mregex_match[1] + " " + document.getElementById(mregex_match[1] + '_entry').children[0].rows[1].cells[0].textContent;
+                            document.getElementById('command_text').value = answer;
+                            last_pattern_clicked = message_patterns_regex["normal"]['agent'];
+                        };
+                        
+                        no = function(){
+                            var answer = message_patterns_regex["normal"]['agent_not_found'].replace('[agent_id]', mregex_match[1]);
+                            document.getElementById('command_text').value = answer;
+                            last_pattern_clicked = message_patterns_regex["normal"]['agent_not_found'];
+                        };
+                    }
+                
+                    break;
+                case 'sensing_help':
+                
+                    if(document.getElementById("label_" + mregex_match[1])){
+                        yes = function(){
+                        
+                            var child_table = document.getElementById("label_" + mregex_match[1]).children[0];
+                        
+                            var answer = "";
+			                for(j = 0; j < child_table.rows.length; j++) {
+				                answer += child_table.rows[j].cells[0].textContent + " ";
+				            }
+                        
+                            document.getElementById('command_text').value = answer;
+                            last_pattern_clicked = message_patterns_regex["normal"]['item'];
+                        };
+                    }
+                    
+                    no = function(){
+                        var answer = message_patterns_regex["normal"]['sensing_help_negative_response'].replace('[object_id]', mregex_match[1]);
+                        document.getElementById('command_text').value = answer;
+                        last_pattern_clicked = message_patterns_regex["normal"]['sensing_help_negative_response'];
+                    };
+                
+                    break;
+                    
+                case 'sensing_ask_help':
+                case 'carry_help':
+                    
+                    if(idreg == 'sensing_ask_help'){
+                        if(mregex_match[1] != client_id){
+                            break;
+                        }
+                        
+                        if(document.getElementById("label_" + mregex_match[2])){
+                            yes = function(){
+                        
+                                var child_table = document.getElementById("label_" + mregex_match[2]).children[0];
+                            
+                                var answer = "";
+			                    for(j = 0; j < child_table.rows.length; j++) {
+				                    answer += child_table.rows[j].cells[0].textContent + " ";
+				                }
+                            
+                                document.getElementById('command_text').value = answer;
+                                last_pattern_clicked = message_patterns_regex["normal"]['item'];
+                            };
+                        }
+                    }
+                    
+                    if(! yes){
+                        yes = function(){
+                            var answer = message_patterns_regex["normal"]['carry_help_accept'].replace('[agent_id]', id);
+                            document.getElementById('command_text').value = answer;
+                            last_pattern_clicked = message_patterns_regex["normal"]['carry_help_accept'];
+                        };
+                    }
+                    
+                    no = function(){
+                        var answer = message_patterns_regex["normal"]['carry_help_participant_reject'].replace('[agent_id]', id);
+                        document.getElementById('command_text').value = answer;
+                        last_pattern_clicked = message_patterns_regex["normal"]['carry_help_participant_reject'];
+                    };
+                    break;
+                case 'carry_help_accept':
+                    if(mregex_match[1] == client_id && type_of_help){
+                        yes = function(){
+                            if(type_of_help == 'carry_help'){
+                                var answer = message_patterns_regex["normal"]['follow'].replace('[agent_id]', id);
+                                last_pattern_clicked = message_patterns_regex["normal"]['follow'];
+                            } else if(type_of_help == 'sensing_ask_help'){
+                                var answer = message_patterns_regex["normal"]['following'].replace('[agent_id]', id);
+                                last_pattern_clicked = message_patterns_regex["normal"]['following'];
+                            }
+                            
+                            document.getElementById('command_text').value = answer;
+                            
+                        };
+                        
+                        no = function(){
+                            var answer = message_patterns_regex["normal"]['carry_help_reject'].replace('[agent_id]', id);
+                            document.getElementById('command_text').value = answer;
+                            last_pattern_clicked = message_patterns_regex["normal"]['carry_help_reject'];
+                        };
+                    }
+                    break;
+                case 'follow':
+                case 'following':
+                    if(mregex_match[1] == client_id){
+                        no = function(){
+                            var answer = message_patterns_regex["normal"]['sensing_ask_help_incorrect'].replace('[agent_id]', id);
+                            document.getElementById('command_text').value = answer;
+                            last_pattern_clicked = message_patterns_regex["normal"]['sensing_ask_help_incorrect'];
+                        };
+                    }
+                    break;
+                case 'finish':
+                    yes = function(){
+                        var answer = message_patterns_regex["normal"]['finish'];
+                        document.getElementById('command_text').value = answer;
+                        last_pattern_clicked = message_patterns_regex["normal"]['finish'];
+                    };
+                    
+                    no = function(){
+                        var answer = message_patterns_regex["normal"]['finish_reject'];
+                        document.getElementById('command_text').value = answer;
+                        last_pattern_clicked = message_patterns_regex["normal"]['finish_reject'];
+                    };
+                    break;    
+            }
+        }
+    }
+
+    newMessage(message, id, yes, no);
 
 	/*
 	if(message.includes("I need help with ")){

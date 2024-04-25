@@ -32,8 +32,12 @@ class Movement:
         self.help_status_info = [[],0,[],[],"",[],[],[]]
         self.help_status = self.HelpState.no_request
         self.last_action_index = -1
-        self.wait_time_limit = 15#5
-        self.help_time_limit = random.randrange(self.wait_time_limit,30)
+        
+        if not all(robot[1] for robot in env.neighbors_info): #Check if there are human peers
+            self.wait_time_limit = 30
+        else:
+            self.wait_time_limit = 15#5
+        self.help_time_limit = random.randrange(self.wait_time_limit,self.wait_time_limit*2)
         self.pending_location = []
         self.ignore_object = []
         #self.being_helped = []
@@ -1449,7 +1453,7 @@ class Movement:
 
                 #self.asked_help = False
                 _,message_text,action_index = self.cancel_cooperation(initial_state, message_text, message=MessagePattern.carry_help_cancel())
-                self.help_time_limit = random.randrange(self.wait_time_limit,30)
+                self.help_time_limit = random.randrange(self.wait_time_limit,self.wait_time_limit*2)
                 print("end of waiting")
             action = Action.get_occupancy_map.value
             

@@ -222,35 +222,43 @@
 </session>
 <cnl>
     <entry name="Title">Agents</entry>
-    <entry name="Agent to message">[agent]</entry>
-    <entry name="Ask about agent">Where is agent [agent_id]? </entry>
-    <entry name="No knowledge of agent">I don't know where is agent [agent_id]. </entry>
+    <entry name="Agent to message" id="agent">[agent]</entry>
+    <entry name="Ask about agent" id="ask_for_agent">Where is agent [agent_id]. </entry>
+    <entry name="No knowledge of agent" id="agent_not_found">I don't know where is agent [agent_id]. </entry>
     
     <entry name="Title">Objects</entry>
-    <entry name="Object to message">[object]</entry>
-    <entry name="Ask about object">What do you know about object [object_id]. </entry>
-    <entry name="Object not found">Hey [agent_id], I didn't find object [object_id]. </entry>
+    <entry name="Object to message" id="item">[object]</entry>
+    <entry name="Ask about object" id="sensing_help">What do you know about object [object_id]. </entry>
+    <entry name="No knowledge of object" id="sensing_help_negative_response">I know nothing about object [object_id]. </entry>
+    <entry name="Object not found" id="object_not_found">Hey [agent_id], I didn't find object [object_id]. </entry>
     
-    <entry name="Title">Help</entry>
-    <entry name="Help sense object">Hey [agent_id], can you help me sense object [object_id] in location [object_location], last seen at [object_time]. </entry>
-    <entry name="Help carry object">I need 1 more robots to help carry object [object_id]. </entry>
-    <entry name="Accept request for help">I can help you [agent_id]. </entry>
-    <entry name="Reject request for help">I cannot help you [agent_id]. </entry>
-    <entry name="Reject help">Nevermind [agent_id]. </entry>
-    <entry name="Abort collaboration">No need for more help. </entry>
-    <entry name="Incorrect request for help">I didn't offer my help to you [agent_id]. </entry>
+    <entry name="Title">Request Help</entry>
+    <entry name="Help sense object [1]" id="sensing_ask_help">Hey [agent_id], can you help me sense object [object_id] in location [object_location], last seen at [object_time]. </entry>
+    <entry name="Help carry object [1]" id="carry_help">I need [agent_count] more robots to help carry object [object_id]. </entry>
+    <entry name="Reject help from agent[2]" id="carry_help_reject">Nevermind [agent_id]. </entry>
+    <entry name="Cancel help request [2]" id="carry_help_cancel">Nevermind. </entry>
+    <entry name="Follow [Sense 2]" id="following">Thanks, I'll follow you [agent_id]. </entry>
+    <entry name="Be followed [Carry 2]" id="follow">Thanks, follow me [agent_id]. </entry>
+    <entry name="End collaboration [3]" id="carry_help_finish">No need for more help. </entry>
     
+    
+    <entry name="Title">Respond to Help Request</entry>
+    <entry name="Accept request for help" id="carry_help_accept">I can help you [agent_id]. </entry>
+    <entry name="Reject request for help" id="carry_help_participant_reject">I cannot help you [agent_id]. </entry>
+    <entry name="Reject request to follow/be followed" id="sensing_ask_help_incorrect">I didn't offer my help to you [agent_id]. </entry>
+    <!--
     <entry name="Title">Follow</entry>
-    <entry name="Be followed">Thanks, follow me [agent_id]. </entry>
-    <entry name="Follow">Thanks, I'll follow you [agent_id]. </entry>
+    <entry name="Be followed" order="3">Thanks, follow me [agent_id]. </entry>
+    <entry name="Follow" order="3">Thanks, I'll follow you [agent_id]. </entry>
+    -->
     
     <entry name="Title">Movement</entry>
-    <entry name="Come closer">Come closer [agent_id]. </entry>
-    <entry name="Request to move">Hey [agent_id], I need you to move. </entry>
+    <entry name="Come closer" id="come_closer">Come closer [agent_id]. </entry>
+    <entry name="Request to move" id="move_request">Hey [agent_id], I need you to move. </entry>
     
     <entry name="Title">End</entry>
-    <entry name="End participation">Let's end participation. </entry>
-    <entry name="Don't end participation">Wait, let's not end participation yet. </entry>
+    <entry name="End participation" id="finish">Let's end participation. </entry>
+    <entry name="Don't end participation" id="finish_reject">Wait, let's not end participation yet. </entry>
     
     
     

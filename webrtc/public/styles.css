@@ -353,6 +353,11 @@ button.ready {
   font-size:25px;
   background:yellow;
 }
+
+button.button_prompt {
+    text-align: center;
+}
+
 button.ready:hover{
   cursor: pointer;
   background: orange;
