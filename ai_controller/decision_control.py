@@ -747,8 +747,9 @@ class DecisionControl:
             
                 rematch = re.search(MessagePattern.come_closer_regex(),rm[1])
                 
-                if rematch.group(1) == str(self.env.robot_id):
-                    pass
+                if rematch.group(1) == str(self.env.robot_id) and self.action_index == self.movement.State.wait_random:
+                    self.action_index = self.movement.last_action_index
+                    self.pending_location = []
                 
             
             template_match = True #CNL only
@@ -997,6 +998,8 @@ class DecisionControl:
                
             chosen_location = robotState.robots[info['robot_key_to_index'][str(agent_id)]]["neighbor_location"]
             
+            self.object_of_interest = ""
+            
             if (chosen_location[0] == -1 and chosen_location[1] == -1): #if there is no robot in the correct place
             
                 if self.nearby_other_agents:
@@ -1049,6 +1052,7 @@ class DecisionControl:
                 object_id = grid_location
             else:
                 chosen_location = robotState.items[info['object_key_to_index'][str(object_id)]]["item_location"]
+                self.object_of_interest = object_id
         
             if (chosen_location[0] == -1 and chosen_location[1] == -1):# or self.occMap[chosen_location[0],chosen_location[1]] != 2: #if there is no object in the correct place
                 print("object not found for sensing")
@@ -1077,6 +1081,8 @@ class DecisionControl:
         self.chosen_object_idx = info['object_key_to_index'][str(object_id)]
         
         if self.top_action_sequence == 0:
+        
+            self.object_of_interest = object_id
 
             chosen_location = robotState.items[info['object_key_to_index'][str(object_id)]]["item_location"]
             
@@ -1098,7 +1104,8 @@ class DecisionControl:
             
                         if real_distance >= distance_limit:
                             wait = True
-                            
+                            if not robotState.robots[agent_idx]["neighbor_type"]:
+                                self.message_text += MessagePattern.come_closer(agent_id)
                 if wait:          
                     if time.time() - self.movement.help_status_info[1] > self.help_time_limit2: #time.time() - self.movement.asked_time > self.help_time_limit2:                           
                         action["action"],self.message_text,self.action_index = self.movement.cancel_cooperation(self.State.decision_state,self.message_text,message=MessagePattern.carry_help_complain())
@@ -1260,6 +1267,7 @@ class DecisionControl:
             self.movement.help_status_info[2] = []
             self.movement.help_status_info[7] = []
             self.movement.help_status_info[3] = []
+            self.object_of_interest = ""
         
     
         return action, finished, output
@@ -1593,8 +1601,8 @@ class DecisionControl:
             action["action"] = low_action
             if not possible_path:
                 finished = True
-                print("WHATS HAPPENING")
-                pdb.set_trace()
+                print("TRAPPED")
+                #pdb.set_trace()
         else:
             action["action"] = low_action
             
@@ -2507,14 +2515,14 @@ class DecisionControl:
                             ask_sense_distance = len(next_locs)
                             
                             if not ask_sense_distance:
-                                not_available.append(ia_idx)
+                                not_available.append(robot_range[ia_idx])
                                 continue
                         
                             tmp_cost = ia + ask_sense_distance # + return_distance
-                            ask_sensing_cost[ia_idx] = tmp_cost
-                            distance_object_agent[ia_idx] = ask_sense_distance
+                            ask_sensing_cost[robot_range[ia_idx]] = tmp_cost
+                            distance_object_agent[robot_range[ia_idx]] = ask_sense_distance
                         else:
-                            not_available.append(ia_idx)
+                            not_available.append(robot_range[ia_idx])
                 
                     
                     for robo_idx in range(len(robotState.item_estimates[ob_idx])):

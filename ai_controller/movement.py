@@ -725,7 +725,25 @@ class Movement:
                     #self.action_index = self.State.check_neighbors
                     
                 else: #reject help request
-                    message_text += MessagePattern.carry_help_participant_reject(rm[0])
+                    if rm[0] in self.help_status_info[0]:
+                        
+                        if self.help_status == self.HelpState.being_helped:
+                            message_text += MessagePattern.carry_help_participant_affirm_being_helped(rm[0])
+                        else:
+                            message_text += MessagePattern.carry_help_participant_affirm(rm[0])
+                    else:
+                        message_text += MessagePattern.carry_help_participant_reject(rm[0])
+                        
+                        if robotState.object_held:
+                            message_text += MessagePattern.carry_help_participant_reject_object()
+                        elif self.help_status == self.HelpState.asking:
+                            message_text += MessagePattern.carry_help_participant_reject_asking()    
+                        elif self.help_status_info[0]:
+                            message_text += MessagePattern.carry_help_participant_reject_other(self.help_status_info[0][0])
+                            
+                            
+                            
+                            
                     print("Cannot help")
          
                 
@@ -1213,11 +1231,12 @@ class Movement:
                     human_robots_idx.append(agent_idx)
             
             
-            humans_close = [self.env.compute_real_distance(robotState.robots[ag_idx]["neighbor_location"],ego_location) < self.env.map_config["strength_distance_limit"]-1 for ag_idx in human_robots_idx]
+            humans_close = [self.env.compute_real_distance(robotState.robots[ag_idx]["neighbor_location"],ego_location) < self.env.map_config["strength_distance_limit"] for ag_idx in human_robots_idx]
             wait_for_others = True
             
             #pdb.set_trace()
 
+            print("help status info",self.help_status_info)
             if self.help_status_info[2] or self.help_status_info[7]: #self.being_helped_locations:
             
                 if ai_robots:
@@ -1235,14 +1254,16 @@ class Movement:
             elif next_locations: #At the beginning choose the order of path assignment
             
                 #According to next step, we have all the possible cells helping robots may move into
-        
+                
                 if not all(humans_close):
                     for hc in range(len(humans_close)):
                         if not humans_close[hc]:
                             robot_index_to_key = list(info['robot_key_to_index'].keys())
                             robot_id = robot_index_to_key[list(info['robot_key_to_index'].values()).index(human_robots_idx[hc])]
                             message_text += MessagePattern.come_closer(robot_id)
-                            self.help_status_info[7].append(robot_id)
+                            if robot_id not in self.help_status_info[7]:
+                                self.help_status_info[7].append(robot_id)
+                
         
                 if ai_robots:
                 
@@ -1436,6 +1457,16 @@ class Movement:
             
             elif len(self.help_status_info[2]) == len(ai_robots) and not (ai_robots and self.help_status_info[2][-1] != previous_agent_location) and all(humans_close): #len(self.being_helped_locations) == len(self.being_helped) and self.being_helped_locations[-1] == previous_agent_location: #When all agents have followed orders
                 wait_for_others = False
+            elif not all(humans_close):
+                for hc in range(len(humans_close)):
+                    if not humans_close[hc]:
+                        robot_index_to_key = list(info['robot_key_to_index'].keys())
+                        robot_id = robot_index_to_key[list(info['robot_key_to_index'].values()).index(human_robots_idx[hc])]
+                        
+                        message_text += MessagePattern.come_closer(robot_id)
+                        
+                        if robot_id not in self.help_status_info[7]:
+                            self.help_status_info[7].append(robot_id)
                 
             
             

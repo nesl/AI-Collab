@@ -90,14 +90,16 @@ function set_cnl(){
             
             cnl_entries_doc.appendChild(div_cnl);
             
-            var message_template = message_text;
+            let message_text2 = cnl_entries[z].textContent;
+            
+            var message_template = message_text2;
             
             Object.keys(pattern_regex).forEach(function(key) {
                 message_template = message_template.replace(key,pattern_regex[key])
             });
             
             message_patterns_regex["regex"][cnl_entries[z].getAttribute("id")] = message_template;
-            message_patterns_regex["normal"][cnl_entries[z].getAttribute("id")] = message_text; 
+            message_patterns_regex["normal"][cnl_entries[z].getAttribute("id")] = message_text2; 
             
         } else if(only_cnl && cnl_name == "Title"){
         

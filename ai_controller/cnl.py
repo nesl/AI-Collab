@@ -300,10 +300,6 @@ class MessagePattern:
         return "I can help you (\w+)"
         
     @staticmethod
-    def carry_help_participant_reject(robot_id):
-        return "I cannot help you " + str(robot_id) + ". "
-        
-    @staticmethod
     def come_closer(robot_id):
         return "Come closer " + str(robot_id) + ". "
         
@@ -312,8 +308,49 @@ class MessagePattern:
         return "Come closer (\w+)"    
         
     @staticmethod
+    def carry_help_participant_reject(robot_id):
+        return "I cannot help you " + str(robot_id) + ". "
+        
+    @staticmethod
     def carry_help_participant_reject_regex():
         return "I cannot help you (\w+)"
+        
+    @staticmethod
+    def carry_help_participant_affirm(robot_id):
+        return "I'm already helping you " + str(robot_id) + ". "    
+    
+    @staticmethod
+    def carry_help_participant_affirm_regex():
+        return "I'm already helping you (\w+)"
+        
+    @staticmethod
+    def carry_help_participant_affirm_being_helped(robot_id):
+        return "You are helping me " + str(robot_id) + ". "    
+    
+    @staticmethod
+    def carry_help_participant_affirm_being_helped_regex():
+        return "You are helping me (\w+)"    
+        
+        
+    @staticmethod
+    def carry_help_participant_reject_other(robot_id):
+        return "I'm already helping " + str(robot_id) + ". "    
+    
+    @staticmethod
+    def carry_help_participant_reject_other_regex():
+        return "I'm already helping (\w+)"    
+        
+    @staticmethod
+    def carry_help_participant_reject_object():
+        return "I'm carrying an object. "    
+        
+    @staticmethod
+    def carry_help_participant_reject_asking():
+        return "I'm asking for help. " 
+    
+    @staticmethod
+    def carry_help_participant_affirm_other_regex():
+        return "I'm already helping (\w+)"
         
     @staticmethod
     def carry_help_reject(robot_id):
