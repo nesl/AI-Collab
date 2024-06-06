@@ -235,18 +235,23 @@
     <entry name="Title">Request Help</entry>
     <entry name="Help sense object [1]" id="sensing_ask_help">Hey [agent_id], can you help me sense object [object_id] in location [object_location], last seen at [object_time]. </entry>
     <entry name="Help carry object [1]" id="carry_help">I need [agent_count] more robots to help carry object [object_id]. </entry>
-    <entry name="Reject help from agent[2]" id="carry_help_reject">Nevermind [agent_id]. </entry>
+    
+    <entry name="Reject help from agent [2]" id="carry_help_reject" hide="y">Nevermind [agent_id]. </entry>
+    <entry name="Follow [Sense 2]" id="following" hide="y">Thanks, I'll follow you [agent_id]. </entry>
+    <entry name="Be followed [Carry 2]" id="follow" hide="y">Thanks, follow me [agent_id]. </entry>
+    
     <entry name="Cancel help request [2]" id="carry_help_cancel">Nevermind. </entry>
-    <entry name="Follow [Sense 2]" id="following">Thanks, I'll follow you [agent_id]. </entry>
-    <entry name="Be followed [Carry 2]" id="follow">Thanks, follow me [agent_id]. </entry>
     <entry name="End collaboration [3]" id="carry_help_finish">No need for more help. </entry>
     
-    
+    <entry name="Accept request for help" id="carry_help_accept" hide="y">I can help you [agent_id]. </entry>
+    <entry name="Reject request for help" id="carry_help_participant_reject" hide="y">I cannot help you [agent_id]. </entry>
+    <entry name="Reject request to follow/be followed" id="sensing_ask_help_incorrect" hide="y">I didn't offer my help to you [agent_id]. </entry>
+    <!--
     <entry name="Title">Respond to Help Request</entry>
     <entry name="Accept request for help" id="carry_help_accept">I can help you [agent_id]. </entry>
     <entry name="Reject request for help" id="carry_help_participant_reject">I cannot help you [agent_id]. </entry>
     <entry name="Reject request to follow/be followed" id="sensing_ask_help_incorrect">I didn't offer my help to you [agent_id]. </entry>
-    <!--
+    
     <entry name="Title">Follow</entry>
     <entry name="Be followed" order="3">Thanks, follow me [agent_id]. </entry>
     <entry name="Follow" order="3">Thanks, I'll follow you [agent_id]. </entry>

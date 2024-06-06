@@ -624,7 +624,7 @@ class Movement:
         template_match = False
         return_value = 0
     
-        if MessagePattern.carry_help_accept(self.env.robot_id) in rm[1]:
+        if re.search(MessagePattern.carry_help_accept_regex(),rm[1]):
             
             template_match = True
             
@@ -776,6 +776,9 @@ class Movement:
                             
                             if not sensing:
                                 action_index = self.State.follow
+                                message += MessagePattern.follow_response(rm[0])
+                            else:
+                                message += MessagePattern.following_response(rm[0])
                             
                             
                             print("HELPING")

@@ -293,7 +293,7 @@ class MessagePattern:
         
     @staticmethod
     def carry_help_accept(robot_id):
-        return "I can help you " + str(robot_id) + ". "
+        return "I can help you " + str(robot_id) + ". Let me know if I should follow you or you want to follow me. "
         
     @staticmethod
     def carry_help_accept_regex():
@@ -391,6 +391,22 @@ class MessagePattern:
     @staticmethod
     def following_regex():
         return "Thanks, I'll follow you (\w+)"
+        
+    @staticmethod
+    def follow_response(robot_id):
+        return "I'll follow you " + str(robot_id) + " until you tell me you don't need my help anymore. "
+        
+    @staticmethod
+    def follow_response_regex():
+        return "I'll follow you (\w+) until you tell me you don't need my help anymore"
+        
+    @staticmethod
+    def following_response(robot_id):
+        return "Follow me " + str(robot_id) + " and tell me when you don't need my help anymore. "
+        
+    @staticmethod
+    def following_response_regex():
+        return "Follow me (\w+) and tell me when you don't need my help anymore"
         
     @staticmethod
     def wait(robot_id):

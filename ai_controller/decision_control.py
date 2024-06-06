@@ -87,8 +87,8 @@ class DecisionControl:
         self.ending_locations.remove([8,18])
         
         self.human_to_ai_text = []
-        #if not all(robot[1] for robot in env.neighbors_info): #Check if there are human peers    
-        #    self.human_to_ai_text = Human2AIText(env.robot_id)
+        if not all(robot[1] for robot in env.neighbors_info): #Check if there are human peers    
+            self.human_to_ai_text = Human2AIText(env.robot_id)
        
     class Other_Agent:
         
@@ -141,11 +141,17 @@ class DecisionControl:
             
             if re.search(MessagePattern.carry_help_accept_regex(),rm[1]):
             
-                template_match = True
+                if robotState.robots[info['robot_key_to_index'][rm[0]]]["neighbor_type"]:
+                    template_match = True
                 
                 rematch = re.search(MessagePattern.carry_help_accept_regex(),rm[1])
                 
+
+                
                 if rematch.group(1) == str(self.env.robot_id) and self.movement.help_status == self.movement.HelpState.asking or self.movement.help_status == self.movement.HelpState.being_helped:
+                
+                    template_match = True
+                
                     object_id = list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(self.chosen_object_idx)]
                     
                     obs_string = "Offered me help to carry object " + str(object_id)
@@ -173,6 +179,7 @@ class DecisionControl:
                             
                         else: #Somehow we end here
                             self.message_text += MessagePattern.carry_help_reject(rm[0])
+                            
                         
 
 
@@ -251,6 +258,7 @@ class DecisionControl:
                                 
                                 self.create_action_function("sense_by_request('" + object_id + "','" + rm[0] + "'," + str(grid_location) + ")")
                         
+                        
                 elif MessagePattern.carry_help_cancel() in rm[1]:
                     self.other_agents[agent_idx].observations.append("Cancelled his request for help")
                     
@@ -260,7 +268,9 @@ class DecisionControl:
                 elif MessagePattern.carry_help_complain() in rm[1]:
                     self.other_agents[agent_idx].observations.append("Dismissed his team for not collaborating effectively")
                     
-                    
+                
+                if not MessagePattern.follow(self.env.robot_id) in rm[1] and not MessagePattern.following(self.env.robot_id) in rm[1]:
+                    self.message_text += "Ok " + rm[0] + ". "     
                     
             if re.search(MessagePattern.carry_help_reject_regex(),rm[1]):
                 
@@ -446,6 +456,7 @@ class DecisionControl:
                         print("canceling?")
                         if chosen_object_id == object_id:
                             _,_,self.action_index = self.movement.cancel_cooperation(self.State.decision_state,self.message_text)
+                            self.message_text += "Thanks " + rm[0] + ". "
                             print("canceling action")
                         
                             
@@ -752,12 +763,18 @@ class DecisionControl:
                     self.pending_location = []
                 
             
-            template_match = True #CNL only
+            #template_match = True #CNL only
+            
+            
+            
+            print(not template_match, not robotState.robots[info['robot_key_to_index'][rm[0]]]["neighbor_type"], rm[1])
             if not template_match and not robotState.robots[info['robot_key_to_index'][rm[0]]]["neighbor_type"]: #Human sent a message, we need to translate it. We put this condition at the end so that humans can also send messages that conform to the templates
-                translated_message,message_to_user = self.human_to_ai_text.convert_to_ai(rm[1], info, robotState.items, self.message_history, True)
+                translated_message,message_to_user = self.human_to_ai_text.convert_to_ai(rm[0], rm[1], info, robotState.items, self.message_history, True)
                 
                 if translated_message:
-                    if message_to_user:
+                    if translated_message == self.human_to_ai_text.noop:
+                        pass
+                    elif message_to_user:
                         self.message_text += translated_message
                     else:
                         received_messages.append((rm[0], translated_message, rm[2])) #Add it to the list of received messages
@@ -766,11 +783,11 @@ class DecisionControl:
    
    
             if tmp_message:
-                tmp_message_history.append([rm[0],tmp_message])
+                tmp_message_history.append({"Sender": rm[0], "Message": tmp_message})
         
                 
         if tmp_message_history:
-            self.message_history.append(tmp_message_history)
+            self.message_history.extend(tmp_message_history)
     
     def get_neighboring_agents(self, robotState, ego_location):
     
@@ -1713,13 +1730,16 @@ class DecisionControl:
             tmp_message = tmp_message.replace(rematch_str, "")
             
             if tmp_message and not tmp_message.isspace():
-                self.message_history.append([[self.env.robot_id,tmp_message]])
+                self.message_history.append({"Sender": self.env.robot_id, "Message": tmp_message})
             else:
                 tmp_message = ""
             
             if any(not robotState.robots[r_idx]["neighbor_type"] for r_idx in self.nearby_other_agents):
                 message_ai = rematch_str
                 message = tmp_message
+
+        else:
+            self.message_history.append({"Sender": self.env.robot_id, "Message": message})
 
         action["message"] = message
         action["message_ai"] = message_ai

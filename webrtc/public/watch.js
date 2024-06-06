@@ -3,7 +3,7 @@ let peerConnection;
 var xmlDoc;
 var first_state;
 
-var only_cnl = true;
+var only_cnl = false;
 var completed_survey = false;
 var token;
 var last_pattern_clicked;
@@ -44,51 +44,54 @@ function set_cnl(){
         
         if((only_cnl && cnl_name != "Title") || cnl_name == "Agent to message" || cnl_name == "Object to message"){
         
-            var div_cnl = document.createElement('div');
-            div_cnl.classList.add('wrapper');
-            var button_cnl = document.createElement('button');
-            button_cnl.classList.add('command-btn');
-            button_cnl.setAttribute("name", cnl_name);
-            
-            if(cnl_entries[z].getAttribute("order")){ 
-                button_cnl.textContent = cnl_name + " (" + cnl_entries[z].getAttribute("order") + ")";
-            } else{
-                button_cnl.textContent = cnl_name;
-            }
-            
-            button_cnl.classList.add("tooltip");
-            
-            let message_text = cnl_entries[z].textContent;
-            
-            if(cnl_entries[z].getAttribute("id") == "carry_help"){
-                message_text = message_text.replace("[agent_count]", "1");
-            }
-            
-            button_cnl.onclick = function(){
-                var res = setCommand(message_text, true);
-                if(res){
-                    document.getElementById('command_text').value = res;
-                    last_pattern_clicked = message_text;
-                }
-            };
-            
-            var span_cnl = document.createElement('span');
-            span_cnl.classList.add("tooltiptext");
-            span_cnl.textContent = message_text;
-            span_cnl.setAttribute("id", String(z) + "_tooltip");
-            button_cnl.onmouseover = function(){
-                var res = setCommand(message_text, false);
+            if(! cnl_entries[z].getAttribute("hide")){
+                var div_cnl = document.createElement('div');
+                div_cnl.classList.add('wrapper');
+                var button_cnl = document.createElement('button');
+                button_cnl.classList.add('command-btn');
+                button_cnl.setAttribute("name", cnl_name);
                 
-                if(res){
-                    document.getElementById(String(z) + "_tooltip").textContent = res;
+                if(cnl_entries[z].getAttribute("order")){ 
+                    button_cnl.textContent = cnl_name + " (" + cnl_entries[z].getAttribute("order") + ")";
+                } else{
+                    button_cnl.textContent = cnl_name;
                 }
-            };
+                
+                button_cnl.classList.add("tooltip");
+                
+                let message_text = cnl_entries[z].textContent;
+                
+                if(cnl_entries[z].getAttribute("id") == "carry_help"){
+                    message_text = message_text.replace("[agent_count]", "1");
+                }
+                
+                button_cnl.onclick = function(){
+                    var res = setCommand(message_text, true);
+                    if(res){
+                        document.getElementById('command_text').value = res;
+                        last_pattern_clicked = message_text;
+                    }
+                };
+                
+                var span_cnl = document.createElement('span');
+                span_cnl.classList.add("tooltiptext");
+                span_cnl.textContent = message_text;
+                span_cnl.setAttribute("id", String(z) + "_tooltip");
+                button_cnl.onmouseover = function(){
+                    var res = setCommand(message_text, false);
+                    
+                    if(res){
+                        document.getElementById(String(z) + "_tooltip").textContent = res;
+                    }
+                };
+                
+                button_cnl.appendChild(span_cnl);
+                
+                div_cnl.appendChild(button_cnl);
+                
+                cnl_entries_doc.appendChild(div_cnl);
             
-            button_cnl.appendChild(span_cnl);
-            
-            div_cnl.appendChild(button_cnl);
-            
-            cnl_entries_doc.appendChild(div_cnl);
+            }
             
             let message_text2 = cnl_entries[z].textContent;
             
