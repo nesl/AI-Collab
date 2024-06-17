@@ -209,9 +209,20 @@
         <list><![CDATA[<p><b>Make an agent move to stop blocking the way</b><br><ul><li><b>Requester:</b> Hey B, I need you to move.</li></ul></p>]]></list>
         -->
         
+        <!--
         <title>Controlled Natural Language</title>
         <head><![CDATA[In this session you will only be able to communicate with a Controlled Natural Language by using some of the pattern substitution functions present in the righ-hand sidebar. To see such message templates, you can hover over each button to see the actual message that would be set. Some of these message templates reguire arguments, these can be of type [agent*] or [object*]. In each of these cases you have to first select those arguments from the left-hand sidebar, then click on the corresponding pattern substitution button, and finally click send. You cannot type in directly any message into the chat sidebar input. In this section we are going to present all the message templates you can utilize.]]></head>
+        -->
         
+        <title>Communication</title>
+        
+        <head><![CDATA[AI agents understand your Natural Language messages! Feel free to ask and respond to AI agents however you like through the Chat sidebar. The next is a list of possible things you can talk about.]]></head>
+        
+        <list><![CDATA[<p><b>Get/offer help carry a heavy object</b></p>]]></list>
+        <list><![CDATA[<p><b>Get/offer help sense an object</b></p>]]></list>
+        <list><![CDATA[<p><b>Ask/give information of an object/agent</b></p>]]></list>
+        <list><![CDATA[<p><b>Make an agent move if it's blocking the way</b></p>]]></list>
+        <list><![CDATA[<p><b>Inform your decision to end participation or not</b></p>]]></list>
         
         <title>Scenario Map</title>
         

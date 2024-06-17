@@ -1109,7 +1109,7 @@ class Movement:
             
             if not (other_robot_location[0] == -1 and other_robot_location[1] == -1) and ((not robotState.object_held and not self.help_status == self.HelpState.being_helped and (not self.help_status == self.HelpState.helping or (self.help_status == self.HelpState.helping and (self.help_status_info[0][0] == rm[0] or rm[0] in self.help_status_info[6])))) or other_agents[agent_idx].carrying):#not self.being_helped and (not self.helping or (self.helping and self.helping[0] == rm[0])): #This condition is true only when robots have no teams and are not carrying any object
                         
-                print("MOVING")
+                print("MOVING pending")
                 
                 #last_move_request = rm[0]
                 
@@ -1144,6 +1144,7 @@ class Movement:
                     #self.asked_time = time.time()
                     self.help_status_info[1] = time.time()
                     print("MOVING")
+                    message_text += "Ok " + rm[0] + ". "
                 elif maximum_distance_with_robot:
                     #object_id = list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(self.heavy_objects['index'][ho])]
                     robot_index_to_key = list(info['robot_key_to_index'].keys())
@@ -1155,7 +1156,14 @@ class Movement:
                     self.help_status_info[1] = time.time()
                     self.wait_locations.append(next_location_with_robot)
                     print("MOVING robot")
-                                    
+                    
+                    message_text += "Ok " + rm[0] + ". "
+                else:
+                    message_text += "Sorry " + rm[0] + " I cannot move right now. "
+        
+            else:
+                message_text += "Sorry " + rm[0] + " I cannot move right now. "
+                                           
         return message_text,action_index,template_match    
         
     

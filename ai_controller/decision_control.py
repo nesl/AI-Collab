@@ -88,7 +88,7 @@ class DecisionControl:
         
         self.human_to_ai_text = []
         if not all(robot[1] for robot in env.neighbors_info): #Check if there are human peers    
-            self.human_to_ai_text = Human2AIText(env.robot_id)
+            self.human_to_ai_text = Human2AIText(env)
        
     class Other_Agent:
         
@@ -129,8 +129,9 @@ class DecisionControl:
         objects_str = {}
     
         tmp_message_history = []
+        translated_messages_index = -1
     
-        for rm in received_messages:
+        for rm_idx,rm in enumerate(received_messages):
             
             print("Received message:", rm)
             template_match = False
@@ -269,7 +270,7 @@ class DecisionControl:
                     self.other_agents[agent_idx].observations.append("Dismissed his team for not collaborating effectively")
                     
                 
-                if not MessagePattern.follow(self.env.robot_id) in rm[1] and not MessagePattern.following(self.env.robot_id) in rm[1]:
+                if not re.search(MessagePattern.follow_regex(),rm[1]) and not re.search(MessagePattern.following_regex(),rm[1]):
                     self.message_text += "Ok " + rm[0] + ". "     
                     
             if re.search(MessagePattern.carry_help_reject_regex(),rm[1]):
@@ -484,7 +485,7 @@ class DecisionControl:
             
                 rematch = re.search(MessagePattern.ask_for_agent_regex(),rm[1])
                 
-                if not rematch.group(1) == self.env.robot_id:
+                if not rematch.group(1) == self.env.robot_id and rematch.group(1) in info['robot_key_to_index']:
                 
                     robot_idx = info['robot_key_to_index'][rematch.group(1)]
        
@@ -761,11 +762,15 @@ class DecisionControl:
                 if rematch.group(1) == str(self.env.robot_id) and self.action_index == self.movement.State.wait_random:
                     self.action_index = self.movement.last_action_index
                     self.pending_location = []
-                
+            
+            if re.search(MessagePattern.sensing_ask_help_incorrect_regex(),rm[1]):
+                template_match = True    
             
             #template_match = True #CNL only
             
-            
+            if not template_match and translated_messages_index >= 0 and translated_messages_index >= rm_idx: #This means the translated message doesn't make sense
+                self.message_text += "I didn't understand you " + rm[0] + ". "
+                continue
             
             print(not template_match, not robotState.robots[info['robot_key_to_index'][rm[0]]]["neighbor_type"], rm[1])
             if not template_match and not robotState.robots[info['robot_key_to_index'][rm[0]]]["neighbor_type"]: #Human sent a message, we need to translate it. We put this condition at the end so that humans can also send messages that conform to the templates
@@ -777,6 +782,8 @@ class DecisionControl:
                     elif message_to_user:
                         self.message_text += translated_message
                     else:
+                        if translated_messages_index == -1:
+                            translated_messages_index = len(received_messages)
                         received_messages.append((rm[0], translated_message, rm[2])) #Add it to the list of received messages
                 else:
                     self.message_text += "I didn't understand you " + rm[0] + ". "
@@ -2402,7 +2409,7 @@ class DecisionControl:
 
         possible_functions = ["sense", "pickup", "explore"]
         
-        if self.movement.help_status == self.movement.HelpState.being_helped:
+        if self.movement.help_status == self.movement.HelpState.being_helped: #if we are already being helped, get the number of helper agents
             number_helping = len(self.movement.help_status_info[0])
         else:
             number_helping = 0
@@ -2414,7 +2421,7 @@ class DecisionControl:
         goal_y = int(self.occMap.shape[1] / 2)
         utility = {}
         
-        initial_agents_distance = self.calculate_neighbor_distance(robotState, info, ego_location, [])
+        #initial_agents_distance = self.calculate_neighbor_distance(robotState, info, ego_location, []) #Calculate the distances between yourself and the other robots
         
         #Exclude requests to certain agents according to role
         pickup_excluded = []
@@ -2422,79 +2429,83 @@ class DecisionControl:
         if "role" in self.team_structure:
             for teammate in self.team_structure["role"].keys():
                 teammate_idx = info['robot_key_to_index'][teammate]
-                if self.team_structure["role"][teammate] == "sensing":
+                if self.team_structure["role"][teammate] == "sensing" or (teammate_idx in self.help_request_time.keys() and time.time() - self.help_request_time[teammate_idx][0] < self.help_request_time[teammate_idx][1]): #If you are only sensing, you cannot ask others to pickup objects. If an agent has previously been requested help, wait some time until we take it into consideration again
                     pickup_excluded.append(teammate_idx)
-                elif self.team_structure["role"][teammate] == "lifter":
+                elif self.team_structure["role"][teammate] == "lifter": #If you are only lifting, you cannot ask others to sense objects
                     sensing_excluded.append(teammate_idx)
                 
-        if "role" in self.team_structure and self.team_structure["role"][self.env.robot_id] == "lifter":
+        if "role" in self.team_structure and self.team_structure["role"][self.env.robot_id] == "lifter": #If you are only lifting, exclude yourself from sensing
             sensing_excluded.append(len(robotState.robots))    
                 
                     
-        agents_distance = self.calculate_neighbor_distance(robotState, info, ego_location, pickup_excluded)
+        initial_agents_distance = self.calculate_neighbor_distance(robotState, info, ego_location, pickup_excluded) #Calculate the distances between yourself and the other robots but exclude some of the robots according to roles
+        agents_distance = initial_agents_distance.copy()
         cost_agents = []
         
         all_robot_combinations = []
         robot_range = []
         
         for i in range(len(robotState.robots)):
-            if robotState.robots[i]["neighbor_disabled"] != 1:
+            if robotState.robots[i]["neighbor_disabled"] != 1: #Only take into account those robots that are not disabled
                 robot_range.append(i)
         
-        for i in range(len(robot_range)):
+        for i in range(len(robot_range)): #Compute all possible combinations of robot groups
             all_robot_combinations.extend(combinations([*robot_range, len(robotState.robots)], i+1))
         
+        '''
+        pickup_not_available = []
+        for robo_idx in robot_range:
+            if (robo_idx in self.help_request_time.keys() and time.time() - self.help_request_time[robo_idx][0] < self.help_request_time[robo_idx][1]): #If an agent has previously been requested help, wait some time until we take it into consideration again.
+                pickup_not_available.append(robo_idx)
+        '''
         
-        for ag in range(len(robot_range)):
+        for ag in range(len(robot_range)): #For all robots that can help and are closeby, compute the distance it would take to reach one of them and then the others in sequence
                     
             closest_idx = np.argmin(agents_distance)
                         
             if agents_distance[closest_idx] == float("inf"):
                 break
             else:
-                cost_agents.append((closest_idx, agents_distance[closest_idx]))
+                cost_agents.append((closest_idx, agents_distance[closest_idx])) #Cost to reach one of the agents in sequence
                 next_location = np.array([[robotState.robots[robot_range[closest_idx]]["neighbor_location"][0]],[robotState.robots[robot_range[closest_idx]]["neighbor_location"][1]]])
                 agents_distance = self.calculate_neighbor_distance(robotState, info, next_location, pickup_excluded)
 
         
-        pickup_not_available = []
-        for robo_idx in robot_range:
-            if (robo_idx in self.help_request_time.keys() and time.time() - self.help_request_time[robo_idx][0] < self.help_request_time[robo_idx][1]):
-                pickup_not_available.append(robo_idx)
         
-        if self.movement.help_status != self.movement.HelpState.accepted:
-            for ob_idx,ob in enumerate(robotState.items):
+        
+        if self.movement.help_status != self.movement.HelpState.accepted: #If we are not helping anyone
+            for ob_idx,ob in enumerate(robotState.items): #For all possible objects
             
                 object_id = list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(ob_idx)]
             
-                if object_id in self.carried_objects.values():
+                if object_id in self.carried_objects.values(): #If this object is being carried by someone else continue with the others
                     continue
             
                 possible_actions[ob_idx] = {}
                 request_cost = 0
                 
-                if (ob["item_location"][0] == -1 and ob["item_location"][1] == -1) or tuple(ob["item_location"]) in self.extended_goal_coords:
+                if (ob["item_location"][0] == -1 and ob["item_location"][1] == -1) or tuple(ob["item_location"]) in self.extended_goal_coords: #If the location of this objects is not known, continue
                     continue
                 else:
                     
-                    if ob["item_weight"] > 1:
+                    if ob["item_weight"] > 1: #If the object requires greater strength
                         
                         
-                        if len(cost_agents) < ob["item_weight"] -1 -number_helping:
+                        if len(cost_agents) < ob["item_weight"] -1 -number_helping: #If we have more agents helping than needed for this particular object, just skip it
                             continue
                         
-                        if ob["item_weight"]-1 <= number_helping:
+                        if ob["item_weight"]-1 <= number_helping: #If we have enough helping agents to carry
                         
                             _, next_locs, _, _ = self.movement.go_to_location(ob["item_location"][0], ob["item_location"][1], self.occMap, robotState, info, ego_location, self.action_index, checking=True)
                             distance = len(next_locs)
                             
-                        else:
+                        else: #Otherwise we also have to consider the cost of requesting help
                         
-                            for ag_idx in range(ob["item_weight"]-1 -number_helping):
+                            for ag_idx in range(ob["item_weight"]-1 -number_helping): #Add the cost of requesting help from the needed amount of agents
                                 request_cost += cost_agents[ag_idx][1]
                             
                             try:
-                                possible_actions[ob_idx]["pickup_args"] = cost_agents[0][0]
+                                possible_actions[ob_idx]["pickup_args"] = cost_agents[0][0] #agent ID of the closest agent
                             except:
                                 pdb.set_trace()
                             
@@ -2505,21 +2516,22 @@ class DecisionControl:
                         
                         
                         #print("pickup args", possible_actions[ob_idx]["pickup_args"])
-                    else:
+                        
+                    else: #If we can carry the object alone
                         _, next_locs, _, _ = self.movement.go_to_location(ob["item_location"][0], ob["item_location"][1], self.occMap, robotState, info, ego_location, self.action_index, checking=True)
                         distance = len(next_locs)
                     
-                    if not distance:
+                    if not distance: #If the distance is 0, ignore
                         continue
                         
                             
                     goal_location = np.array([[goal_x],[goal_y]])
                     _, next_locs, _, _ = self.movement.go_to_location(ob["item_location"][0], ob["item_location"][1], self.occMap, robotState, info, goal_location, self.action_index, checking=True)
-                    return_distance = len(next_locs)
+                    return_distance = len(next_locs) #calculate distance to return to goal from object
                     
-                    pickup_cost = distance + return_distance + request_cost
+                    pickup_cost = distance + return_distance + request_cost #pickup cost is equal to adding the distance to get to the object + the distances between the agents to whom request help + the distance to move the object to the goal area
                     
-                    if not ("pickup_args" in possible_actions[ob_idx] and possible_actions[ob_idx]["pickup_args"] in pickup_not_available) and not ("role" in self.team_structure and self.team_structure["role"][self.env.robot_id] == "sensing"):
+                    if not ("role" in self.team_structure and self.team_structure["role"][self.env.robot_id] == "sensing"): #If you are not sensing, a possible action can be to pickup this object #not ("pickup_args" in possible_actions[ob_idx] and possible_actions[ob_idx]["pickup_args"] in pickup_not_available) and not ("role" in self.team_structure and self.team_structure["role"][self.env.robot_id] == "sensing"):
                         possible_actions[ob_idx]["pickup"] = pickup_cost
                     
                     
@@ -2528,28 +2540,28 @@ class DecisionControl:
                     not_available = []   
                     for ia_idx,ia in enumerate(initial_agents_distance):
                     
-                        if ia < float("inf"):
+                        if ia < float("inf"): #If agent is reacheable calculate distance to it
                         
                             next_ego_location = np.array([[robotState.robots[robot_range[ia_idx]]["neighbor_location"][0]],[robotState.robots[robot_range[ia_idx]]["neighbor_location"][1]]])
                             _, next_locs, _, _ = self.movement.go_to_location(ob["item_location"][0], ob["item_location"][1], self.occMap, robotState, info, next_ego_location, self.action_index, checking=True)
                             ask_sense_distance = len(next_locs)
                             
-                            if not ask_sense_distance:
+                            if not ask_sense_distance: #If distance is zero, ignore
                                 not_available.append(robot_range[ia_idx])
                                 continue
                         
-                            tmp_cost = ia + ask_sense_distance # + return_distance
+                            tmp_cost = ia + ask_sense_distance #sensing cost is the addition of going towards the agent and then to the object we are requesting to be sensed # + return_distance
                             ask_sensing_cost[robot_range[ia_idx]] = tmp_cost
                             distance_object_agent[robot_range[ia_idx]] = ask_sense_distance
                         else:
                             not_available.append(robot_range[ia_idx])
                 
                     
-                    for robo_idx in range(len(robotState.item_estimates[ob_idx])):
-                        if robo_idx not in not_available and (robotState.item_estimates[ob_idx][robo_idx]["item_danger_level"] != 0 or robo_idx in pickup_not_available): # or (robo_idx in self.sense_request_time.keys() and time.time() - self.sense_request_time[robo_idx][0] < self.sense_request_time[robo_idx][1]):
+                    for robo_idx in range(len(robotState.item_estimates[ob_idx])): #Check if we already have an estimate for that object from specific agents
+                        if robo_idx not in not_available and (robotState.item_estimates[ob_idx][robo_idx]["item_danger_level"] != 0): # or robo_idx in pickup_not_available): # or (robo_idx in self.sense_request_time.keys() and time.time() - self.sense_request_time[robo_idx][0] < self.sense_request_time[robo_idx][1]):
                             not_available.append(robo_idx)
                                 
-                    if robotState.item_estimates[ob_idx][-1]["item_danger_level"] != 0:
+                    if robotState.item_estimates[ob_idx][-1]["item_danger_level"] != 0: #Check also if we already sensed the objects ourselve
                         not_available.append(len(robotState.robots))
                     
                     possible_actions[ob_idx]["sensing"] = {}
@@ -2557,12 +2569,12 @@ class DecisionControl:
                     actual_combinations = []
                     
                     #print("Not available", not_available)
-                    for comb in all_robot_combinations:
+                    for comb in all_robot_combinations: #For all possible sequences where we move sequentially to a subset of the agents
                         comb_cost = 0
                         
-                        if not any(el in not_available or el in sensing_excluded for el in comb):
+                        if not any(el in not_available or el in sensing_excluded for el in comb): #If no agent in that subset has not been excluded
                             actual_combinations.append(comb)
-                            if not (len(comb) == 1 and len(robotState.robots) in comb):
+                            if not (len(comb) == 1 and len(robotState.robots) in comb): #If it's not us only the ones in that combination
                                 
                                 for elem_idx,elem in enumerate(comb):
                                 
@@ -2571,18 +2583,18 @@ class DecisionControl:
                                         
                                     if not elem_idx: 
                                         try:
-                                            comb_cost += ask_sensing_cost[elem]
+                                            comb_cost += ask_sensing_cost[elem] #Add the costs of going towards that robot and requesting help
                                         except:
                                             pdb.set_trace()
                                     else:
-                                        comb_cost += distance_object_agent[elem]*2
+                                        comb_cost += distance_object_agent[elem]*2 #Add the cost of reaching towards that agent
                             
                                 
-                            comb_cost += pickup_cost
+                            comb_cost += pickup_cost #Add the cost of actually picking the object
                             possible_actions[ob_idx]["sensing"][comb] = comb_cost
                         
                     
-                    if ob["item_danger_level"] and "pickup" in possible_actions[ob_idx]: #If we have a sensing value        
+                    if ob["item_danger_level"] and "pickup" in possible_actions[ob_idx]: #If we already have an estimation of the danger level of the object, create the decision network to compute the costs of picking that object 
                             
                         diag = gum.InfluenceDiagram()
 
@@ -2619,7 +2631,7 @@ class DecisionControl:
                         ie.makeInference() 
                         utility["pickup_" + str(ob_idx)] = ie.MEU()["mean"]
                     
-                    for s_comb in possible_actions[ob_idx]["sensing"].keys():
+                    for s_comb in possible_actions[ob_idx]["sensing"].keys(): #Now for sensing the object compute the decision network 
                     
                         if s_comb:
                         
@@ -2718,20 +2730,18 @@ class DecisionControl:
                             utility["sense_" + str(ob_idx) + "_" + utility_str] = ie.MEU()["mean"]
                             
                             
-        else:
+        else: #If there is no possible action to do, just wait
             utility["wait"] = 100                    
         
         unexplored = np.where(robotState.latest_map == -2)
-        
-        
-        explored = round((robotState.latest_map.size-unexplored[0].size)/robotState.latest_map.size,2)
+        explored = round((robotState.latest_map.size-unexplored[0].size)/robotState.latest_map.size,2) #calculate the utility of exploring the area
         
         if explored < 1:
             utility["explore"] = math.exp(-2*explored)*100
         
         max_utility = 0
         max_utility_key = ""
-        for uk in utility.keys():
+        for uk in utility.keys(): #get the action with the highest utility
             if utility[uk] > max_utility: #and uk != self.past_decision:
                 max_utility = utility[uk]
                 max_utility_key = uk
@@ -2740,32 +2750,33 @@ class DecisionControl:
         
         tmp_finish = False
         
-        if "sense" in max_utility_key:
+        if "sense" in max_utility_key: #If a sensing action is the highest utility action
             sense_args = max_utility_key.split("_")
             object_id = list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(int(sense_args[1]))]
             
-            if self.movement.help_status == self.movement.HelpState.being_helped and self.helping_type == self.HelpType.carrying:
+            if self.movement.help_status == self.movement.HelpState.being_helped and self.helping_type == self.HelpType.carrying: #Cancel cooperation if previous help was from picking an object
                 _,self.message_text,self.action_index = self.movement.cancel_cooperation(self.State.decision_state,self.message_text, message=MessagePattern.carry_help_finish())
                 
             
-            if int(sense_args[2]) == len(robotState.robots):
+            if int(sense_args[2]) == len(robotState.robots): #If we don't need help, just sense object
                 function_output = "sense_object('" + object_id + "'," + str([]) + ")"
-            else:
+            else: #If we need help, go towards agent and ask for help
                 agent_id = list(info['robot_key_to_index'].keys())[list(info['robot_key_to_index'].values()).index(int(sense_args[2]))]
                 function_output = "ask_for_sensing('" + object_id + "','" + agent_id + "')"
                 wait_time = random.randrange(self.ask_info_time_limit,self.help_time_limit2)
-                self.help_request_time[int(sense_args[2])] = [time.time(), wait_time]
+                self.help_request_time[int(sense_args[2])] = [time.time(), wait_time] #We will not be able to request help again from this agent until some time passes
                 
-        elif "pickup" in max_utility_key:
+        elif "pickup" in max_utility_key: #If a pickup action is the highest utility action
             pickup_args = max_utility_key.split("_")
             
             ob_idx = int(pickup_args[1])
             object_id = list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(ob_idx)]
             
-            if self.movement.help_status == self.movement.HelpState.being_helped:
-                if self.helping_type == self.HelpType.sensing:
+            if self.movement.help_status == self.movement.HelpState.being_helped: #If already being helped
+            
+                if self.helping_type == self.HelpType.sensing: #Cancel help if we requested help only for sensing
                     _,self.message_text,self.action_index = self.movement.cancel_cooperation(self.State.decision_state,self.message_text, message=MessagePattern.carry_help_finish())
-                elif self.helping_type == self.HelpType.carrying and len(self.movement.help_status_info[0]) > robotState.items[ob_idx]["item_weight"]-1:
+                elif self.helping_type == self.HelpType.carrying and len(self.movement.help_status_info[0]) > robotState.items[ob_idx]["item_weight"]-1: #If we have more agents than needed, reject some of them
                     remove = len(self.movement.help_status_info[0]) - robotState.items[ob_idx]["item_weight"]-1
                     
                     for r in range(remove-1,-1,-1):
@@ -2774,9 +2785,9 @@ class DecisionControl:
             
             print("OBJECT TO CARRY:", robotState.items[ob_idx]["item_danger_level"], robotState.items[ob_idx]["item_danger_confidence"])
             
-            if robotState.items[ob_idx]["item_weight"] == 1 or (robotState.items[ob_idx]["item_weight"] > 1 and self.movement.help_status == self.movement.HelpState.being_helped and len(self.movement.help_status_info[0]) == robotState.items[ob_idx]["item_weight"]-1):
+            if robotState.items[ob_idx]["item_weight"] == 1 or (robotState.items[ob_idx]["item_weight"] > 1 and self.movement.help_status == self.movement.HelpState.being_helped and len(self.movement.help_status_info[0]) == robotState.items[ob_idx]["item_weight"]-1): #If we can pickup alone the object or we already have enough agents helping
                 function_output = "collect_object('" + object_id + "')"
-            else:
+            else: #Otherwise let's ask for help
                 try:
                     robot_id = list(info['robot_key_to_index'].keys())[list(info['robot_key_to_index'].values()).index(possible_actions[ob_idx]["pickup_args"])]
                 except:
@@ -2784,18 +2795,19 @@ class DecisionControl:
                 function_output = "ask_for_help('" + object_id + "','" + robot_id + "')"
                 wait_time = random.randrange(self.ask_info_time_limit,self.help_time_limit2)
                 self.help_request_time[possible_actions[ob_idx]["pickup_args"]] = [time.time(), wait_time]
-        elif "explore" in max_utility_key:
+                
+        elif "explore" in max_utility_key: #If exploring is the highest utility action
         
             if self.movement.help_status == self.movement.HelpState.being_helped:
                 _,self.message_text,self.action_index = self.movement.cancel_cooperation(self.State.decision_state,self.message_text, message=MessagePattern.carry_help_finish())
         
             function_output = "explore()"
             
-        elif "wait" in max_utility_key:
+        elif "wait" in max_utility_key: #If we should wait instead
         
             function_output = "wait()"
             
-        else: ##waiting location
+        else: #otherwise let's go to the final meeting place
             true_ending_locations = [loc for loc in self.ending_locations if self.occMap[loc[0],loc[1]] == 0 or self.occMap[loc[0],loc[1]] == -2]
             
             target_location = random.choice(true_ending_locations)  
@@ -2811,7 +2823,7 @@ class DecisionControl:
             tmp_finish = True
             
         
-        if not tmp_finish and self.finished:
+        if not tmp_finish and self.finished: #If we haven't finished yet, say so
             self.finished = False
             self.message_text += MessagePattern.finish_reject()
             

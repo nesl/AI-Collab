@@ -12,9 +12,14 @@ from string import Formatter
 
 class Human2AIText:
 
-    def __init__(self, agent_id):
+    def __init__(self, env):
     
         self.openai = False
+        
+        agent_id = env.robot_id
+        
+        self.agent_names = list(env.robot_key_to_index.keys())
+        self.agent_names.append(agent_id)
             
         if self.openai:
             openai.api_key = os.getenv("OPENAI_API_KEY")
@@ -27,7 +32,7 @@ class Human2AIText:
 
         self.START_SYS = "<<SYS>>"
         self.END_SYS = "<</SYS>>"
-        self.noop = "Nothing"
+        self.noop = "No message matches"
 
 
         self.CNL_MESSAGES = {
@@ -417,11 +422,15 @@ Write at least 3 possible variations of the phrase and put them inside a list.[/
                         
                     #Format check
                     if "location" in extracted_json:
-                        if not re.search('\(-?\d+\.\d+,-?\d+\.\d+\)',extracted_json["location"]) and re.search('\(-?\d+,-?\d+)',extracted_json["location"]):
+                        if not re.search('\(-?\d+\.\d+,-?\d+\.\d+\)',extracted_json["location"]) and re.search('\(-?\d+,-?\d+\)',extracted_json["location"]):
                             location_split = extracted_json["location"].split(',')
                             extracted_json["location"] = location_split[0] + '.0,' + location_split[1][:-1] + '.0)'
                         else:
                             return 'Argument doesn\'t have the correct format',5
+                    if "agent_id" in extracted_json:
+                        if not any([True if extracted_json["agent_id"].strip() == agent_name else False for agent_name in self.agent_names]):
+                            return 'Argument doesn\'t have the correct format',5
+                            
                             
                     
                             
@@ -561,9 +570,11 @@ Write at least 3 possible variations of the phrase and put them inside a list.[/
                         elif result_err == 4:
                             message_to_user = True
                             #self.previous_query = text
+                    """
                     elif result_str == self.noop:
                         message_to_user = True
                         result_str = self.free_response(text,True)
+                    """
               
                     break
                     
