@@ -807,7 +807,7 @@ class Movement:
         
             template_match = True
             
-            if self.help_status == self.HelpState.helping and self.help_status_info[0][0] == rm[0]: #self.helping and self.helping[0] == rm[0]:
+            if (self.help_status == self.HelpState.helping or (self.help_status == self.HelpState.being_helped and sensing)) and self.help_status_info[0][0] == rm[0]: #self.helping and self.helping[0] == rm[0]:
                 #self.accepted_help = ""
                 action_index = initial_state
                 print("Changed -3")

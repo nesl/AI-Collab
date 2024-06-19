@@ -44,8 +44,8 @@ class Human2AIText:
             "Help sense object": "Hey {agent_id}, can you help me sense object {object_id} in location {location}, last seen at {time}. ",
             "Help carry object": "I need {agent_count} more robots to help carry object {object_id}. ",
             "Reject help from agent": "Nevermind {agent_id}. ",
-            "Follow": "Thanks, I'll follow you {agent_id}. ",
-            "Be followed": "Thanks, follow me {agent_id}. ",
+            "Follow someone": "Thanks, I'll follow you {agent_id}. ",
+            "Be followed by someone": "Thanks, follow me {agent_id}. ",
             "Cancel help request": "Nevermind. ",
             "End collaboration": "No need for more help. ",
             "Accept request for help": "I can help you {agent_id}. ",
@@ -372,7 +372,7 @@ Write at least 3 possible variations of the phrase and put them inside a list.[/
                             extracted_json["agent_count"] = 1
                       
                     if "agent_id" in arguments_format and "agent_id" not in list(extracted_json.keys()):
-                        if action == "Ask about agent" or action == "Agent information" or action == "No knowledge of agent" or action == "Follow" or action == "Be followed" or action == "Request to move":
+                        if action == "Ask about agent" or action == "Agent information" or action == "No knowledge of agent" or action == "Follow someone" or action == "Be followed by someone" or action == "Request to move":
                             missing_arguments.append("Which agent are you referring to? ")
                         else:
                             extracted_json["agent_id"] = self.agent_id

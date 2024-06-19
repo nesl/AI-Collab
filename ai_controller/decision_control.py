@@ -37,8 +37,10 @@ class DecisionControl:
         
         if not all(robot[1] for robot in env.neighbors_info): #Check if there are human peers
             self.ask_info_time_limit = 28
+            self.non_request = 60
         else:
             self.ask_info_time_limit = 10
+            self.non_request = 10
 
         self.other_agents = [self.Other_Agent() for r in range(len(self.env.map_config['all_robots']))]
         
@@ -258,6 +260,12 @@ class DecisionControl:
                                 grid_location = self.movement.help_status_info[5]
                                 
                                 self.create_action_function("sense_by_request('" + object_id + "','" + rm[0] + "'," + str(grid_location) + ")")
+                                
+                    elif self.movement.help_status == self.movement.HelpState.no_request:
+                        if MessagePattern.follow(self.env.robot_id) in rm[1]:
+                            self.message_text += "Why do you want me to follow you? "
+                        elif MessagePattern.following(self.env.robot_id) in rm[1]:
+                            self.message_text += "Why do you want to follow me? "
                         
                         
                 elif MessagePattern.carry_help_cancel() in rm[1]:
@@ -2428,11 +2436,27 @@ class DecisionControl:
         sensing_excluded = []
         if "role" in self.team_structure:
             for teammate in self.team_structure["role"].keys():
+            
+                if teammate == self.env.robot_id:
+                    continue
+            
                 teammate_idx = info['robot_key_to_index'][teammate]
-                if self.team_structure["role"][teammate] == "sensing" or (teammate_idx in self.help_request_time.keys() and time.time() - self.help_request_time[teammate_idx][0] < self.help_request_time[teammate_idx][1]): #If you are only sensing, you cannot ask others to pickup objects. If an agent has previously been requested help, wait some time until we take it into consideration again
+                
+                if self.team_structure["role"][teammate] == "sensing": #If you are only sensing, you cannot ask others to pickup objects. 
                     pickup_excluded.append(teammate_idx)
                 elif self.team_structure["role"][teammate] == "lifter": #If you are only lifting, you cannot ask others to sense objects
                     sensing_excluded.append(teammate_idx)
+                   
+        
+        for teammate_idx in range(len(robotState.robots)): 
+                   
+            if teammate_idx in self.help_request_time.keys() and time.time() - self.help_request_time[teammate_idx][0] < self.help_request_time[teammate_idx][1]: #If an agent has previously been requested help, wait some time until we take it into consideration again
+                if teammate_idx not in pickup_excluded:
+                    pickup_excluded.append(teammate_idx)
+                        
+                if teammate_idx not in sensing_excluded:
+                    sensing_excluded.append(teammate_idx)
+                   
                 
         if "role" in self.team_structure and self.team_structure["role"][self.env.robot_id] == "lifter": #If you are only lifting, exclude yourself from sensing
             sensing_excluded.append(len(robotState.robots))    
@@ -2553,7 +2577,7 @@ class DecisionControl:
                             tmp_cost = ia + ask_sense_distance #sensing cost is the addition of going towards the agent and then to the object we are requesting to be sensed # + return_distance
                             ask_sensing_cost[robot_range[ia_idx]] = tmp_cost
                             distance_object_agent[robot_range[ia_idx]] = ask_sense_distance
-                        else:
+                        else: #if agent is not reachable
                             not_available.append(robot_range[ia_idx])
                 
                     
@@ -2763,7 +2787,7 @@ class DecisionControl:
             else: #If we need help, go towards agent and ask for help
                 agent_id = list(info['robot_key_to_index'].keys())[list(info['robot_key_to_index'].values()).index(int(sense_args[2]))]
                 function_output = "ask_for_sensing('" + object_id + "','" + agent_id + "')"
-                wait_time = random.randrange(self.ask_info_time_limit,self.help_time_limit2)
+                wait_time = random.randrange(self.non_request,self.non_request+20)
                 self.help_request_time[int(sense_args[2])] = [time.time(), wait_time] #We will not be able to request help again from this agent until some time passes
                 
         elif "pickup" in max_utility_key: #If a pickup action is the highest utility action
@@ -2793,7 +2817,7 @@ class DecisionControl:
                 except:
                     pdb.set_trace()
                 function_output = "ask_for_help('" + object_id + "','" + robot_id + "')"
-                wait_time = random.randrange(self.ask_info_time_limit,self.help_time_limit2)
+                wait_time = random.randrange(self.non_request,self.non_request+20)
                 self.help_request_time[possible_actions[ob_idx]["pickup_args"]] = [time.time(), wait_time]
                 
         elif "explore" in max_utility_key: #If exploring is the highest utility action
