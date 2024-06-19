@@ -182,19 +182,19 @@ History of messages: [{'Sender': 'Agent D', 'Message': 'Hi everyone'}]
 New message: {'Sender': 'Agent B', 'Message': 'hi'}
 Who is Agent B replying to? Output a JSON.[/INST]
 
->> {"reply_to": "Agent D"}
+>> {"reply_to": ["Agent D"]}
 
 </s><s>[INST]History of messages: [{'Sender': 'Agent A', 'Message': 'Hey C'}, {'Sender': 'Agent A', 'Message': 'A do you have more info'}]
 New message: {'Sender': 'Agent C', 'Message': 'Need help?'}
 Who is Agent C replying to? Output a JSON.[/INST]
 
->> {"reply_to": "Agent A"}
+>> {"reply_to": ["Agent A"]}
 
 </s><s>[INST]History of messages: [{'Sender': 'Agent B', 'Message': 'hello'}, {'Sender': 'Agent C', 'Message': 'hi'}, {'Sender': 'Agent D', 'Message': 'Hello everyone'}]
 New message: {'Sender': 'Agent D', 'Message': 'Do we want to try a different strategy today'}
 Who is Agent D replying to? Output a JSON.[/INST]
 
->> {"reply_to": "Everyone"}
+>> {"reply_to": ["Everyone"]}
 
 """
         
@@ -394,15 +394,15 @@ Write at least 3 possible variations of the phrase and put them inside a list.[/
                                 if info and extracted_json["object_id"] in info["object_key_to_index"].keys():
                                     ob_idx = info["object_key_to_index"][extracted_json["object_id"]]
                                     if items[ob_idx]["item_location"][0] == -1 and items[ob_idx]["item_location"][1] == -1:
-                                        missing_arguments.append("I need its coordinate location. Can you provide it please? ")
+                                        missing_arguments.append("I need the coordinate location. ")
                                     else:
                                         extracted_json["location"] = "(99.99,99.99)"
                                 else:
-                                    missing_arguments.append("I need its coordinate location. Can you provide it please? ")
+                                    missing_arguments.append("I need the coordinate location. ")
                                 
                         
                         else:
-                            missing_arguments.append("I need its coordinate location. Can you provide it please? ")
+                            missing_arguments.append("I need the coordinate location. ")
                     
                     if "danger" in arguments_format:
                         if "danger" not in list(extracted_json.keys()):
@@ -440,7 +440,8 @@ Write at least 3 possible variations of the phrase and put them inside a list.[/
                         missing_string = "I need some more information. "
                         for m_str in missing_arguments:
                             missing_string += m_str
-                            
+                        
+                        missing_string += "Please provide such information and ask again. "
                         return missing_string,4
                         
                     
@@ -466,10 +467,15 @@ Write at least 3 possible variations of the phrase and put them inside a list.[/
         
         result_err = 0
         
-        response = eval(llm_answer[open_k:close_k+1])
-        print(response, response["reply_to"] == 'Agent ' + self.agent_id, response["reply_to"].upper() == self.agent_id, response["reply_to"] == 'Everyone', len(list(message_history)) == 1)
+        try:
+            response = eval(llm_answer[open_k:close_k+1])
+        except:
+            print("Error reply")
+            return "", False   
         
-        if response["reply_to"] == 'Agent ' + self.agent_id or response["reply_to"].upper() == self.agent_id or response["reply_to"] == 'Everyone' or len(list(message_history)) == 1:
+        print(response, 'Agent ' + self.agent_id in response["reply_to"], self.agent_id in [agent.upper() for agent in response["reply_to"]], 'Everyone' in response["reply_to"], len(list(message_history)) == 1)
+        
+        if 'Agent ' + self.agent_id in response["reply_to"] or self.agent_id in [agent.upper() for agent in response["reply_to"]]  or 'Everyone' in response["reply_to"] or len(list(message_history)) == 1:
 
             max_retries = 3
             retries = -1
