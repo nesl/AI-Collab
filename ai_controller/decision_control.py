@@ -2801,7 +2801,7 @@ class DecisionControl:
                 if self.helping_type == self.HelpType.sensing: #Cancel help if we requested help only for sensing
                     _,self.message_text,self.action_index = self.movement.cancel_cooperation(self.State.decision_state,self.message_text, message=MessagePattern.carry_help_finish())
                 elif self.helping_type == self.HelpType.carrying and len(self.movement.help_status_info[0]) > robotState.items[ob_idx]["item_weight"]-1: #If we have more agents than needed, reject some of them
-                    remove = len(self.movement.help_status_info[0]) - robotState.items[ob_idx]["item_weight"]-1
+                    remove = len(self.movement.help_status_info[0]) - (robotState.items[ob_idx]["item_weight"]-1)
                     
                     for r in range(remove-1,-1,-1):
                         self.message_text += MessagePattern.carry_help_reject(self.movement.help_status_info[0][r])

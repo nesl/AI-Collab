@@ -3002,9 +3002,11 @@ class Simulation(Controller):
                             self.previous_scenario = self.scenario
                             self.scenario = 1
                             self.reset = True
-                            self.timer_limit = 0
-                            self.waiting = True #When is this necessary
-                            self.enable_logs = False
+                            
+                            if len(self.user_magnebots) > 0:
+                                self.timer_limit = 0
+                                self.waiting = True #When is this necessary
+                                self.enable_logs = False
                         else:
                             self.enable_logs = False
                             self.timer_limit = 0   
