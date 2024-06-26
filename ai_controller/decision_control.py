@@ -2447,15 +2447,28 @@ class DecisionControl:
                 elif self.team_structure["role"][teammate] == "lifter": #If you are only lifting, you cannot ask others to sense objects
                     sensing_excluded.append(teammate_idx)
                    
-        
-        for teammate_idx in range(len(robotState.robots)): 
-                   
-            if teammate_idx in self.help_request_time.keys() and time.time() - self.help_request_time[teammate_idx][0] < self.help_request_time[teammate_idx][1]: #If an agent has previously been requested help, wait some time until we take it into consideration again
+
+        already_requested = False        
+        for teammate_idx in range(len(robotState.robots)): #If an agent has previously been requested help, wait some time until we take it into consideration again
+            
+            if teammate_idx in self.help_request_time.keys() and time.time() - self.help_request_time[teammate_idx][0] < self.help_request_time[teammate_idx][1]: 
                 if teammate_idx not in pickup_excluded:
                     pickup_excluded.append(teammate_idx)
                         
                 if teammate_idx not in sensing_excluded:
                     sensing_excluded.append(teammate_idx)
+                    
+                    
+                already_requested = True
+                
+        if already_requested: #Include everyone if already requested help
+            for teammate_idx in range(len(robotState.robots)):
+                if teammate_idx not in pickup_excluded:
+                    pickup_excluded.append(teammate_idx)
+                        
+                if teammate_idx not in sensing_excluded:
+                    sensing_excluded.append(teammate_idx)
+                
                    
                 
         if "role" in self.team_structure and self.team_structure["role"][self.env.robot_id] == "lifter": #If you are only lifting, exclude yourself from sensing
@@ -2496,7 +2509,7 @@ class DecisionControl:
 
         
         
-        
+        pickup_ready = False
         if self.movement.help_status != self.movement.HelpState.accepted: #If we are not helping anyone
             for ob_idx,ob in enumerate(robotState.items): #For all possible objects
             
@@ -2614,11 +2627,15 @@ class DecisionControl:
                                         comb_cost += distance_object_agent[elem]*2 #Add the cost of reaching towards that agent
                             
                                 
-                            comb_cost += pickup_cost #Add the cost of actually picking the object
+                            #comb_cost += pickup_cost #Add the cost of actually picking the object
                             possible_actions[ob_idx]["sensing"][comb] = comb_cost
                         
                     
+                    
+                    
                     if ob["item_danger_level"] and "pickup" in possible_actions[ob_idx]: #If we already have an estimation of the danger level of the object, create the decision network to compute the costs of picking that object 
+                            
+                        pickup_ready = True
                             
                         diag = gum.InfluenceDiagram()
 
@@ -2645,15 +2662,15 @@ class DecisionControl:
                         #diag.utility(Pickup_Utility)[{'Pickup':0}] = [[100],[0]]
                         diag.utility(Pickup_Utility)[{'Pickup':0}] = [[0],[0]]
                         #diag.utility(Pickup_Utility)[{'Pickup':1}] = [[0],[100]]
-                        diag.utility(Pickup_Utility)[{'Pickup':1}] = [[0],[100]]
+                        diag.utility(Pickup_Utility)[{'Pickup':1}] = [[0],[1]]
 
                         diag.utility(Pickup_Cost)[{'Pickup':0}] = 0
-                        diag.utility(Pickup_Cost)[{'Pickup':1}] = -possible_actions[ob_idx]["pickup"]
+                        diag.utility(Pickup_Cost)[{'Pickup':1}] = 0#-possible_actions[ob_idx]["pickup"]
 
                         ie=gum.ShaferShenoyLIMIDInference(diag)
                         ie.addEvidence('Pickup',1)
                         ie.makeInference() 
-                        utility["pickup_" + str(ob_idx)] = ie.MEU()["mean"]
+                        utility["pickup_" + str(ob_idx)] = 100 - (1-ie.MEU()["mean"])*possible_actions[ob_idx]["pickup"]
                     
                     for s_comb in possible_actions[ob_idx]["sensing"].keys(): #Now for sensing the object compute the decision network 
                     
@@ -2737,21 +2754,21 @@ class DecisionControl:
                             #danger_est = robotState.possible_estimates[ob_idx][s_comb[0]][1]
                             diag.cpt(Estimate_Dangerous).fillWith([1-danger_est, danger_est])
 
-                            diag.utility(Pickup_Utility_2)[{'Pickup_2':0, 'Estimate_Benign':0}] = [[0],[50]]
-                            diag.utility(Pickup_Utility_2)[{'Pickup_2':0, 'Estimate_Benign':1}] = [[50],[100]]
-                            diag.utility(Pickup_Utility_2)[{'Pickup_2':1, 'Estimate_Benign':0}] = [[100],[50]]
-                            diag.utility(Pickup_Utility_2)[{'Pickup_2':1, 'Estimate_Benign':1}] = [[50],[0]]
+                            diag.utility(Pickup_Utility_2)[{'Pickup_2':0, 'Estimate_Benign':0}] = [[100],[0]]
+                            diag.utility(Pickup_Utility_2)[{'Pickup_2':0, 'Estimate_Benign':1}] = [[0],[0]]
+                            diag.utility(Pickup_Utility_2)[{'Pickup_2':1, 'Estimate_Benign':0}] = [[0],[0]]
+                            diag.utility(Pickup_Utility_2)[{'Pickup_2':1, 'Estimate_Benign':1}] = [[0],[100]]
 
                             diag.utility(Pickup_Cost_2)[{'Pickup_2':0}] = 0
-                            diag.utility(Pickup_Cost_2)[{'Pickup_2':1}] = -possible_actions[ob_idx]["sensing"][s_comb]
+                            diag.utility(Pickup_Cost_2)[{'Pickup_2':1}] = 0#-possible_actions[ob_idx]["sensing"][s_comb]
 
                             ie=gum.ShaferShenoyLIMIDInference(diag)
-                            ie.addEvidence('Pickup_2',1)
+                            #ie.addEvidence('Pickup_2',1)
                             ie.makeInference()
                             
                             
                             
-                            utility["sense_" + str(ob_idx) + "_" + utility_str] = ie.MEU()["mean"]
+                            utility["sense_" + str(ob_idx) + "_" + utility_str] = 100 - (1-(abs(benign_est - (1-danger_est)) + (abs(danger_est - (1-danger_est)) + abs(benign_est - (1-benign_est)))/2)/2)*possible_actions[ob_idx]["sensing"][s_comb] #ie.MEU()["mean"]
                             
                             
         else: #If there is no possible action to do, just wait
@@ -2762,6 +2779,8 @@ class DecisionControl:
         
         if explored < 1:
             utility["explore"] = math.exp(-2*explored)*100
+            
+        utility['end'] = (pow(100000,info['time']/self.env.map_config['timer_limit']) - 1)/(100000-1)
         
         max_utility = 0
         max_utility_key = ""
@@ -2773,6 +2792,11 @@ class DecisionControl:
         function_output = ""
         
         tmp_finish = False
+        
+        #if pickup_ready:
+        #    pdb.set_trace()
+            
+        
         
         if "sense" in max_utility_key: #If a sensing action is the highest utility action
             sense_args = max_utility_key.split("_")

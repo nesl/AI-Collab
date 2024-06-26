@@ -739,7 +739,10 @@ class Movement:
                         elif self.help_status == self.HelpState.asking:
                             message_text += MessagePattern.carry_help_participant_reject_asking()    
                         elif self.help_status_info[0]:
-                            message_text += MessagePattern.carry_help_participant_reject_other(self.help_status_info[0][0])
+                            if self.help_status == self.HelpState.being_helped:
+                                message_text += MessagePattern.carry_help_participant_reject_helping(self.help_status_info[0][0])
+                            else:
+                                message_text += MessagePattern.carry_help_participant_reject_other(self.help_status_info[0][0])
                             
                             
                             

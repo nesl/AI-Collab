@@ -341,6 +341,14 @@ class MessagePattern:
         return "I'm already helping (\w+)"    
         
     @staticmethod
+    def carry_help_participant_reject_helping(robot_id):
+        return str(robot_id) + "is helping me. "    
+    
+    @staticmethod
+    def carry_help_participant_reject_helping_regex():
+        return "(\w+) is helping me" 
+        
+    @staticmethod
     def carry_help_participant_reject_object():
         return "I'm carrying an object. "    
         
