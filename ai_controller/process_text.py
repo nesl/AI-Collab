@@ -422,9 +422,14 @@ Write at least 3 possible variations of the phrase and put them inside a list.[/
                         
                     #Format check
                     if "location" in extracted_json:
-                        if not re.search('\(-?\d+\.\d+,-?\d+\.\d+\)',extracted_json["location"]) and re.search('\(-?\d+,-?\d+\)',extracted_json["location"]):
-                            location_split = extracted_json["location"].split(',')
-                            extracted_json["location"] = location_split[0] + '.0,' + location_split[1][:-1] + '.0)'
+                        if re.search('\(-?\d+\.\d+,-?\d+\.\d+\)',extracted_json["location"]) or re.search('\(-?\d+,-?\d+\)',extracted_json["location"]):
+                            #location_split = extracted_json["location"].split(',')
+                            #extracted_json["location"] = location_split[0] + '.0,' + location_split[1][:-1] + '.0)'
+                            
+                            location = eval(extracted_json["location"])
+                            
+                            extracted_json["location"] = str((float(location[0]), float(location[1])))
+                            
                         elif not re.search('\(-?\d+\.\d+,-?\d+\.\d+\)',extracted_json["location"]) and not re.search('\(-?\d+,-?\d+\)',extracted_json["location"]):
                             return 'Argument location doesn\'t have the correct format',5
                     if "agent_id" in extracted_json:

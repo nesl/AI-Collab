@@ -447,7 +447,7 @@ class DecisionControl:
                     if object_id == str(self.message_info[1]):
                         self.message_info[0] = True
                         
-                    MessagePattern.parse_sensing_message(rematch, new_rm, robotState, info, self.other_agents, self.env.convert_to_grid_coordinates)
+                    MessagePattern.parse_sensing_message(rematch, new_rm, robotState, info, self.other_agents, self.env.convert_to_grid_coordinates, self.env.convert_to_real_coordinates)
                     
                     
                         
@@ -517,8 +517,10 @@ class DecisionControl:
                     robot = {"neighbor_type": -1, "neighbor_disabled": -1}
                     
                     last_seen = list(eval(rematch.group(3)))
+                    
+                    max_real_coords = self.env.convert_to_real_coordinates((robotState.latest_map.shape[0]-1, robotState.latest_map.shape[1]-1))
             
-                    if last_seen[0] == 99.99 and last_seen[1] == 99.99:
+                    if last_seen[0] > max_real_coords[0] or last_seen[1] > max_real_coords[1]: #last_seen[0] == 99.99 and last_seen[1] == 99.99:
                         robot["neighbor_location"] = [-1,-1]
                     else:
                         robot["neighbor_location"] = self.env.convert_to_grid_coordinates(last_seen)
@@ -695,7 +697,9 @@ class DecisionControl:
                             
                             location = list(eval(rematch.group(3)))
                             
-                            if location[0] == 99.99 and location[1] == 99.99:
+                            max_real_coords = self.env.convert_to_real_coordinates((robotState.latest_map.shape[0]-1, robotState.latest_map.shape[1]-1))
+                            
+                            if location[0] > max_real_coords[0] or location[1] > max_real_coords[1]:#location[0] == 99.99 and location[1] == 99.99:
                                 grid_location = [-1,-1]
                             else:
                                 grid_location = self.env.convert_to_grid_coordinates(location)
@@ -2626,7 +2630,8 @@ class DecisionControl:
                                     else:
                                         comb_cost += distance_object_agent[elem]*2 #Add the cost of reaching towards that agent
                             
-                                
+                            else:
+                                comb_cost = distance    
                             #comb_cost += pickup_cost #Add the cost of actually picking the object
                             possible_actions[ob_idx]["sensing"][comb] = comb_cost
                         
@@ -2770,6 +2775,8 @@ class DecisionControl:
                             
                             utility["sense_" + str(ob_idx) + "_" + utility_str] = 100 - (1-(abs(benign_est - (1-danger_est)) + (abs(danger_est - (1-danger_est)) + abs(benign_est - (1-benign_est)))/2)/2)*possible_actions[ob_idx]["sensing"][s_comb] #ie.MEU()["mean"]
                             
+                            #if utility_str == "4":
+                            #    pdb.set_trace()
                             
         else: #If there is no possible action to do, just wait
             utility["wait"] = 100                    

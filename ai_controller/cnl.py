@@ -402,11 +402,11 @@ class MessagePattern:
         
     @staticmethod
     def follow_response(robot_id):
-        return "I'll follow you " + str(robot_id) + " until you tell me you don't need my help anymore. "
+        return "I'll follow you " + str(robot_id) + " until you tell me you don't need my help anymore. Please don't move too far away from me so I don't lose track. "
         
     @staticmethod
     def follow_response_regex():
-        return "I'll follow you (\w+) until you tell me you don't need my help anymore"
+        return "I'll follow you (\w+) until you tell me you don't need my help anymore. Please don't move too far away from me so I don't lose track"
         
     @staticmethod
     def following_response(robot_id):
@@ -593,7 +593,7 @@ class MessagePattern:
         return "Wait, let's not end participation yet. "
         
     @staticmethod
-    def parse_sensing_message(rematch, rm, robotState, info, other_agents, convert_to_grid_coordinates):    
+    def parse_sensing_message(rematch, rm, robotState, info, other_agents, convert_to_grid_coordinates, convert_to_real_coordinates):    
         
         object_id = rematch.group(1)
         
@@ -604,7 +604,9 @@ class MessagePattern:
         
         last_seen = list(eval(rematch.group(3)))
         
-        if last_seen[0] == 99.99 and last_seen[1] == 99.99:
+        max_real_coords = convert_to_real_coordinates((robotState.latest_map.shape[0]-1, robotState.latest_map.shape[1]-1))
+        
+        if last_seen[0] > max_real_coords[0] or last_seen[1] > max_real_coords[1]: #if last_seen[0] == 99.99 and last_seen[1] == 99.99:
             item["item_location"] = [-1,-1]
         else:
             item["item_location"] = convert_to_grid_coordinates(last_seen)
