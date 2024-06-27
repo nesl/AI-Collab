@@ -2787,7 +2787,7 @@ class DecisionControl:
         if explored < 1:
             utility["explore"] = math.exp(-2*explored)*100
             
-        utility['end'] = (pow(100000,info['time']/self.env.map_config['timer_limit']) - 1)/(100000-1)
+        utility['end'] = ((pow(10000,info['time']/self.env.map_config['timer_limit']) - 1)/(10000-1))*100
         
         max_utility = 0
         max_utility_key = ""

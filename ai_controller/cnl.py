@@ -342,7 +342,7 @@ class MessagePattern:
         
     @staticmethod
     def carry_help_participant_reject_helping(robot_id):
-        return str(robot_id) + "is helping me. "    
+        return str(robot_id) + " is helping me. "    
     
     @staticmethod
     def carry_help_participant_reject_helping_regex():
@@ -386,19 +386,19 @@ class MessagePattern:
         
     @staticmethod
     def follow(robot_id):
-        return "Thanks, follow me " + str(robot_id) + ". "
+        return "Thanks, follow me " + str(robot_id) + ". Stay close to me. "
         
     @staticmethod
     def follow_regex():
-        return "Thanks, follow me (\w+)"
+        return "Thanks, follow me (\w+). Stay close to me"
         
     @staticmethod
     def following(robot_id):
-        return "Thanks, I'll follow you " + str(robot_id) + ". "
+        return "Thanks, I'll follow you " + str(robot_id) + ". Stay close to me. "
         
     @staticmethod
     def following_regex():
-        return "Thanks, I'll follow you (\w+)"
+        return "Thanks, I'll follow you (\w+). Stay close to me"
         
     @staticmethod
     def follow_response(robot_id):

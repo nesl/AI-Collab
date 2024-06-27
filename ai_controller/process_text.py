@@ -433,8 +433,12 @@ Write at least 3 possible variations of the phrase and put them inside a list.[/
                         elif not re.search('\(-?\d+\.\d+,-?\d+\.\d+\)',extracted_json["location"]) and not re.search('\(-?\d+,-?\d+\)',extracted_json["location"]):
                             return 'Argument location doesn\'t have the correct format',5
                     if "agent_id" in extracted_json:
+                        
+                        extracted_json["agent_id"] = extracted_json["agent_id"].upper()
+                        
                         if not any([True if extracted_json["agent_id"].strip() == agent_name else False for agent_name in self.agent_names]):
-                            return 'Argument agent_id doesn\'t have the correct format',5
+                            extracted_json["agent_id"] = self.agent_id
+                            #return 'Argument agent_id doesn\'t have the correct format',5
                             
                             
                     
