@@ -218,8 +218,8 @@
         
         <head><![CDATA[AI agents understand your Natural Language messages! Feel free to ask and respond to AI agents however you like through the Chat sidebar. The next is a list of possible things you can talk about.]]></head>
         
-        <list><![CDATA[<p><b>Get/offer help carry a heavy object</b></p>]]></list>
-        <list><![CDATA[<p><b>Get/offer help sense an object</b></p>]]></list>
+        <list><![CDATA[<p><b>Get/offer help carry a heavy object</b>: you first need to ask for help and then ask the agent to follow you</p>]]></list>
+        <list><![CDATA[<p><b>Get/offer help sense an object</b>: you first need to ask for help and then tell the agent you are going to follow them</p>]]></list>
         <list><![CDATA[<p><b>Ask/give information of an object/agent</b></p>]]></list>
         <list><![CDATA[<p><b>Make an agent move if it's blocking the way</b></p>]]></list>
         <list><![CDATA[<p><b>Inform your decision to end participation or not</b></p>]]></list>

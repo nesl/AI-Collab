@@ -372,7 +372,7 @@ Write at least 3 possible variations of the phrase and put them inside a list.[/
                             extracted_json["agent_count"] = 1
                       
                     if "agent_id" in arguments_format and "agent_id" not in list(extracted_json.keys()):
-                        if action == "Ask about agent" or action == "Agent information" or action == "No knowledge of agent" or action == "Follow someone" or action == "Be followed by someone" or action == "Request to move":
+                        if action == "Ask about agent" or action == "Agent information" or action == "No knowledge of agent":# or action == "Follow someone" or action == "Be followed by someone" or action == "Request to move":
                             missing_arguments.append("Which agent are you referring to? ")
                         else:
                             extracted_json["agent_id"] = self.agent_id
@@ -422,16 +422,17 @@ Write at least 3 possible variations of the phrase and put them inside a list.[/
                         
                     #Format check
                     if "location" in extracted_json:
-                        if re.search('\(-?\d+\.\d+,-?\d+\.\d+\)',extracted_json["location"]) or re.search('\(-?\d+,-?\d+\)',extracted_json["location"]):
+                        if re.search('\( *-?\d+\.\d+ *, *-?\d+\.\d+ *\)',extracted_json["location"]) or re.search('\( *-?\d+ *, *-?\d+ *\)',extracted_json["location"]):
                             #location_split = extracted_json["location"].split(',')
                             #extracted_json["location"] = location_split[0] + '.0,' + location_split[1][:-1] + '.0)'
                             
                             location = eval(extracted_json["location"])
                             
-                            extracted_json["location"] = str((float(location[0]), float(location[1])))
+                            extracted_json["location"] = str((float(location[0]), float(location[1]))).replace(" ","")
                             
                         elif not re.search('\(-?\d+\.\d+,-?\d+\.\d+\)',extracted_json["location"]) and not re.search('\(-?\d+,-?\d+\)',extracted_json["location"]):
-                            return 'Argument location doesn\'t have the correct format',5
+                            missing_arguments.append("I don't understand where is it? ")
+                            #return 'Argument location doesn\'t have the correct format',5
                     if "agent_id" in extracted_json:
                         
                         extracted_json["agent_id"] = extracted_json["agent_id"].upper()

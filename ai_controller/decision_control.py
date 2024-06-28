@@ -245,7 +245,11 @@ class DecisionControl:
                     else:
                         self.other_agents[agent_idx].observations.append("Asked " + rematch.group(1) + " to follow him")
                 """        
-                if MessagePattern.follow(self.env.robot_id) in rm[1] or MessagePattern.following(self.env.robot_id) in rm[1]:
+                
+                follow_match = re.search(MessagePattern.follow_regex(),rm[1])
+                following_match = re.search(MessagePattern.following_regex(),rm[1])
+                
+                if (follow_match and follow_match.group(1) == str(self.env.robot_id)) or (following_match and following_match.group(1) == str(self.env.robot_id)):
                     if self.movement.help_status == self.movement.HelpState.helping:
                         if self.helping_type == self.HelpType.carrying:
                             pass
@@ -262,9 +266,9 @@ class DecisionControl:
                                 self.create_action_function("sense_by_request('" + object_id + "','" + rm[0] + "'," + str(grid_location) + ")")
                                 
                     elif self.movement.help_status == self.movement.HelpState.no_request:
-                        if MessagePattern.follow(self.env.robot_id) in rm[1]:
+                        if (follow_match and follow_match.group(1) == str(self.env.robot_id)):
                             self.message_text += "Why do you want me to follow you? "
-                        elif MessagePattern.following(self.env.robot_id) in rm[1]:
+                        elif (following_match and following_match.group(1) == str(self.env.robot_id)):
                             self.message_text += "Why do you want to follow me? "
                         
                         
@@ -781,6 +785,7 @@ class DecisionControl:
             #template_match = True #CNL only
             
             if not template_match and translated_messages_index >= 0 and translated_messages_index >= rm_idx: #This means the translated message doesn't make sense
+                print("understand here 1")
                 self.message_text += "I didn't understand you " + rm[0] + ". "
                 continue
             
@@ -798,6 +803,7 @@ class DecisionControl:
                             translated_messages_index = len(received_messages)
                         received_messages.append((rm[0], translated_message, rm[2])) #Add it to the list of received messages
                 else:
+                    print("understand here 2")
                     self.message_text += "I didn't understand you " + rm[0] + ". "
    
    

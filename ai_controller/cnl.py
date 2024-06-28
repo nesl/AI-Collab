@@ -390,7 +390,7 @@ class MessagePattern:
         
     @staticmethod
     def follow_regex():
-        return "Thanks, follow me (\w+). Stay close to me"
+        return "Thanks, follow me (\w+)"
         
     @staticmethod
     def following(robot_id):
@@ -398,7 +398,7 @@ class MessagePattern:
         
     @staticmethod
     def following_regex():
-        return "Thanks, I'll follow you (\w+). Stay close to me"
+        return "Thanks, I'll follow you (\w+)"
         
     @staticmethod
     def follow_response(robot_id):
