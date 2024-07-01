@@ -20,6 +20,17 @@ from heuristic_control import HeuristicControl
 from tutorial_control import TutorialControl
 from decision_control import DecisionControl
 
+# GUANHUA Ji -------------------------------------------------------------------
+from ultralytics import YOLO
+from PIL import Image
+import math
+model = YOLO('./weights/best.pt')
+import matplotlib.pyplot as plt
+import BEV
+bird_eye_view = BEV.BEV(150, 240, 360, 0, 0, 0.75)
+ground_truth_map = None
+# GUANHUA Ji -------------------------------------------------------------------
+
 parser = argparse.ArgumentParser(
     description="AI Controller"
 )
@@ -498,10 +509,116 @@ while True:
         
         #print(info["real_location"])
 
+        # GUANHUA Ji --------------------------------------------------------------------
         if args.webcam:
-            pass
-            #cv2.imwrite("frame.jpg",info["frame"])
-            #cv2.waitKey(100) 
+            x_loc = info['real_location'][0][0]
+            y_loc = info['real_location'][0][2]
+            z_loc = info['real_location'][0][1]
+            yaw = math.radians(180 + info['real_location'][1][0])
+            pitch = math.radians(info['real_location'][1][1])
+            roll = math.radians(-90 + info['real_location'][1][2])
+            cv2.namedWindow('Webcam')
+            cv2.namedWindow('occupancy map')
+            #cv2.namedWindow('ground truth')
+            bird_eye_view.updata_camera_matrix(x_loc, y_loc, roll, pitch, yaw)
+
+            img = info["frame"]
+            if img is not None:
+                results = model(img, stream=True)
+                x_me, y_me = [x_loc], [-y_loc]
+                x_box_abs, y_box_abs = [], []
+                x_robot_abs, y_robot_abs = [], []
+
+                box_scores = []
+                robot_scores = []
+                for r in results:
+                    boxes = r.boxes
+
+                    for box in boxes:
+                        # bounding box
+                        x1, y1, x2, y2 = box.xyxy[0]
+                        x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2) # convert to int values
+                        c = box.cls
+                        # confidence
+                        confidence = math.ceil((box.conf[0]*100))/100
+                        print("Confidence --->",confidence)
+                        print("Class name -->", model.names[int(c)])
+
+                        if confidence >= 0.4:
+                            # put box in cam
+                            cv2.circle(img, (int((x1 + x2) / 2), y2), radius = 2, color = (0, 0, 255), thickness = 2)
+                            x = (x1 + x2) / 2
+                            y = 240 - y2
+                            #x_abs, y_abs, _ = BEV.get_BEV_of_complex_camera(x, y, x_loc, y_loc, yaw, pitch, roll)
+                            x_abs, y_abs, _ = bird_eye_view.get_BEV(x, y)
+                            y_abs = -y_abs
+                            x_abs, y_abs = BEV.apply_offset((x_abs, y_abs), (x_me[0], y_me[0]))
+                            if round(x_abs - 0.5) >= -10 and round(x_abs - 0.5) < 10 and round(y_abs - 0.5) >= -10 and round(y_abs - 0.5) < 10:
+                                if model.names[int(c)] == 'box':
+                                    x_box_abs.append(round(x_abs - 0.5))
+                                    y_box_abs.append(round(y_abs - 0.5))
+                                    box_scores.append(confidence)
+                                else:
+                                    x_robot_abs.append(round(x_abs - 0.5))
+                                    y_robot_abs.append(round(y_abs - 0.5))
+                                    robot_scores.append(confidence)
+                            else:
+                                print("Eliminate:", x_abs, y_abs)
+                            org = [x1, y1]
+                            font = cv2.FONT_HERSHEY_SIMPLEX
+                            fontScale = 0.5
+                            color = (255, 0, 0)
+                            thickness = 2
+                            cv2.putText(img, model.names[int(c)], org, font, fontScale, color, thickness)
+            
+                x_box_abs, y_box_abs = BEV.non_max_suppression(x_box_abs, y_box_abs, box_scores, 0.2)
+                x_robot_abs, y_robot_abs = BEV.non_max_suppression(x_robot_abs, y_robot_abs, robot_scores, 0.2)
+                #plot_abs = BEV.create_BEV_image(y_box_abs, x_box_abs, y_robot_abs, x_robot_abs, y_me, x_me)
+
+                occupancy_map = bird_eye_view.get_visibility_map(-10, 10, -10, 10)
+                for x_box, y_box in zip(x_box_abs, y_box_abs):
+                    x_box += 10
+                    y_box += 10
+                    y_box = 19 - y_box
+                    occupancy_map[x_box, y_box] = 2
+                for x_robot, y_robot in zip(x_robot_abs, y_robot_abs):
+                    x_robot += 10
+                    y_robot += 10
+                    y_robot = 19 - y_robot
+                    occupancy_map[x_robot, y_robot] = 3
+                occupancy_map[round(x_me[0] - 0.5) + 10, 9 - round(y_me[0] - 0.5)] = 5
+                BEV.visionBlocked(occupancy_map)
+                if ground_truth_map is not None:
+                    #plot_ground_truth = BEV.create_visibility_image(ground_truth_map)
+                    BEV.add_walls(occupancy_map, ground_truth_map)
+                    #cv2.imshow('ground truth', plot_ground_truth)
+                elif np.count_nonzero(next_observation['frame'] == -2) == 0:
+                    ground_truth_map = next_observation['frame'].copy()
+
+                plot_occupancy_map = BEV.create_visibility_image(occupancy_map)
+                cv2.imshow('Webcam', img)
+                cv2.imshow('occupancy map', plot_occupancy_map)
+                cv2.waitKey(100)
+            else:
+                print("No Image")
+            #if next_observation['action_status'][2]
+            #next_observation['frame'] = occupancy_map
+            #print(next_observation['frame'])
+            '''
+            count += 1
+            if count % 10 == 0:
+                filename = f"frames/frame{count}.jpg"
+                success = cv2.imwrite(filename,info["frame"])
+                if success:
+                    print("successfully saved", filename)
+                else:
+                    print("failed")
+            '''
+
+            '''
+            cv2.waitKey(100) 
+            '''
+        # GUANHUA Ji --------------------------------------------------------------------
 
 
         if args.message_loop:
