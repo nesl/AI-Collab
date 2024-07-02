@@ -21,7 +21,7 @@ from tutorial_control import TutorialControl
 from decision_control import DecisionControl
 
 # GUANHUA Ji -------------------------------------------------------------------
-from ultralytics import YOLO
+#from ultralytics import YOLO
 from PIL import Image
 import math
 model = YOLO('./weights/best.pt')

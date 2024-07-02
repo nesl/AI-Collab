@@ -632,7 +632,7 @@ class Simulation(Controller):
             robot_id = self.robot_names_translate[str(magn.robot_id)]
             robots_type.append([robot_id,magn.controlled_by])
             
-        scenario_dict = {"scenario_size": self.scenario_size, "wall_length": self.wall_length, "walls": self.walls, "env_objects": env_objects_data, "robots_type": robots_type}
+        scenario_dict = {"scenario_size": self.scenario_size, "wall_length": self.wall_length, "walls": self.walls, "env_objects": env_objects_data, "robots_type": robots_type, "objects": self.objects_spawned}
 
 
         self.log_state_f = open(log_dir + dateTime + '_state.txt', "a")
@@ -711,8 +711,11 @@ class Simulation(Controller):
         #Create ai magnebots
         for ai_idx in range(num_ais+extra_ai_agents):  
             robot_id = self.get_unique_id()                                 
-            self.ai_magnebots.append(Enhanced_Magnebot(robot_id=robot_id, position=ai_spawn_positions[ai_idx],image_frequency=ImageFrequency.never, controlled_by='ai'))
-            #self.ai_magnebots.append(Enhanced_Magnebot(robot_id=robot_id, position=ai_spawn_positions[ai_idx],image_frequency=ImageFrequency.always, pass_masks=['_img'], controlled_by='ai'))
+            if self.options.ai_vision:
+                self.ai_magnebots.append(Enhanced_Magnebot(robot_id=robot_id, position=ai_spawn_positions[ai_idx],image_frequency=ImageFrequency.always, pass_masks=['_img'], controlled_by='ai'))
+            else:
+                self.ai_magnebots.append(Enhanced_Magnebot(robot_id=robot_id, position=ai_spawn_positions[ai_idx],image_frequency=ImageFrequency.never, controlled_by='ai'))
+            
             self.robot_names_translate[str(robot_id)] = chr(ord('A') + ai_idx + num_users)
         
         
@@ -1120,6 +1123,8 @@ class Simulation(Controller):
         self.danger_level = {} 
         self.dangerous_objects = []
         self.env_objects = []
+        
+        self.objects_spawned = []
 
         
         #self.communicate([])
@@ -1431,6 +1436,9 @@ class Simulation(Controller):
             print("Dangerous object: ", object_index, ", weight: ", required_strength)
         else:
             print("Benign object: ", object_index, ", weight: ", required_strength)
+
+
+        self.objects_spawned.append([str(object_index),required_strength,danger_level,position])
 
         return command
 
@@ -3944,6 +3952,7 @@ if __name__ == "__main__":
     parser.add_argument('--sim-binary', default='', help="Location of binary if not auto-launched")
     parser.add_argument('--no-human-test', action='store_true', help="Do not run human tests")
     parser.add_argument('--single-object', action='store_true', help="Single object")
+    parser.add_argument('--ai-vision', action='store_true', help="Activate cameras for AI agents")
     
     
     

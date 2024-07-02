@@ -324,6 +324,14 @@ class MessagePattern:
         return "I'm already helping you (\w+)"
         
     @staticmethod
+    def carry_help_participant_asking(robot_id):
+        return "I'm asking you " + str(robot_id) + ". "    
+    
+    @staticmethod
+    def carry_help_participant_asking_regex():
+        return "I'm asking you (\w+)"
+        
+    @staticmethod
     def carry_help_participant_affirm_being_helped(robot_id):
         return "You are helping me " + str(robot_id) + ". "    
     
@@ -589,8 +597,16 @@ class MessagePattern:
         return "Let's end participation. "
         
     @staticmethod
+    def finish_regex():
+        return "Let's end participation"
+        
+    @staticmethod
     def finish_reject():
         return "Wait, let's not end participation yet. "
+        
+    @staticmethod
+    def finish_reject_regex():
+        return "Wait, let's not end participation yet"
         
     @staticmethod
     def parse_sensing_message(rematch, rm, robotState, info, other_agents, convert_to_grid_coordinates, convert_to_real_coordinates):    

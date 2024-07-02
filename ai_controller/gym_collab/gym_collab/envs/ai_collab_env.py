@@ -803,6 +803,7 @@ class AICollabEnv(gym.Env):
         self.internal_state = [self.State.take_action, self.State.take_sensing_action]
         self.internal_data = {}
         self.object_info = []
+        self.object_key_to_index = {}
         self.neighbors_info = [[um[0], 0 if um[1] == 'human' else 1,0,0,-1,False] for um in self.map_config['all_robots'] if um[0] != self.robot_id]
         self.robot_key_to_index = {self.neighbors_info[i][0]:i for i in range(len(self.neighbors_info))}
         self.own_neighbors_info_entry = [self.robot_id, 1, 0, 0, -1, False]
@@ -1512,6 +1513,7 @@ class AICollabEnv(gym.Env):
 
             self.object_info.append([object_key,int(weight),danger_data,float(position[0]),float(position[1]),float(timer)])
             self.object_key_to_index[object_key] = len(self.object_info)-1
+
           
     #When receiving info about robots, update your internal representation  
     def update_neighbors_info(self, agent_key, timer, position, disabled, convert_coordinates):

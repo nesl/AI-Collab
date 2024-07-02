@@ -253,7 +253,7 @@ class Movement:
                 
         return True
 
-    def go_to_location(self, x, y, occMap, robotState, info, ego_location, action_index, end=False,checking=False):
+    def go_to_location(self, x, y, occMap, robotState, info, ego_location, action_index, end=False,checking=False, help_sensing=False):
         
         message_text = ""
         
@@ -289,7 +289,7 @@ class Movement:
                     rb = robotState.robots[rb_idx]["neighbor_location"]
                     
                     if not (rb[0] == -1 and rb[1] == -1):
-                        if self.help_status == self.HelpState.helping and rb == helping_robot_location: #Do not ignore the robot you are helping out
+                        if (self.help_status == self.HelpState.helping and not help_sensing) and rb == helping_robot_location: #Do not ignore the robot you are helping out
                             continue
                             
                         occMap_clean[rb[0],rb[1]] = 0
@@ -320,7 +320,7 @@ class Movement:
                     
                     for rb_idx in self.ignore_robots:
                         rb = robotState.robots[rb_idx]["neighbor_location"]
-                        if not (rb[0] == -1 and rb[1] == -1) and (allowed_robots_blocking[0] == -1 or (allowed_robots_blocking[0] > -1 and rb not in robot_combinations[allowed_robots_blocking[0]])) and not (self.help_status == self.HelpState.helping and rb == helping_robot_location): #If the robot is not in the combination, move it
+                        if not (rb[0] == -1 and rb[1] == -1) and (allowed_robots_blocking[0] == -1 or (allowed_robots_blocking[0] > -1 and rb not in robot_combinations[allowed_robots_blocking[0]])) and not (self.help_status == self.HelpState.helping and not help_sensing and rb == helping_robot_location): #If the robot is not in the combination, move it
                             #order_robots.append(rb)
                             for nrobot_idx in range(len(robotState.robots)):
 
@@ -729,6 +729,8 @@ class Movement:
                         
                         if self.help_status == self.HelpState.being_helped:
                             message_text += MessagePattern.carry_help_participant_affirm_being_helped(rm[0])
+                        elif self.help_status == self.HelpState.asking:
+                            message_text += MessagePattern.carry_help_participant_asking(rm[0])
                         else:
                             message_text += MessagePattern.carry_help_participant_affirm(rm[0])
                     else:
@@ -1099,7 +1101,7 @@ class Movement:
     
             
             
-    def message_processing_move_request(self, rm, robotState, info, action_index, message_text, other_agents):
+    def message_processing_move_request(self, rm, robotState, info, action_index, message_text, other_agents, helping_sense):
     
         template_match = False
         
@@ -1110,7 +1112,7 @@ class Movement:
             agent_idx = info['robot_key_to_index'][rm[0]]
             other_robot_location = robotState.robots[agent_idx]["neighbor_location"]
             
-            if not (other_robot_location[0] == -1 and other_robot_location[1] == -1) and ((not robotState.object_held and not self.help_status == self.HelpState.being_helped and (not self.help_status == self.HelpState.helping or (self.help_status == self.HelpState.helping and (self.help_status_info[0][0] == rm[0] or rm[0] in self.help_status_info[6])))) or other_agents[agent_idx].carrying):#not self.being_helped and (not self.helping or (self.helping and self.helping[0] == rm[0])): #This condition is true only when robots have no teams and are not carrying any object
+            if not (other_robot_location[0] == -1 and other_robot_location[1] == -1) and ((not robotState.object_held and not (self.help_status == self.HelpState.being_helped and not helping_sense) and (not self.help_status == self.HelpState.helping or (self.help_status == self.HelpState.helping and (self.help_status_info[0][0] == rm[0] or rm[0] in self.help_status_info[6])))) or other_agents[agent_idx].carrying):#not self.being_helped and (not self.helping or (self.helping and self.helping[0] == rm[0])): #This condition is true only when robots have no teams and are not carrying any object
                         
                 print("MOVING pending")
                 

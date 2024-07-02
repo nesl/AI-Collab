@@ -9,6 +9,7 @@ import os
 import openai
 import time
 from string import Formatter
+from groq import Groq
 
 class Human2AIText:
 
@@ -23,6 +24,7 @@ class Human2AIText:
             
         if self.openai:
             openai.api_key = os.getenv("OPENAI_API_KEY")
+            #self.client = Groq(api_key="")
     
         self.START_INST = "[INST]"
         self.END_INST = "[/INST]"
@@ -53,8 +55,8 @@ class Human2AIText:
             "Reject request to follow/be followed": "I didn't offer my help to you {agent_id}. ",
             "Come closer": "Come closer {agent_id}. ",
             "Request to move": "Hey {agent_id}, I need you to move. ",
-            "End participation": "Let's end participation. ",
-            "Don't end participation": "Wait, let's not end participation yet. ",
+            "End the mission": "Let's end participation. ",
+            "Don't end the mission": "Wait, let's not end participation yet. ",
             "Object information": "Object {object_id} (weight: {object_weight}) Last seen in {location} at {time}. Status: {danger}, Prob. Correct: {probability}. ",
             "Agent information": "Agent {agent_id} (type: {agent_type}) Last seen in {location} at {time}. ",
             "Not relevant": self.noop
@@ -265,6 +267,7 @@ Write at least 3 possible variations of the phrase and put them inside a list.[/
 
     def make_query_openai(self, prompt):
     
+        """
         response = openai.ChatCompletion.create(
               model= "gpt-3.5-turbo", #"gpt-4", #"gpt-3.5-turbo",
               messages=[
@@ -275,6 +278,24 @@ Write at least 3 possible variations of the phrase and put them inside a list.[/
             )
 
         return response["choices"][0]["message"].get("content")
+        """
+        
+        chat_completion = self.client.chat.completions.create(
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt,
+                }
+            ],
+            model="llama3-8b-8192",
+        )
+
+        print(chat_completion.choices[0].message.content)
+        
+        
+        pdb.set_trace()
+        
+        return
 
     def build_prompt(self, sys_prompt, example_prompts, query, specific_query, message_history):
         example_prompts = list(example_prompts)

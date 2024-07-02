@@ -406,7 +406,7 @@ class DecisionControl:
                 template_match = True
                 
                 
-                self.message_text,self.action_index,_ = self.movement.message_processing_move_request(rm, robotState, info, self.action_index, self.message_text, self.other_agents)
+                self.message_text,self.action_index,_ = self.movement.message_processing_move_request(rm, robotState, info, self.action_index, self.message_text, self.other_agents, self.helping_type == self.HelpType.sensing)
                 
             if re.search(MessagePattern.move_request_regex(),rm[1]):
                 template_match = True
@@ -750,7 +750,7 @@ class DecisionControl:
             
             """
             
-            if MessagePattern.finish() in rm[1]:
+            if re.search(MessagePattern.finish_regex(),rm[1]):
             
                 template_match = True
             
@@ -758,10 +758,21 @@ class DecisionControl:
                 
                 self.other_agents[robot_idx].finished = True
                 
+                ego_location = np.where(robotState.latest_map == 5)
+                
+                #if not robotState.robots[info['robot_key_to_index'][rm[0]]]["neighbor_type"]:
+                
+                if not self.finished and "go_to_meeting_point" not in self.action_function: 
+                    self.message_text += "I haven't finished yet. "
+                elif [ego_location[0][0],ego_location[1][0]] not in self.ending_locations:
+                    self.message_text += "Let's finish. Let's go to the final meeting location, come with me. "
+                else:
+                    self.message_text += "Let's finish. "
+                
                 print("Finished other agent")
                     
                     
-            if MessagePattern.finish_reject() in rm[1]:
+            if re.search(MessagePattern.finish_reject_regex(),rm[1]): #MessagePattern.finish_reject() in rm[1]:
             
                 template_match = True
             
@@ -1220,7 +1231,7 @@ class DecisionControl:
                 loop_done = False
                 
                 if not self.previous_next_loc or (self.previous_next_loc and self.previous_next_loc[0].tolist() == [ego_location[0][0],ego_location[1][0]]):
-                    action["action"], self.next_loc, self.message_text, self.action_index = self.movement.go_to_location(self.target_location[0],self.target_location[1], self.occMap, robotState, info, ego_location, self.action_index)
+                    action["action"], self.next_loc, self.message_text, self.action_index = self.movement.go_to_location(self.target_location[0],self.target_location[1], self.occMap, robotState, info, ego_location, self.action_index, help_sensing=self.helping_type == self.HelpType.sensing)
                     
                     
                     print("HAPPENING", action["action"], self.next_loc)
@@ -1252,7 +1263,7 @@ class DecisionControl:
                         
                 if loop_done or not wait_for_others: #If carrying heavy objects, wait for others
                     
-                    action["action"], self.next_loc, self.message_text, self.action_index = self.movement.go_to_location(self.target_location[0],self.target_location[1], self.occMap, robotState, info, ego_location, self.action_index)
+                    action["action"], self.next_loc, self.message_text, self.action_index = self.movement.go_to_location(self.target_location[0],self.target_location[1], self.occMap, robotState, info, ego_location, self.action_index, help_sensing=self.helping_type == self.HelpType.sensing)
                     
                     if self.next_loc and self.previous_next_loc and not self.previous_next_loc[0].tolist() == self.next_loc[0].tolist(): #location changed
                         self.previous_next_loc = []
@@ -1610,7 +1621,7 @@ class DecisionControl:
 
         try:
             
-            low_action, self.next_loc, self.message_text, self.action_index = self.movement.go_to_location(x, y, self.occMap, robotState, info, ego_location, self.action_index)
+            low_action, self.next_loc, self.message_text, self.action_index = self.movement.go_to_location(x, y, self.occMap, robotState, info, ego_location, self.action_index, help_sensing=self.helping_type == self.HelpType.sensing)
         except:
             pdb.set_trace()
 
@@ -1846,6 +1857,7 @@ class DecisionControl:
     
         action = self.sample_action_space
         action["action"] = -1
+        action["num_cells_move"] = 1
         finished = False
         
         ego_location = np.where(robotState.latest_map == 5)
@@ -1862,13 +1874,13 @@ class DecisionControl:
                     self.message_text += MessagePattern.finish()
                     self.finished = True
                     self.told_to_finish = True
-            else:
+            else: #Only when all agents are next to each other finish
                 self.told_to_finish = False
                 
             finished = True
             action["action"] = Action.get_occupancy_map.value
         else:
-            low_action, self.next_loc, self.message_text, self.action_index = self.movement.go_to_location(target_location[0], target_location[1], self.occMap, robotState, info, ego_location, self.action_index)
+            low_action, self.next_loc, self.message_text, self.action_index = self.movement.go_to_location(target_location[0], target_location[1], self.occMap, robotState, info, ego_location, self.action_index, help_sensing=self.helping_type == self.HelpType.sensing)
 
             
             if not low_action and isinstance(low_action, list):
@@ -1980,7 +1992,7 @@ class DecisionControl:
                 robot_distance = float("inf")
             else:
             
-                _, next_locs, _, _ = self.movement.go_to_location(robotState.robots[r_idx]["neighbor_location"][0], robotState.robots[r_idx]["neighbor_location"][1], self.occMap, robotState, info, ego_location, self.action_index, checking=True)
+                _, next_locs, _, _ = self.movement.go_to_location(robotState.robots[r_idx]["neighbor_location"][0], robotState.robots[r_idx]["neighbor_location"][1], self.occMap, robotState, info, ego_location, self.action_index, checking=True, help_sensing=self.helping_type == self.HelpType.sensing)
                 robot_distance = len(next_locs)
                 
             agents_distance.append(robot_distance)
@@ -2185,7 +2197,7 @@ class DecisionControl:
             for ob_idx,ob in enumerate(robotState.items):
         
                 if not (ob["item_location"][0] == -1 and ob["item_location"][1] == -1) and tuple(ob["item_location"]) not in self.extended_goal_coords:
-                    _, next_locs, _, _ = self.movement.go_to_location(ob["item_location"][0], ob["item_location"][1], self.occMap, robotState, info, ego_location, self.action_index, checking=True)
+                    _, next_locs, _, _ = self.movement.go_to_location(ob["item_location"][0], ob["item_location"][1], self.occMap, robotState, info, ego_location, self.action_index, checking=True, help_sensing=self.helping_type == self.HelpType.sensing)
                     robot_distance = len(next_locs)
                 
                     if robot_distance:
@@ -2523,7 +2535,10 @@ class DecisionControl:
         if self.movement.help_status != self.movement.HelpState.accepted: #If we are not helping anyone
             for ob_idx,ob in enumerate(robotState.items): #For all possible objects
             
-                object_id = list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(ob_idx)]
+                try:
+                    object_id = list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(ob_idx)]
+                except:
+                    pdb.set_trace()
             
                 if object_id in self.carried_objects.values(): #If this object is being carried by someone else continue with the others
                     continue
@@ -2543,7 +2558,7 @@ class DecisionControl:
                         
                         if ob["item_weight"]-1 <= number_helping: #If we have enough helping agents to carry
                         
-                            _, next_locs, _, _ = self.movement.go_to_location(ob["item_location"][0], ob["item_location"][1], self.occMap, robotState, info, ego_location, self.action_index, checking=True)
+                            _, next_locs, _, _ = self.movement.go_to_location(ob["item_location"][0], ob["item_location"][1], self.occMap, robotState, info, ego_location, self.action_index, checking=True, help_sensing=self.helping_type == self.HelpType.sensing)
                             distance = len(next_locs)
                             
                         else: #Otherwise we also have to consider the cost of requesting help
@@ -2558,14 +2573,14 @@ class DecisionControl:
                             
                             robo_idx = cost_agents[ag_idx][0]
                             next_ego_location = np.array([[robotState.robots[robot_range[robo_idx]]["neighbor_location"][0]],[robotState.robots[robot_range[robo_idx]]["neighbor_location"][1]]])
-                            _, next_locs, _, _ = self.movement.go_to_location(ob["item_location"][0], ob["item_location"][1], self.occMap, robotState, info, next_ego_location, self.action_index, checking=True)
+                            _, next_locs, _, _ = self.movement.go_to_location(ob["item_location"][0], ob["item_location"][1], self.occMap, robotState, info, next_ego_location, self.action_index, checking=True, help_sensing=self.helping_type == self.HelpType.sensing)
                             distance = len(next_locs)
                         
                         
                         #print("pickup args", possible_actions[ob_idx]["pickup_args"])
                         
                     else: #If we can carry the object alone
-                        _, next_locs, _, _ = self.movement.go_to_location(ob["item_location"][0], ob["item_location"][1], self.occMap, robotState, info, ego_location, self.action_index, checking=True)
+                        _, next_locs, _, _ = self.movement.go_to_location(ob["item_location"][0], ob["item_location"][1], self.occMap, robotState, info, ego_location, self.action_index, checking=True, help_sensing=self.helping_type == self.HelpType.sensing)
                         distance = len(next_locs)
                     
                     if not distance: #If the distance is 0, ignore
@@ -2573,7 +2588,7 @@ class DecisionControl:
                         
                             
                     goal_location = np.array([[goal_x],[goal_y]])
-                    _, next_locs, _, _ = self.movement.go_to_location(ob["item_location"][0], ob["item_location"][1], self.occMap, robotState, info, goal_location, self.action_index, checking=True)
+                    _, next_locs, _, _ = self.movement.go_to_location(ob["item_location"][0], ob["item_location"][1], self.occMap, robotState, info, goal_location, self.action_index, checking=True, help_sensing=self.helping_type == self.HelpType.sensing)
                     return_distance = len(next_locs) #calculate distance to return to goal from object
                     
                     pickup_cost = distance + return_distance + request_cost #pickup cost is equal to adding the distance to get to the object + the distances between the agents to whom request help + the distance to move the object to the goal area
@@ -2590,7 +2605,7 @@ class DecisionControl:
                         if ia < float("inf"): #If agent is reacheable calculate distance to it
                         
                             next_ego_location = np.array([[robotState.robots[robot_range[ia_idx]]["neighbor_location"][0]],[robotState.robots[robot_range[ia_idx]]["neighbor_location"][1]]])
-                            _, next_locs, _, _ = self.movement.go_to_location(ob["item_location"][0], ob["item_location"][1], self.occMap, robotState, info, next_ego_location, self.action_index, checking=True)
+                            _, next_locs, _, _ = self.movement.go_to_location(ob["item_location"][0], ob["item_location"][1], self.occMap, robotState, info, next_ego_location, self.action_index, checking=True, help_sensing=self.helping_type == self.HelpType.sensing)
                             ask_sense_distance = len(next_locs)
                             
                             if not ask_sense_distance: #If distance is zero, ignore
@@ -2648,6 +2663,7 @@ class DecisionControl:
                             
                         pickup_ready = True
                             
+                        """
                         diag = gum.InfluenceDiagram()
 
                         Estimate=diag.addChanceNode(gum.LabelizedVariable("Estimate","Estimate",2))
@@ -2660,16 +2676,24 @@ class DecisionControl:
                         diag.addArc(Estimate,Pickup_Utility)
                         diag.addArc(Pickup,Pickup_Utility)
                         diag.addArc(Pickup,Pickup_Cost)
+                        
+                        """
+
+                        danger_percentage = 0.50
 
                         if ob["item_danger_level"] == 0:
-                            diag.cpt(Estimate).fillWith([0.70, 0.30])
+                            #diag.cpt(Estimate).fillWith([0.70, 0.30])
+                            pass
                         elif ob["item_danger_level"] == 1:
                             confidence = ob["item_danger_confidence"][0]
-                            diag.cpt(Estimate).fillWith([confidence, 1-confidence])
+                            #diag.cpt(Estimate).fillWith([confidence, 1-confidence])
+                            danger_percentage = 1-confidence
                         elif ob["item_danger_level"] == 2:
                             confidence = ob["item_danger_confidence"][0]
-                            diag.cpt(Estimate).fillWith([1-confidence, confidence])
+                            #diag.cpt(Estimate).fillWith([1-confidence, confidence])
+                            danger_percentage = confidence
                             
+                        """
                         #diag.utility(Pickup_Utility)[{'Pickup':0}] = [[100],[0]]
                         diag.utility(Pickup_Utility)[{'Pickup':0}] = [[0],[0]]
                         #diag.utility(Pickup_Utility)[{'Pickup':1}] = [[0],[100]]
@@ -2681,11 +2705,20 @@ class DecisionControl:
                         ie=gum.ShaferShenoyLIMIDInference(diag)
                         ie.addEvidence('Pickup',1)
                         ie.makeInference() 
-                        utility["pickup_" + str(ob_idx)] = 100 - (1-ie.MEU()["mean"])*possible_actions[ob_idx]["pickup"]
+                        
+                        """
+                        
+                        if danger_percentage >= 0.7:
+                        
+                            #utility["pickup_" + str(ob_idx)] = 100 - (1-ie.MEU()["mean"])*possible_actions[ob_idx]["pickup"]
+                            utility["pickup_" + str(ob_idx)] = 100 - (1-danger_percentage)*possible_actions[ob_idx]["pickup"]
                     
                     for s_comb in possible_actions[ob_idx]["sensing"].keys(): #Now for sensing the object compute the decision network 
                     
                         if s_comb:
+                        
+                        
+                            """
                         
                             diag = gum.InfluenceDiagram()
 
@@ -2703,9 +2736,10 @@ class DecisionControl:
                             diag.addArc(Pickup_2,Pickup_Utility_2)
                             diag.addArc(Pickup_2,Pickup_Cost_2)
                             
+                            """
                             
-                            prior_benign = 0.7
-                            prior_dangerous = 0.3
+                            prior_benign = 0.5
+                            prior_dangerous = 0.5
                             
                             if robotState.items[ob_idx]["item_danger_level"] == 1:
                                 prior_dangerous = 1-robotState.items[ob_idx]["item_danger_confidence"][0]
@@ -2722,6 +2756,7 @@ class DecisionControl:
                                 else:
                                     utility_str += "_" + str(s_comb[s_idx])
                             
+                            """
                             for item_danger_level in [1,2]:
                                 for ie_idx in s_comb:
                                     
@@ -2760,6 +2795,60 @@ class DecisionControl:
                                 elif item_danger_level == 2:
                                     danger_est = prior_dangerous
 
+                            """
+                            
+                            def sequence_sensing(s_comb, prior_benign, prior_dangerous):
+                            
+                                results = []
+                            
+                                for ie_idx in s_comb:
+                                    for item_danger_level in [1,2]:
+                                        if ie_idx == len(robotState.robots):
+                                            if item_danger_level == 2:
+                                                benign = 1-robotState.sensor_parameters[0]
+                                                dangerous = robotState.sensor_parameters[1]
+                                            elif item_danger_level == 1:
+                                                benign = robotState.sensor_parameters[0]
+                                                dangerous = 1-robotState.sensor_parameters[1]
+                                                    
+                                        else:
+                                            if item_danger_level == 2:
+                                                benign = 1-robotState.neighbors_sensor_parameters[ie_idx][0]
+                                                dangerous = robotState.neighbors_sensor_parameters[ie_idx][1]
+                                            elif item_danger_level == 1:
+                                                benign = robotState.neighbors_sensor_parameters[ie_idx][0]
+                                                dangerous = 1-robotState.neighbors_sensor_parameters[ie_idx][1]
+                                                
+                                        prob_evidence = (prior_benign*benign + prior_dangerous*dangerous)
+                                        
+                                        if item_danger_level == 1:
+                                            prior_benign_tmp = benign*prior_benign/prob_evidence
+                                            prior_dangerous_tmp = 1-prior_benign_tmp
+                                        elif item_danger_level == 2:
+                                            prior_dangerous_tmp = dangerous*prior_dangerous/prob_evidence
+                                            prior_benign_tmp = 1-prior_dangerous_tmp
+                                        
+                                        if len(s_comb) > 1:
+                                            results.extend(sequence_sensing(s_comb[1:], prior_benign_tmp, prior_dangerous_tmp))
+                                        else:    
+                                            results.append([prior_benign_tmp,prior_dangerous_tmp])   
+                                
+                                        
+                                return results             
+                                            
+                                    
+                            sensing_results = sequence_sensing(s_comb, prior_benign, prior_dangerous)
+                            
+                            danger_est = sensing_results[1][1]
+                            benign_est = sensing_results[0][0]
+                            
+                            sensing_results_np = np.array(sensing_results)
+                            #print(np.average(sensing_results_np,axis=0),np.var(sensing_results_np,axis=0)) 
+                            
+                            #if len(s_comb) > 2:
+                            #    pdb.set_trace()
+                            
+                            """
                             #benign_est = robotState.possible_estimates[ob_idx][s_comb[0]][0]
                             diag.cpt(Estimate_Benign).fillWith([benign_est, 1-benign_est])
                             #danger_est = robotState.possible_estimates[ob_idx][s_comb[0]][1]
@@ -2777,9 +2866,13 @@ class DecisionControl:
                             #ie.addEvidence('Pickup_2',1)
                             ie.makeInference()
                             
+                            """
                             
+                            #utility["sense_" + str(ob_idx) + "_" + utility_str] = 100 - (1-(abs(benign_est - (1-danger_est)) + (abs(danger_est - (1-danger_est)) + abs(benign_est - (1-benign_est)))/2)/2)*possible_actions[ob_idx]["sensing"][s_comb] #ie.MEU()["mean"]
+                            utility["sense_" + str(ob_idx) + "_" + utility_str] = 100 - (1-(min(1,np.average(sensing_results_np,axis=0)[1] + np.std(sensing_results_np,axis=0)[1])))*possible_actions[ob_idx]["sensing"][s_comb]
+                            #utility["sense_" + str(ob_idx) + "_" + utility_str] = 100 - (1-(min(1,prior_dangerous + np.std(sensing_results_np,axis=0)[1])))*possible_actions[ob_idx]["sensing"][s_comb]
                             
-                            utility["sense_" + str(ob_idx) + "_" + utility_str] = 100 - (1-(abs(benign_est - (1-danger_est)) + (abs(danger_est - (1-danger_est)) + abs(benign_est - (1-benign_est)))/2)/2)*possible_actions[ob_idx]["sensing"][s_comb] #ie.MEU()["mean"]
+                            #print("Estimations", s_comb, danger_est, benign_est)
                             
                             #if utility_str == "4":
                             #    pdb.set_trace()
@@ -2787,13 +2880,14 @@ class DecisionControl:
         else: #If there is no possible action to do, just wait
             utility["wait"] = 100                    
         
+        #pdb.set_trace()
         unexplored = np.where(robotState.latest_map == -2)
         explored = round((robotState.latest_map.size-unexplored[0].size)/robotState.latest_map.size,2) #calculate the utility of exploring the area
         
         if explored < 1:
             utility["explore"] = math.exp(-2*explored)*100
             
-        utility['end'] = ((pow(10000,info['time']/self.env.map_config['timer_limit']) - 1)/(10000-1))*100
+        utility['end'] = ((pow(100,info['time']/self.env.map_config['timer_limit']) - 1)/(100-1))*100
         
         max_utility = 0
         max_utility_key = ""
