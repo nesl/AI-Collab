@@ -81,7 +81,7 @@ app.use(function (req, res, next) {
     var randomNumber=Math.random().toString();
     randomNumber=randomNumber.substring(2,randomNumber.length);
     res.cookie('simulator_cookie',randomNumber, { maxAge: 900000, httpOnly: true });
-    //console.log('cookie created successfully');
+    console.log('cookie created successfully');
   }
   next(); // <-- important!
 });
@@ -258,6 +258,8 @@ io.sockets.on("connection", socket => { //When a client connects
     client_number = all_ids.indexOf(socket.id);
     time_sync[client_number]["latency"] = Date.now() - time_sync[client_number]["offset"];
     time_sync[client_number]["offset"] = time_sync[client_number]["offset"] - (client_time - time_sync[client_number]["latency"]/2)
+    
+    console.log(client_number, time_sync)
   });
   
   socket.on("watcher_ai", (client_number, use_occupancy, server_address, view_radius, centered, skip_frames) => { //When an ai client connects

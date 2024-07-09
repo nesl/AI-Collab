@@ -15,7 +15,7 @@ class Human2AIText:
 
     def __init__(self, env):
     
-        self.openai = False
+        self.openai = True
         
         agent_id = env.robot_id
         
@@ -24,7 +24,7 @@ class Human2AIText:
             
         if self.openai:
             openai.api_key = os.getenv("OPENAI_API_KEY")
-            #self.client = Groq(api_key="")
+            self.client = Groq(api_key=os.getenv("GROQ_API_KEY"))
     
         self.START_INST = "[INST]"
         self.END_INST = "[/INST]"
@@ -35,6 +35,10 @@ class Human2AIText:
         self.START_SYS = "<<SYS>>"
         self.END_SYS = "<</SYS>>"
         self.noop = "No message matches"
+        
+        self.exchanged_messages = {agent:[] for agent in list(env.robot_key_to_index.keys())}
+        
+        self.max_message_history = 5
 
 
         self.CNL_MESSAGES = {
@@ -216,20 +220,23 @@ Write at least 3 possible variations of the phrase and put them inside a list.[/
 >> ["please move!", "hey B why don't you move", "can you step aside"]
 
 """
+
+        self.output_personalization = """
+<s>[INST]<<SYS>>
+You are Agent """ + agent_id + """. You are part of a team whose mission is to dispose of all dangerous objects in a scene. You can move around, detect whether an object is dangerous or not, and carry objects. Objects are all of the same type, they only differ in their location, weight, and whether they are dangerous. Once you find a dangerous object you must check if you have the necessary strength to pick it up and put it in the safe area you already know. Try to engage with your teammates to come up with a strategy. Be brief in your responses. You will try to create an appropriate message directed toward a specific agent according to how previous interactions with that agent have been.
+<</SYS>>
+
+History of messages: [{'Sender': 'Agent B', 'Message': 'hello'}, {'Sender': 'Agent C', 'Message': 'hi'}, {'Sender': 'Agent D', 'Message': 'Hello everyone'}]
+Message to send: "I need 2 more robots to help carry object 8."
+How would you adapt this message to send it to [Agent B, Agent C]?[/INST]
+
+>> {"Message": "Hey B and C, would you help me carry object 8? I know you are very strong!"}        
+        
+"""
         
         if not self.openai:
             
-            model = "meta-llama/Meta-Llama-3-8B" #"meta-llama/Llama-2-7b-chat-hf"#"microsoft/phi-2"#"meta-llama/Llama-2-7b-chat-hf"
-
-            self.tokenizer = AutoTokenizer.from_pretrained(model)
-            
-            self.pipeline = transformers.pipeline(
-                "text-generation",
-                model=model,
-                torch_dtype=torch.float16,
-                device_map="sequential",
-                #max_memory={0: '20GiB', 1: '12GiB'}
-            )
+            self.setup_llama()
         
         self.agent_id = agent_id
         self.previous_query = ""
@@ -242,6 +249,20 @@ Write at least 3 possible variations of the phrase and put them inside a list.[/
         BOLD = '\033[1m'
         ENDC = '\033[0m'
 
+
+    def setup_llama():
+    
+        model = "meta-llama/Meta-Llama-3-8B" #"meta-llama/Llama-2-7b-chat-hf"#"microsoft/phi-2"#"meta-llama/Llama-2-7b-chat-hf"
+
+        self.tokenizer = AutoTokenizer.from_pretrained(model)
+        
+        self.pipeline = transformers.pipeline(
+            "text-generation",
+            model=model,
+            torch_dtype=torch.float16,
+            device_map="sequential",
+            #max_memory={0: '20GiB', 1: '12GiB'}
+        )
 
     def make_query(self, pipeline, tokenizer, prompt, return_only_new_text=True):
     
@@ -264,7 +285,7 @@ Write at least 3 possible variations of the phrase and put them inside a list.[/
                 text = text[:len(prompt)] + self.bcolors.RED + self.bcolors.BOLD + text[len(prompt):] + self.bcolors.ENDC
 
             return text
-
+            
     def make_query_openai(self, prompt):
     
         """
@@ -280,22 +301,45 @@ Write at least 3 possible variations of the phrase and put them inside a list.[/
         return response["choices"][0]["message"].get("content")
         """
         
+        system_start_token = "<<SYS>>"
+        system_end_token = "<</SYS>>"
+        
+        instruction_start_token = "[INST]"
+        instruction_end_token = "[/INST]"
+        
+        string_end_token = "</s>"
+        
+        system_prompt = prompt[prompt.find(system_start_token) + len(system_start_token):prompt.find(system_end_token)]
+        
+        prompt_split = prompt.strip().split(instruction_end_token)
+        
+        prompt_messages = [{"role":"system" ,"content":system_prompt}]
+        
+        for p_idx,next_prompt in enumerate(prompt_split):
+            
+            if next_prompt:
+                if not p_idx:
+                    new_message = {"role": "user", "content":next_prompt[next_prompt.find(system_end_token) + len(system_end_token):]}
+                    prompt_messages.append(new_message)
+                    
+                else:
+                    new_message = {"role": "assistant", "content": next_prompt[:next_prompt.find(string_end_token)]}
+                    prompt_messages.append(new_message)
+                    new_message = {"role": "user", "content": next_prompt[next_prompt.find(instruction_start_token) + len(instruction_start_token):]}
+                    prompt_messages.append(new_message)
+        
+        
+        
         chat_completion = self.client.chat.completions.create(
-            messages=[
-                {
-                    "role": "user",
-                    "content": prompt,
-                }
-            ],
-            model="llama3-8b-8192",
+            messages=prompt_messages,
+            model="llama3-8b-8192", #"llama3-70b-8192", #"llama3-8b-8192",
         )
 
-        print(chat_completion.choices[0].message.content)
+        #print(chat_completion.choices[0].message.content)
         
         
-        pdb.set_trace()
         
-        return
+        return chat_completion.choices[0].message.content
 
     def build_prompt(self, sys_prompt, example_prompts, query, specific_query, message_history):
         example_prompts = list(example_prompts)
@@ -320,6 +364,7 @@ Write at least 3 possible variations of the phrase and put them inside a list.[/
             f"{self.END_STR}{self.START_STR}{self.START_INST}{prompt}{specific_query}{self.END_INST}" if i % 2 == 0 else prompt
             for i, (speeker, prompt) in enumerate(example_prompts)
         )
+
 
 
     def extract_first_json(self, text):
@@ -487,26 +532,27 @@ Write at least 3 possible variations of the phrase and put them inside a list.[/
 
     def convert_to_ai(self, sender, text, info, items, message_history, print_debug):
         
-        reply_prompt_cont = "</s><s>[INST]History of messages: " + str(list(message_history)) + "\nNew message: " + str({"Sender": sender, "Message": text}) + "\n" + "Who is Agent " + sender + " replying to? Output a JSON.[/INST]\n\n"
+        reply_prompt_cont = "</s><s>[INST]History of messages: " + str(list(message_history)[-self.max_message_history:]) + "\nNew message: " + str({"Sender": sender, "Message": text}) + "\n" + "Who is Agent " + sender + " replying to? Output a JSON.[/INST]\n\n"
         llm_time = time.time()
         llm_answer = self.free_response(self.reply_prompt + reply_prompt_cont, True)
         
         print("Response prompt time:", llm_time - time.time())
         
-        open_k = llm_answer.index('{')
-        close_k = llm_answer.index('}')
-        
         result_err = 0
         
         try:
+            open_k = llm_answer.index('{')
+            close_k = llm_answer.index('}')
             response = eval(llm_answer[open_k:close_k+1])
         except:
             print("Error reply")
             return "", False   
         
-        print(response, 'Agent ' + self.agent_id in response["reply_to"], self.agent_id in [agent.upper() for agent in response["reply_to"]], 'Everyone' in response["reply_to"], len(list(message_history)) == 1)
+        print(response, 'Agent ' + self.agent_id in response["reply_to"], self.agent_id in [agent.upper() for agent in response["reply_to"]], 'Everyone' in response["reply_to"], len(list(message_history)[-self.max_message_history:]) == 1)
         
-        if 'Agent ' + self.agent_id in response["reply_to"] or self.agent_id in [agent.upper() for agent in response["reply_to"]]  or 'Everyone' in response["reply_to"] or len(list(message_history)) == 1:
+        if 'Agent ' + self.agent_id in response["reply_to"] or self.agent_id in [agent.upper() for agent in response["reply_to"]]  or 'Everyone' in response["reply_to"] or len(list(message_history)[-self.max_message_history:]) == 1:
+
+            #self.exchanged_messages[sender].append({"Sender": "Agent " + self.agent_id, "Message": text})
 
             max_retries = 3
             retries = -1
@@ -516,10 +562,10 @@ Write at least 3 possible variations of the phrase and put them inside a list.[/
                 llm_time = time.time()
                 llm_answer = self.free_response(phrase_prompt, True)
                 print("Phrase generation time:", llm_time - time.time())
-
-                bracket1_idx = llm_answer.find('[')
-                bracket2_idx = llm_answer.find(']')
+                
                 try:
+                    bracket1_idx = llm_answer.find('[')
+                    bracket2_idx = llm_answer.find(']')
                     phrase_list = eval(llm_answer[bracket1_idx:bracket2_idx+1])
                 except:
                     retries += 1
@@ -527,9 +573,10 @@ Write at least 3 possible variations of the phrase and put them inside a list.[/
                 break
         
             if retries >= 3:
-                raise Exception("Cannot create phrases")
+                print("Cannot create phrases")
+                return "", False
         
-            prompt = self.build_prompt(self.SYS_PROMPT, self.EXAMPLE_PROMPTS, self.previous_query + "Original message: \"" + text + "\". Alternative messages: " + str(phrase_list) + ". ", self.SELECT_ACTION, message_history)
+            prompt = self.build_prompt(self.SYS_PROMPT, self.EXAMPLE_PROMPTS, self.previous_query + "Original message: \"" + text + "\". Alternative messages: " + str(phrase_list) + ". ", self.SELECT_ACTION, list(message_history)[-self.max_message_history:])
             
             self.previous_query = ""
 
@@ -551,7 +598,13 @@ Write at least 3 possible variations of the phrase and put them inside a list.[/
                 if not self.openai:
                     llm_answer = self.make_query(self.pipeline, self.tokenizer, prompt)
                 else:
-                    llm_answer = self.make_query_openai(prompt)
+                    try:
+                        llm_answer = self.make_query_openai(prompt)
+                    except:
+                        self.openai = False
+                        print("Groq failed")
+                        self.setup_llama()
+                        llm_answer = self.make_query(self.pipeline, self.tokenizer, prompt)
 
                 print("Main prompt time:", llm_time - time.time())
                 if print_debug:
@@ -582,7 +635,7 @@ Write at least 3 possible variations of the phrase and put them inside a list.[/
                         if result_str:
                             hints.append(result_str)
                         
-                        prompt = self.build_prompt(self.SYS_PROMPT, self.EXAMPLE_PROMPTS, self.previous_query + "Original message: \"" + text + "\". Alternative messages: " + str(phrase_list) + ". Hints: [" + ', '.join(["\"" + m + "\"" for m in hints]) + "]", self.SELECT_ACTION, message_history) 
+                        prompt = self.build_prompt(self.SYS_PROMPT, self.EXAMPLE_PROMPTS, self.previous_query + "Original message: \"" + text + "\". Alternative messages: " + str(phrase_list) + ". Hints: [" + ', '.join(["\"" + m + "\"" for m in hints]) + "]", self.SELECT_ACTION, list(message_history)[-self.max_message_history:]) 
                         
                         if print_debug:
                             print(prompt)
@@ -591,7 +644,7 @@ Write at least 3 possible variations of the phrase and put them inside a list.[/
                        
                         if result_err == 1 or result_err == 2:
                             retries += 1
-                            result_str = ""
+                            result_str = "I didn't understand. "
                             
                             """
                             if not self.openai and result_err == 2 and retries == max_retries:
@@ -603,7 +656,7 @@ Write at least 3 possible variations of the phrase and put them inside a list.[/
                                 print(llm_answer)
                             """
                             
-                            continue
+
                         elif result_err == 4:
                             message_to_user = True
                             #self.previous_query = text
@@ -642,13 +695,40 @@ Write at least 3 possible variations of the phrase and put them inside a list.[/
         if not self.openai:
             llm_answer = self.make_query(self.pipeline, self.tokenizer, prompt)
         else:
-            llm_answer = self.make_query_openai(prompt)
+            try:
+                llm_answer = self.make_query_openai(prompt)
+            except:
+                self.openai = False
+                print("Groq failed")
+                self.setup_llama()
+                llm_answer = self.make_query(self.pipeline, self.tokenizer, prompt)
 
         if print_debug:
             print(prompt,llm_answer)
             
         return llm_answer
 
+
+    def personalize_message(self, text, target, message_history):
+    
+        personalize_prompt_cont = "</s><s>[INST]History of messages: " + str(list(message_history)[-20:]) + "\nMessage to send: \"" + text + "\"\n" + "How would you adapt this message to send it to Agent " + str(target) + "?[/INST]\n\n"
+        llm_answer = self.free_response(self.output_personalization + personalize_prompt_cont, True)
+        
+        return_string = ""
+        
+        try:
+            bracket1_idx = llm_answer.find('{')
+            bracket2_idx = llm_answer.find('}')
+            return_string = eval(llm_answer[bracket1_idx:bracket2_idx+1])["Message"]
+        except:
+            print("No personalization of message")
+            
+        return return_string
+            
+            
+        
+        
+        
 
 if __name__ == '__main__':
 

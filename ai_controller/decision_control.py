@@ -68,7 +68,7 @@ class DecisionControl:
         self.helping_type = self.HelpType.carrying
         self.carried_objects = {}
         self.action_history = deque(maxlen=5)
-        self.message_history = deque(maxlen=5)
+        self.message_history = deque(maxlen=100)
         self.team_structure = team_structure
         self.order_status = self.OrderStatus.finished
         self.order_status_info = []
@@ -140,7 +140,6 @@ class DecisionControl:
             tmp_message = rm[1]
             
             agent_idx = info['robot_key_to_index'][rm[0]]
-            
             
             if re.search(MessagePattern.carry_help_accept_regex(),rm[1]):
             
@@ -282,7 +281,9 @@ class DecisionControl:
                     self.other_agents[agent_idx].observations.append("Dismissed his team for not collaborating effectively")
                     
                 
-                if not re.search(MessagePattern.follow_regex(),rm[1]) and not re.search(MessagePattern.following_regex(),rm[1]):
+                if MessagePattern.carry_help_cancel() in rm[1] or MessagePattern.carry_help_reject(self.env.robot_id) in rm[1] or MessagePattern.carry_help_finish() in rm[1] or MessagePattern.carry_help_complain() in rm[1]:
+                    self.message_text += "Ok " + rm[0] + ". I won't help anymore. " 
+                elif not re.search(MessagePattern.follow_regex(),rm[1]) and not re.search(MessagePattern.following_regex(),rm[1]):
                     self.message_text += "Ok " + rm[0] + ". "     
                     
             if re.search(MessagePattern.carry_help_reject_regex(),rm[1]):
@@ -306,6 +307,8 @@ class DecisionControl:
                     
                     agent_idx = info['robot_key_to_index'][rm[0]]
                     self.help_request_time[agent_idx] = [time.time(), random.random()*20]
+                    
+                    self.message_text += "Ok " + rm[0] + ". Don't help me then. " 
                     
             if re.search(MessagePattern.location_regex(),rm[1]):
             
@@ -423,14 +426,21 @@ class DecisionControl:
                 template_match = True
                 
                 object_id = rematch.group(1) #rm[1].strip().split()[-1] 
-                object_idx = info['object_key_to_index'][object_id]
                 
-                self.other_agents[agent_idx].observations.append("Asked me for information about object " + str(object_id))
+                if object_id in info['object_key_to_index']:
                 
-                self.message_text += MessagePattern.item(robotState,object_idx,object_id, info, self.env.robot_id, self.env.convert_to_real_coordinates)
-                
-                if not self.message_text:
-                     self.message_text += MessagePattern.sensing_help_negative_response(object_id)
+                    object_idx = info['object_key_to_index'][object_id]
+                    
+                    self.other_agents[agent_idx].observations.append("Asked me for information about object " + str(object_id))
+                    
+                    self.message_text += MessagePattern.item(robotState,object_idx,object_id, info, self.env.robot_id, self.env.convert_to_real_coordinates)
+                    
+                    if not self.message_text:
+                         self.message_text += MessagePattern.sensing_help_negative_response(object_id)
+                         
+                else:
+                    self.message_text += MessagePattern.sensing_help_negative_response(object_id)
+                    
             if re.search(MessagePattern.item_regex_full(),rm[1]) or re.search(MessagePattern.item_regex_full_alt(),rm[1]):
             
                 template_match = True
@@ -1399,7 +1409,27 @@ class DecisionControl:
                     self.movement.last_action_index = self.action_index
                 self.action_index = self.movement.State.wait_message
                 
-            self.message_text += MessagePattern.carry_help(str(object_id),robotState.items[object_idx]["item_weight"]-1-robots_already_helping)
+            
+            agent_idx = info['robot_key_to_index'][robot_id]
+            nearby_other_agents_ids = []
+            for noa in self.nearby_other_agents:
+                nearby_other_agents_ids.append(list(info['robot_key_to_index'].keys())[list(info['robot_key_to_index'].values()).index(noa)])
+                
+            for helping_agents in self.movement.help_status_info[0]:
+                if helping_agents in nearby_other_agents_ids:
+                    nearby_other_agents_ids.remove(helping_agents)
+            
+            if not robotState.robots[agent_idx]["neighbor_type"] and nearby_other_agents_ids and False:
+                message_to_personalize = MessagePattern.carry_help(str(object_id),robotState.items[object_idx]["item_weight"]-1-robots_already_helping)
+                message_to_send = self.human_to_ai_text.personalize_message(message_to_personalize, nearby_other_agents_ids, self.message_history)
+                
+                if not message_to_send:
+                    message_to_send = message_to_personalize
+            else:
+                message_to_send = MessagePattern.carry_help(str(object_id),robotState.items[object_idx]["item_weight"]-1-robots_already_helping)
+            
+            self.message_text += message_to_send
+         
             #self.movement.asked_help = True
             #self.movement.asked_time = time.time()
             
@@ -1492,7 +1522,17 @@ class DecisionControl:
             
             self.helping_type = self.HelpType.sensing
             
-            self.message_text += MessagePattern.sensing_ask_help(robotState, item_idx, object_id, robot_id, self.env.convert_to_real_coordinates)
+            agent_idx = info['robot_key_to_index'][robot_id]
+            if not robotState.robots[agent_idx]["neighbor_type"] and False:
+                message_to_personalize = MessagePattern.sensing_ask_help(robotState, item_idx, object_id, robot_id, self.env.convert_to_real_coordinates)
+                message_to_send = self.human_to_ai_text.personalize_message(message_to_personalize, [robot_id], self.message_history)
+                
+                if not message_to_send:
+                    message_to_send = message_to_personalize
+            else:
+                message_to_send = MessagePattern.sensing_ask_help(robotState, item_idx, object_id, robot_id, self.env.convert_to_real_coordinates)
+            
+            self.message_text += message_to_send
             
             self.movement.help_status = self.movement.HelpState.asking
             self.movement.help_status_info[0] = [robot_id]
@@ -1872,6 +1912,13 @@ class DecisionControl:
             if len(self.nearby_other_agents) == len(robotState.robots)-sum(r["neighbor_disabled"] == 1 for r in robotState.robots):
                 if not self.finished or not self.told_to_finish:
                     self.message_text += MessagePattern.finish()
+                    
+                    for ob_key in range(len(robotState.items)): #include heavy dangerous objects to report
+                        if robotState.items[ob_key]["item_weight"] >= len(self.env.map_config['all_robots'])+2 and robotState.items[ob_key]["item_danger_level"] == 2:
+                            object_id = list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(ob_key)]
+                            self.message_text += MessagePattern.item(robotState,ob_key,object_id, info, self.env.robot_id, self.env.convert_to_real_coordinates)
+                            
+                    
                     self.finished = True
                     self.told_to_finish = True
             else: #Only when all agents are next to each other finish

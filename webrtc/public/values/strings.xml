@@ -216,7 +216,7 @@
         
         <title>Communication</title>
         
-        <head><![CDATA[AI agents understand your Natural Language messages! Feel free to ask and respond to AI agents however you like through the Chat sidebar. The next is a list of possible things you can talk about.]]></head>
+        <head><![CDATA[AI agents understand your Natural Language messages! Feel free to ask and respond to AI agents however you like through the Chat sidebar. You should always receive an acknowledgement from the AI agents if they understood what you told them, otherwise try again. The next is a list of possible things you can talk about.]]></head>
         
         <list><![CDATA[<p><b>Get/offer help carry a heavy object</b>: you first need to ask for help and then ask the agent to follow you</p>]]></list>
         <list><![CDATA[<p><b>Get/offer help sense an object</b>: you first need to ask for help and then tell the agent you are going to follow them</p>]]></list>

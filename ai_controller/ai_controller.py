@@ -24,7 +24,7 @@ from decision_control import DecisionControl
 #from ultralytics import YOLO
 from PIL import Image
 import math
-model = YOLO('./weights/best.pt')
+#model = YOLO('./weights/best.pt')
 import matplotlib.pyplot as plt
 import BEV
 bird_eye_view = BEV.BEV(150, 240, 360, 0, 0, 0.75)
@@ -766,7 +766,7 @@ while True:
             
             
             if high_level_action_finished: #When a high level action finishes, we sense the environment
-                if last_action[1] == Action.get_messages.value: #Action.get_occupancy_map.value:
+                if last_action[1] == Action.get_messages.value or last_action[1] == Action.check_item.value: #Action.get_occupancy_map.value:
                 
                     #print_map(robotState.latest_map)
                     #print("Held:",robotState.object_held)

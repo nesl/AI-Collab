@@ -1112,7 +1112,7 @@ class Movement:
             agent_idx = info['robot_key_to_index'][rm[0]]
             other_robot_location = robotState.robots[agent_idx]["neighbor_location"]
             
-            if not (other_robot_location[0] == -1 and other_robot_location[1] == -1) and ((not robotState.object_held and not (self.help_status == self.HelpState.being_helped and not helping_sense) and (not self.help_status == self.HelpState.helping or (self.help_status == self.HelpState.helping and (self.help_status_info[0][0] == rm[0] or rm[0] in self.help_status_info[6])))) or other_agents[agent_idx].carrying):#not self.being_helped and (not self.helping or (self.helping and self.helping[0] == rm[0])): #This condition is true only when robots have no teams and are not carrying any object
+            if not (other_robot_location[0] == -1 and other_robot_location[1] == -1) and ((not robotState.object_held and not (self.help_status == self.HelpState.being_helped and not helping_sense) and (not (self.help_status == self.HelpState.helping and not helping_sense) or (self.help_status == self.HelpState.helping and (self.help_status_info[0][0] == rm[0] or rm[0] in self.help_status_info[6])))) or other_agents[agent_idx].carrying):#not self.being_helped and (not self.helping or (self.helping and self.helping[0] == rm[0])): #This condition is true only when robots have no teams and are not carrying any object
                         
                 print("MOVING pending")
                 
@@ -1125,6 +1125,10 @@ class Movement:
                 maximum_distance_with_robot = 0
                 
                 for p in possible_locations:
+                
+                    if ego_location[0][0] + p[0] >= robotState.latest_map.shape[0] or ego_location[1][0] + p[1] >= robotState.latest_map.shape[1] or ego_location[0][0] + p[0] < 0 or ego_location[1][0] + p[1] < 0:
+                        continue
+                
                     ego_location2 = [ego_location[0][0] + p[0],ego_location[1][0] + p[1]]
 
                     if robotState.latest_map[ego_location2[0],ego_location2[1]] == 0:
