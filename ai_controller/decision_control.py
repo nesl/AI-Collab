@@ -143,7 +143,7 @@ class DecisionControl:
             
             if re.search(MessagePattern.carry_help_accept_regex(),rm[1]):
             
-                if robotState.robots[info['robot_key_to_index'][rm[0]]]["neighbor_type"]:
+                if robotState.get("agents", "type", info['robot_key_to_index'][rm[0]]):
                     template_match = True
                 
                 rematch = re.search(MessagePattern.carry_help_accept_regex(),rm[1])
@@ -162,7 +162,7 @@ class DecisionControl:
                     
                     following = False
                     if self.helping_type == self.HelpType.carrying:
-                        num_agents_needed = robotState.items[self.chosen_object_idx]["item_weight"]
+                        num_agents_needed = robotState.get("objects", "weight", self.chosen_object_idx)
                     elif self.helping_type == self.HelpType.sensing:
                         num_agents_needed = 2
                         following = True
@@ -172,8 +172,9 @@ class DecisionControl:
                     
                     if return_value == 1:
 
-                        if not (robotState.items[self.chosen_object_idx]['item_location'][0] == -1 and robotState.items[self.chosen_object_idx]['item_location'][1] == -1):
-                            self.target_location = robotState.items[self.chosen_object_idx]['item_location']
+                        object_location = robotState.get("objects", "last_seen_location", self.chosen_object_idx)
+                        if not (object_location[0] == -1 and object_location[1] == -1):
+                            self.target_location = object_location
                             self.object_of_interest = object_id
                             #self.target_object_idx = self.heavy_objects["index"][self.chosen_heavy_object]
                             
@@ -511,8 +512,9 @@ class DecisionControl:
                 
                     robot_idx = info['robot_key_to_index'][rematch.group(1)]
        
+                    robo_location = robotState.get("agents", "last_seen_location", robot_idx)             
                     
-                    if not (robotState.robots[robot_idx]["neighbor_location"][0] == -1 and robotState.robots[robot_idx]["neighbor_location"][1] == -1):
+                    if not (robo_location[0] == -1 and robo_location[1] == -1):
                         self.message_text += MessagePattern.agent(rematch.group(1), robot_idx, robotState, self.env.convert_to_real_coordinates)
                     else:
                         self.message_text += MessagePattern.agent_not_found(rematch.group(1))
@@ -556,7 +558,8 @@ class DecisionControl:
                         if rematch.group(1) == self.env.robot_id:
                             object_idx = info['object_key_to_index'][rematch.group(2)]
                             
-                            if (robotState.items[object_idx]["item_location"][0] == -1 and robotState.items[object_idx]["item_location"][1] == -1):
+                            object_location = robotState.get("objects", "last_seen_location", object_idx)
+                            if (object_location[0] == -1 and object_location[1] == -1):
                                 pdb.set_trace()
                             
                             
@@ -609,7 +612,8 @@ class DecisionControl:
                             
                             self.movement.help_status_info[0].extend(teammates)
                         
-                            if (robotState.items[object_idx]["item_location"][0] == -1 and robotState.items[object_idx]["item_location"][1] == -1):
+                            object_location = robotState.get("objects", "last_seen_location", object_idx)
+                            if (object_location[0] == -1 and object_location[1] == -1):
                                 pdb.set_trace()
                             
                             self.create_action_function("collect_object('" + rematch.group(4) + "')")
@@ -668,7 +672,7 @@ class DecisionControl:
                         self.env.update_objects_info(str(o_key), 0, {}, grid_object, 0, False)
                         o_idx = self.env.object_key_to_index[str(o_key)]
                         template_item_info = {'item_weight': 0, 'item_danger_level': 0, 'item_danger_confidence': np.array([0.]), 'item_location': np.array(grid_object, dtype=np.int16), 'item_time': np.array([0], dtype=np.int16)}
-                        robotState.update_items(template_item_info, o_idx, -1)
+                        robotState.update_items(template_item_info, o_key, o_idx, -1)
              
                 robotState.latest_map[ego_location[0][0],ego_location[1][0]] = 5
                 
@@ -697,7 +701,7 @@ class DecisionControl:
                     """
                     object_id = rematch.group(2)
                 
-                    if object_id in info['object_key_to_index'] and info['object_key_to_index'][object_id] in robotState.item_estimates.keys() and robotState.item_estimates[info['object_key_to_index'][object_id]][len(robotState.robots)]["item_danger_level"]: #send info if already have it
+                    if object_id in info['object_key_to_index'] and info['object_key_to_index'][object_id] in robotState.get_object_keys() and robotState.get("object_estimates", "danger_status", [info['object_key_to_index'][object_id],robotState.get_num_robots()]): #send info if already have it
                         self.message_text += MessagePattern.item(robotState,info['object_key_to_index'][object_id],object_id, info, self.env.robot_id, self.env.convert_to_real_coordinates)
                     else:
                     
@@ -728,7 +732,7 @@ class DecisionControl:
                             
                             if object_id in info['object_key_to_index']:
                                 ob_key = info['object_key_to_index'][object_id]
-                                robotState.update_items(template_item_info, ob_key, -1)
+                                robotState.update_items(template_item_info, object_id, ob_key, -1)
                             
                             #self.action_sequence = 0
                             #self.top_action_sequence = 0
@@ -810,9 +814,9 @@ class DecisionControl:
                 self.message_text += "I didn't understand you " + rm[0] + ". "
                 continue
             
-            print(not template_match, not robotState.robots[info['robot_key_to_index'][rm[0]]]["neighbor_type"], rm[1])
-            if not template_match and not robotState.robots[info['robot_key_to_index'][rm[0]]]["neighbor_type"]: #Human sent a message, we need to translate it. We put this condition at the end so that humans can also send messages that conform to the templates
-                translated_message,message_to_user = self.human_to_ai_text.convert_to_ai(rm[0], rm[1], info, robotState.items, self.message_history, True)
+            print(not template_match, not robotState.get("agents", "type", info['robot_key_to_index'][rm[0]]), rm[1])
+            if not template_match and not robotState.get("agents", "type", info['robot_key_to_index'][rm[0]]): #Human sent a message, we need to translate it. We put this condition at the end so that humans can also send messages that conform to the templates
+                translated_message,message_to_user = self.human_to_ai_text.convert_to_ai(rm[0], rm[1], info, robotState, self.message_history, True)
                 
                 if translated_message:
                     if translated_message == self.human_to_ai_text.noop:
@@ -840,10 +844,14 @@ class DecisionControl:
         nearby_other_agents = []
         disabled_agents = []
         #Get number of neighboring robots at communication range
-        for n_idx in range(len(robotState.robots)):
-            if "neighbor_location" in robotState.robots[n_idx] and robotState.robots[n_idx]["neighbor_disabled"] == 0 and not (robotState.robots[n_idx]["neighbor_location"][0] == -1 and robotState.robots[n_idx]["neighbor_location"][1] == -1) and self.env.compute_real_distance([robotState.robots[n_idx]["neighbor_location"][0],robotState.robots[n_idx]["neighbor_location"][1]],[ego_location[0][0],ego_location[1][0]]) < self.env.map_config['communication_distance_limit']:
+        for n_idx in range(robotState.get_num_robots()):
+        
+            robo_location = robotState.get("agents", "last_seen_location", n_idx)
+            robo_disabled = robotState.get("agents", "disabled", n_idx)
+        
+            if robo_disabled == 0 and not (robo_location[0] == -1 and robo_location[1] == -1) and self.env.compute_real_distance([robo_location[0],robo_location[1]],[ego_location[0][0],ego_location[1][0]]) < self.env.map_config['communication_distance_limit']:
                 nearby_other_agents.append(n_idx)
-            elif "neighbor_location" in robotState.robots[n_idx] and robotState.robots[n_idx]["neighbor_disabled"] == 1:
+            elif robo_disabled == 1:
                 disabled_agents.append(n_idx)
                 self.other_agents[n_idx].assignment = ""
                 self.other_agents[n_idx].previous_assignment = ""
@@ -861,7 +869,7 @@ class DecisionControl:
                 for agent_id in self.movement.help_status_info[0]: #self.movement.being_helped: #if you are being helped, ignore locations of your teammates
 
                     agent_idx = info['robot_key_to_index'][agent_id]
-                    other_robot_location = robotState.robots[agent_idx]["neighbor_location"]
+                    other_robot_location = robotState.get("agents", "last_seen_location", agent_idx)
                     
                     if not (other_robot_location[0] == -1 and other_robot_location[1] == -1) and occMap[other_robot_location[0],other_robot_location[1]] != 5:
                         occMap[other_robot_location[0],other_robot_location[1]] = 3
@@ -1059,7 +1067,7 @@ class DecisionControl:
          
         elif self.top_action_sequence == 2:
                
-            chosen_location = robotState.robots[info['robot_key_to_index'][str(agent_id)]]["neighbor_location"]
+            chosen_location = robotState.get("agents", "last_seen_location", info['robot_key_to_index'][str(agent_id)]) #robotState.robots[info['robot_key_to_index'][str(agent_id)]]["neighbor_location"]
             
             self.object_of_interest = ""
             
@@ -1069,7 +1077,7 @@ class DecisionControl:
                     action,temp_finished,_ = self.ask_info(agent_id, MessagePattern.ask_for_agent(agent_id), robotState, next_observation, info)
                     if temp_finished:
                         self.action_sequence = 0
-                        chosen_location = robotState.robots[info['robot_key_to_index'][str(agent_id)]]["neighbor_location"]
+                        chosen_location = robotState.get("agents", "last_seen_location", info['robot_key_to_index'][str(agent_id)]) #robotState.robots[info['robot_key_to_index'][str(agent_id)]]["neighbor_location"]
                         if (chosen_location[0] == -1 and chosen_location[1] == -1):
                             self.movement.help_status = self.movement.HelpState.no_request
                             self.message_text += MessagePattern.object_not_found(agent_id, object_id)
@@ -1114,7 +1122,7 @@ class DecisionControl:
                 chosen_location = grid_location
                 object_id = grid_location
             else:
-                chosen_location = robotState.items[info['object_key_to_index'][str(object_id)]]["item_location"]
+                chosen_location = robotState.get("objects", "last_seen_location", info['object_key_to_index'][str(object_id)]) #robotState.items[info['object_key_to_index'][str(object_id)]]["item_location"]
                 self.object_of_interest = object_id
         
             if (chosen_location[0] == -1 and chosen_location[1] == -1):# or self.occMap[chosen_location[0],chosen_location[1]] != 2: #if there is no object in the correct place
@@ -1147,7 +1155,7 @@ class DecisionControl:
         
             self.object_of_interest = object_id
 
-            chosen_location = robotState.items[info['object_key_to_index'][str(object_id)]]["item_location"]
+            chosen_location = robotState.get("objects", "last_seen_location", info['object_key_to_index'][str(object_id)]) #robotState.items[info['object_key_to_index'][str(object_id)]]["item_location"]
             
             if (chosen_location[0] == -1 and chosen_location[1] == -1) or tuple(chosen_location) in self.extended_goal_coords: #or self.occMap[chosen_location[0],chosen_location[1]] != 2 if there is no object in the correct place
                 finished = True
@@ -1157,7 +1165,7 @@ class DecisionControl:
                 wait = False
                 for agent_id in self.movement.help_status_info[0]:
                     agent_idx = info['robot_key_to_index'][agent_id]
-                    other_robot_location = robotState.robots[agent_idx]["neighbor_location"]
+                    other_robot_location = robotState.get("agents", "last_seen_location", agent_idx) #robotState.robots[agent_idx]["neighbor_location"]
                     if (other_robot_location[0] == -1 and other_robot_location[1] == -1):
                         wait = True
                     else:
@@ -1167,7 +1175,7 @@ class DecisionControl:
             
                         if real_distance >= distance_limit:
                             wait = True
-                            if not robotState.robots[agent_idx]["neighbor_type"]:
+                            if not robotState.get("agents", "type", agent_idx): #robotState.robots[agent_idx]["neighbor_type"]:
                                 self.message_text += MessagePattern.come_closer(agent_id)
                 if wait:          
                     if time.time() - self.movement.help_status_info[1] > self.help_time_limit2: #time.time() - self.movement.asked_time > self.help_time_limit2:                           
@@ -1232,7 +1240,7 @@ class DecisionControl:
                     for agent_id in self.movement.help_status_info[0]:
 
                         agent_idx = info['robot_key_to_index'][agent_id]
-                        other_robot_location = robotState.robots[agent_idx]["neighbor_location"]
+                        other_robot_location = robotState.get("agents", "last_seen_location", agent_idx) #robotState.robots[agent_idx]["neighbor_location"]
                         
                         if not (other_robot_location[0] == -1 and other_robot_location[1] == -1):
                             self.occMap[other_robot_location[0],other_robot_location[1]] = 3
@@ -1366,7 +1374,7 @@ class DecisionControl:
         
         if self.top_action_sequence == 0:
 
-            chosen_location = robotState.robots[info['robot_key_to_index'][str(robot_id)]]["neighbor_location"]
+            chosen_location = robotState.get("agents", "last_seen_location", info['robot_key_to_index'][str(robot_id)]) #robotState.robots[info['robot_key_to_index'][str(robot_id)]]["neighbor_location"]
             
             if (chosen_location[0] == -1 and chosen_location[1] == -1): #if there is no agent in the correct place
                 print("no more helping")
@@ -1374,7 +1382,7 @@ class DecisionControl:
                     action,temp_finished,_ = self.ask_info(robot_id, MessagePattern.ask_for_agent(robot_id), robotState, next_observation, info)
                     if temp_finished:
                         self.action_sequence = 0
-                        chosen_location = robotState.robots[info['robot_key_to_index'][str(robot_id)]]["neighbor_location"]
+                        chosen_location = robotState.get("agents", "last_seen_location", info['robot_key_to_index'][str(robot_id)]) #robotState.robots[info['robot_key_to_index'][str(robot_id)]]["neighbor_location"]
                         if (chosen_location[0] == -1 and chosen_location[1] == -1):
                             finished = True
                 else:
@@ -1419,14 +1427,14 @@ class DecisionControl:
                 if helping_agents in nearby_other_agents_ids:
                     nearby_other_agents_ids.remove(helping_agents)
             
-            if not robotState.robots[agent_idx]["neighbor_type"] and nearby_other_agents_ids and False:
-                message_to_personalize = MessagePattern.carry_help(str(object_id),robotState.items[object_idx]["item_weight"]-1-robots_already_helping)
+            if not robotState.get("agents", "type", agent_idx) and nearby_other_agents_ids and False:
+                message_to_personalize = MessagePattern.carry_help(str(object_id),robotState.get("objects", "weight", object_idx)-1-robots_already_helping)
                 message_to_send = self.human_to_ai_text.personalize_message(message_to_personalize, nearby_other_agents_ids, self.message_history)
                 
                 if not message_to_send:
                     message_to_send = message_to_personalize
             else:
-                message_to_send = MessagePattern.carry_help(str(object_id),robotState.items[object_idx]["item_weight"]-1-robots_already_helping)
+                message_to_send = MessagePattern.carry_help(str(object_id),robotState.get("objects", "weight", object_idx)-1-robots_already_helping)
             
             self.message_text += message_to_send
          
@@ -1442,7 +1450,7 @@ class DecisionControl:
             
         elif self.top_action_sequence == 2:
             object_idx =info['object_key_to_index'][str(object_id)]
-            if (self.movement.help_status != self.movement.HelpState.asking and len(self.movement.help_status_info[0])+1 >= robotState.items[object_idx]["item_weight"]) or time.time() - self.movement.help_status_info[1] > self.movement.wait_time_limit:
+            if (self.movement.help_status != self.movement.HelpState.asking and len(self.movement.help_status_info[0])+1 >= robotState.get("objects", "weight", object_idx)) or time.time() - self.movement.help_status_info[1] > self.movement.wait_time_limit:
                 finished = True
             action["action"] = Action.get_occupancy_map.value
         
@@ -1465,7 +1473,7 @@ class DecisionControl:
         
         robot_idx = info['robot_key_to_index'][str(robot_id)]
             
-        chosen_location = robotState.robots[robot_idx]["neighbor_location"]
+        chosen_location = robotState.get("agents", "last_seen_location", robot_idx) #robotState.robots[robot_idx]["neighbor_location"]
             
         real_distance = self.env.compute_real_distance([chosen_location[0],chosen_location[1]],[ego_location[0][0],ego_location[1][0]])
                 
@@ -1491,7 +1499,7 @@ class DecisionControl:
         if self.top_action_sequence == 0:
 
             try:
-                chosen_location = robotState.robots[info['robot_key_to_index'][str(robot_id)]]["neighbor_location"]
+                chosen_location = robotState.get("agents", "last_seen_location", info['robot_key_to_index'][str(robot_id)]) #robotState.robots[info['robot_key_to_index'][str(robot_id)]]["neighbor_location"]
             except:
                 pdb.set_trace()
             
@@ -1500,7 +1508,7 @@ class DecisionControl:
                     action,temp_finished,_ = self.ask_info(robot_id, MessagePattern.ask_for_agent(robot_id), robotState, next_observation, info)
                     if temp_finished:
                         self.action_sequence = 0
-                        chosen_location = robotState.robots[info['robot_key_to_index'][str(robot_id)]]["neighbor_location"]
+                        chosen_location = robotState.get("agents", "last_seen_location", info['robot_key_to_index'][str(robot_id)]) #robotState.robots[info['robot_key_to_index'][str(robot_id)]]["neighbor_location"]
                         if (chosen_location[0] == -1 and chosen_location[1] == -1):
                             finished = True
                 else:
@@ -1523,7 +1531,7 @@ class DecisionControl:
             self.helping_type = self.HelpType.sensing
             
             agent_idx = info['robot_key_to_index'][robot_id]
-            if not robotState.robots[agent_idx]["neighbor_type"] and False:
+            if not robotState.get("agents", "type", agent_idx) and False:
                 message_to_personalize = MessagePattern.sensing_ask_help(robotState, item_idx, object_id, robot_id, self.env.convert_to_real_coordinates)
                 message_to_send = self.human_to_ai_text.personalize_message(message_to_personalize, [robot_id], self.message_history)
                 
@@ -1553,7 +1561,7 @@ class DecisionControl:
             
                 agent_idx = info['robot_key_to_index'][robot_id]
                 
-                target_location = robotState.robots[agent_idx]["neighbor_location"]
+                target_location = robotState.get("agents", "last_seen_location", agent_idx) #robotState.robots[agent_idx]["neighbor_location"]
                 ego_location = np.where(robotState.latest_map == 5)
 
                 action,temp_finished,output = self.go_to_location(robot_id, robotState, next_observation, info)
@@ -1567,7 +1575,7 @@ class DecisionControl:
                 if real_distance < distance_limit:
                     action["action"] = Action.get_occupancy_map.value
                     
-                if robotState.robots[agent_idx]["neighbor_disabled"] == 1:
+                if robotState.get("agents", "disabled", agent_idx) == 1:
                     self.movement.help_status = self.movement.HelpState.no_request
                     print("disabled sensing")
                     finished = True
@@ -1633,11 +1641,13 @@ class DecisionControl:
             
             robot_idx = info['robot_key_to_index'][str(object_id)]
             
-            if (robotState.robots[robot_idx]["neighbor_location"][0] == -1 and robotState.robots[robot_idx]["neighbor_location"][1] == -1):
+            robo_location = robotState.get("agents", "last_seen_location", robot_idx)
+            
+            if (robo_location[0] == -1 and robo_location[1] == -1):
                 action["action"] = Action.get_occupancy_map.value
                 return action,True,output
             
-            x,y = robotState.robots[robot_idx]["neighbor_location"]
+            x,y = robo_location
             
         elif isinstance(object_id, list):    
         
@@ -1648,11 +1658,12 @@ class DecisionControl:
             
                 item_idx = info['object_key_to_index'][str(object_id)]
             
-                if (robotState.items[item_idx]["item_location"][0] == -1 and robotState.items[item_idx]["item_location"][1] == -1):
+                object_location = robotState.get("objects", "last_seen_location", item_idx)
+                if (object_location[0] == -1 and object_location[1] == -1):
                     action["action"] = Action.get_occupancy_map.value
                     return action,True,output
             
-                x,y = robotState.items[item_idx]["item_location"]
+                x,y = object_location
                 
                 
             except:
@@ -1751,12 +1762,13 @@ class DecisionControl:
             
                 ob_idx = info["object_key_to_index"][key]
             
-                if robotState.items[ob_idx]["item_danger_level"] == 1:
+                if robotState.get("objects", "danger_status", ob_idx) == 1:
                     danger_level = "benign"
                 else:
                     danger_level = "dangerous"
                     
-                output.append([str(key),str(int(robotState.items[ob_idx]["item_location"][0]))+","+str(int(robotState.items[ob_idx]["item_location"][1])),str(robotState.items[ob_idx]["item_weight"]),danger_level,str(robotState.items[ob_idx]["item_danger_confidence"][0])])
+                object_location = robotState.get("objects", "last_seen_location", ob_idx)
+                output.append([str(key),str(int(object_location[0]))+","+str(int(object_location[1])),str(robotState.get("objects", "weight", ob_idx)),danger_level,str(robotState.get("objects", "estimate_correct_percentage", ob_idx))])
             
             action["action"] = Action.get_occupancy_map.value
         
@@ -1810,7 +1822,7 @@ class DecisionControl:
             else:
                 tmp_message = ""
             
-            if any(not robotState.robots[r_idx]["neighbor_type"] for r_idx in self.nearby_other_agents):
+            if any(not robotState.get("agents", "type", r_idx) for r_idx in self.nearby_other_agents):
                 message_ai = rematch_str
                 message = tmp_message
 
@@ -1847,12 +1859,12 @@ class DecisionControl:
                 ob_idx = info["object_key_to_index"][str(object_id)]
              
 
-                if not robotState.items[ob_idx]["item_weight"]:
+                if not robotState.get("objects", "weight", ob_idx):
                     output = -2
                     finished = True
                     action["action"] = Action.get_occupancy_map.value
                 else:
-                    location = robotState.items[ob_idx]["item_location"]
+                    location = robotState.get("objects", "last_seen_location", ob_idx) #robotState.items[ob_idx]["item_location"]
                     action["action"] = self.movement.position_to_action([ego_location[0][0],ego_location[1][0]],location,True)
                     if action["action"] == -1 or (location[0] == -1 and location[1] == -1):
                         action["action"] = Action.get_occupancy_map.value
@@ -1877,7 +1889,7 @@ class DecisionControl:
                     self.held_objects = str(object_id)
             else:
                 ob_idx = info["object_key_to_index"][str(object_id)]
-                location = robotState.items[ob_idx]["item_location"]
+                location = robotState.get("objects", "last_seen_location", ob_idx) #robotState.items[ob_idx]["item_location"]
                 action["action"] = self.movement.position_to_action([ego_location[0][0],ego_location[1][0]],location,True)
                 self.action_retry += 1
                 
@@ -1908,13 +1920,16 @@ class DecisionControl:
             finished = True
             action["action"] = Action.get_occupancy_map.value
         elif self.occMap[target_location[0],target_location[1]] == 5:
-            print([r["neighbor_disabled"] == 1 for r in robotState.robots], self.nearby_other_agents)
-            if len(self.nearby_other_agents) == len(robotState.robots)-sum(r["neighbor_disabled"] == 1 for r in robotState.robots):
+        
+            robot_disabled = robotState.get("agents", "disabled", -1)
+        
+            print([r == 1 for r in robot_disabled], self.nearby_other_agents)
+            if len(self.nearby_other_agents) == robotState.get_num_robots()-sum(r == 1 for r in robot_disabled):
                 if not self.finished or not self.told_to_finish:
                     self.message_text += MessagePattern.finish()
                     
-                    for ob_key in range(len(robotState.items)): #include heavy dangerous objects to report
-                        if robotState.items[ob_key]["item_weight"] >= len(self.env.map_config['all_robots'])+2 and robotState.items[ob_key]["item_danger_level"] == 2:
+                    for ob_key in range(robotState.get_num_objects()): #include heavy dangerous objects to report
+                        if robotState.get("objects", "weight", ob_key) >= len(self.env.map_config['all_robots'])+2 and robotState.get("objects", "danger_status", ob_key) == 2:
                             object_id = list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(ob_key)]
                             self.message_text += MessagePattern.item(robotState,ob_key,object_id, info, self.env.robot_id, self.env.convert_to_real_coordinates)
                             
@@ -2032,14 +2047,17 @@ class DecisionControl:
         if self.movement.help_status == self.movement.HelpState.being_helped:
             being_helped_indices = [info['robot_key_to_index'][agent_id] for agent_id in self.movement.help_status_info[0]]
         
-        for r_idx in range(len(robotState.robots)):
-            if robotState.robots[r_idx]["neighbor_disabled"] == 1:
+        for r_idx in range(robotState.get_num_robots()):
+        
+            robo_location = robotState.get("agents", "last_seen_location", r_idx)
+        
+            if robotState.get("agents", "disabled", r_idx) == 1:
                 continue
-            elif (robotState.robots[r_idx]["neighbor_location"][0] == -1 and robotState.robots[r_idx]["neighbor_location"][1] == -1) or r_idx in being_helped_indices or r_idx in excluded:
+            elif (robo_location[0] == -1 and robo_location[1] == -1) or r_idx in being_helped_indices or r_idx in excluded:
                 robot_distance = float("inf")
             else:
             
-                _, next_locs, _, _ = self.movement.go_to_location(robotState.robots[r_idx]["neighbor_location"][0], robotState.robots[r_idx]["neighbor_location"][1], self.occMap, robotState, info, ego_location, self.action_index, checking=True, help_sensing=self.helping_type == self.HelpType.sensing)
+                _, next_locs, _, _ = self.movement.go_to_location(robo_location[0], robo_location[1], self.occMap, robotState, info, ego_location, self.action_index, checking=True, help_sensing=self.helping_type == self.HelpType.sensing)
                 robot_distance = len(next_locs)
                 
             agents_distance.append(robot_distance)
@@ -2061,7 +2079,7 @@ class DecisionControl:
             
 
         ego_location = np.where(robotState.latest_map == 5)
-        chosen_location = robotState.robots[info['robot_key_to_index'][str(self.leader_id)]]["neighbor_location"] #We are missing leader id
+        chosen_location = robotState.get("agents", "last_seen_location", info['robot_key_to_index'][str(self.leader_id)]) #robotState.robots[info['robot_key_to_index'][str(self.leader_id)]]["neighbor_location"] #We are missing leader id
         
         if self.movement.help_status == self.movement.HelpState.being_helped:
             _,self.message_text,self.action_index = self.movement.cancel_cooperation(self.State.decision_state,self.message_text, message=MessagePattern.carry_help_finish())
@@ -2158,7 +2176,7 @@ class DecisionControl:
             
             print(p_idx,p.previous_assignment)
             
-            if robotState.robots[p_idx]["neighbor_disabled"] == 1:
+            if robotState.get("agents", "disabled", p_idx) == 1:
                 p.previous_assignment = ''
                 p.assignment = ''
                 continue
@@ -2200,9 +2218,9 @@ class DecisionControl:
         
         assigned_explore_locations = []
         got_indices = False
-        for r in range(len(robotState.robots)):
+        for r in range(robotState.get_num_robots()):
         
-            if robotState.robots[p_idx]["neighbor_disabled"] != 1:
+            if robotState.get("agents", "disabled", p_idx) != 1:
             
                 for si in sorted_indices:
                 
@@ -2241,15 +2259,20 @@ class DecisionControl:
                 if explored < 1:
                     utility["explore" + "_" + utility_str] = math.exp(-2*explored)*100
         
-            for ob_idx,ob in enumerate(robotState.items):
+            for ob_idx in range(robotState.get_num_objects()):
         
-                if not (ob["item_location"][0] == -1 and ob["item_location"][1] == -1) and tuple(ob["item_location"]) not in self.extended_goal_coords:
-                    _, next_locs, _, _ = self.movement.go_to_location(ob["item_location"][0], ob["item_location"][1], self.occMap, robotState, info, ego_location, self.action_index, checking=True, help_sensing=self.helping_type == self.HelpType.sensing)
+                ob_location = robotState.get("objects", "last_seen_location", ob_idx)
+        
+                if not (ob_location[0] == -1 and ob_location[1] == -1) and tuple(ob_location) not in self.extended_goal_coords:
+                    _, next_locs, _, _ = self.movement.go_to_location(ob_location[0], ob_location[1], self.occMap, robotState, info, ego_location, self.action_index, checking=True, help_sensing=self.helping_type == self.HelpType.sensing)
                     robot_distance = len(next_locs)
                 
                     if robot_distance:
         
-                        if ob["item_danger_level"] and len(s_comb) == ob["item_weight"] and not any(("sense" in pa and int(pa.split("_")[1]) == ob_idx) or ("pickup" in pa and int(pa.split("_")[1]) == ob_idx) for pa in previously_assigned) and not any(s in pickup_excluded for s in s_comb):
+                        danger_level = robotState.get("objects", "danger_status", ob_idx)
+                        
+        
+                        if danger_level and len(s_comb) == robotState.get("objects", "weight", ob_idx) and not any(("sense" in pa and int(pa.split("_")[1]) == ob_idx) or ("pickup" in pa and int(pa.split("_")[1]) == ob_idx) for pa in previously_assigned) and not any(s in pickup_excluded for s in s_comb):
                      
                             
                             diag = gum.InfluenceDiagram()
@@ -2265,13 +2288,15 @@ class DecisionControl:
                             diag.addArc(Pickup,Pickup_Utility)
                             diag.addArc(Pickup,Pickup_Cost)
 
-                            if ob["item_danger_level"] == 0:
+                            danger_confidence = robotState.get("objects", "estimate_correct_percentage", ob_idx)
+
+                            if danger_level == 0:
                                 diag.cpt(Estimate).fillWith([0.70, 0.30])
-                            elif ob["item_danger_level"] == 1:
-                                confidence = ob["item_danger_confidence"][0]
+                            elif danger_level == 1:
+                                confidence = danger_confidence
                                 diag.cpt(Estimate).fillWith([confidence, 1-confidence])
-                            elif ob["item_danger_level"] == 2:
-                                confidence = ob["item_danger_confidence"][0]
+                            elif danger_level == 2:
+                                confidence = danger_confidence
                                 diag.cpt(Estimate).fillWith([1-confidence, confidence])
                                 
                             #diag.utility(Pickup_Utility)[{'Pickup':0}] = [[100],[0]]
@@ -2290,7 +2315,7 @@ class DecisionControl:
                             
                             utility["pickup_" + str(ob_idx) + "_" + utility_str] = ie.MEU()["mean"]#100 #ie.MEU()["mean"]
                     
-                        if all(not robotState.item_estimates[ob_idx][ag]["item_danger_level"] for ag in s_comb) and not any(("pickup" in pa and int(pa.split("_")[1]) == ob_idx) for pa in previously_assigned) and not any(previous_previous_assigned[pa_idx] and previous_previous_assigned[pa_idx][0] == "sense" and int(previous_previous_assigned[pa_idx][1]) == ob_idx for pa_idx in previous_previous_assigned.keys()) and not any(s in sensing_excluded for s in s_comb):
+                        if all(not robotState.get("object_estimates", "danger_status", [ob_idx,ag]) for ag in s_comb) and not any(("pickup" in pa and int(pa.split("_")[1]) == ob_idx) for pa in previously_assigned) and not any(previous_previous_assigned[pa_idx] and previous_previous_assigned[pa_idx][0] == "sense" and int(previous_previous_assigned[pa_idx][1]) == ob_idx for pa_idx in previous_previous_assigned.keys()) and not any(s in sensing_excluded for s in s_comb):
                         
                             diag = gum.InfluenceDiagram()
 
@@ -2312,12 +2337,12 @@ class DecisionControl:
                             prior_benign = 0.7
                             prior_dangerous = 0.3
                             
-                            if robotState.items[ob_idx]["item_danger_level"] == 1:
-                                prior_dangerous = 1-robotState.items[ob_idx]["item_danger_confidence"][0]
-                                prior_benign = robotState.items[ob_idx]["item_danger_confidence"][0]
-                            elif robotState.items[ob_idx]["item_danger_level"] == 2:
-                                prior_dangerous = robotState.items[ob_idx]["item_danger_confidence"][0]
-                                prior_benign = 1-robotState.items[ob_idx]["item_danger_confidence"][0]
+                            if robotState.get("objects", "danger_status", ob_idx) == 1:
+                                prior_dangerous = 1-robotState.get("objects", "estimate_correct_percentage", ob_idx)
+                                prior_benign = robotState.get("objects", "estimate_correct_percentage", ob_idx)
+                            elif robotState.get("objects", "danger_status", ob_idx) == 2:
+                                prior_dangerous = robotState.get("objects", "estimate_correct_percentage", ob_idx)
+                                prior_benign = 1-robotState.get("objects", "estimate_correct_percentage", ob_idx)
                             
                             
                             for item_danger_level in [1,2]:
@@ -2325,7 +2350,7 @@ class DecisionControl:
                                     
                                     
                                         
-                                    if ie_idx == len(robotState.robots):
+                                    if ie_idx == robotState.get_num_robots():
                                         if item_danger_level == 2:
                                             benign = 1-robotState.sensor_parameters[0]
                                             dangerous = robotState.sensor_parameters[1]
@@ -2430,7 +2455,7 @@ class DecisionControl:
                     
                     if "sense" in keys[svi]:
 
-                        location = robotState.items[int(key_parts[1])]["item_location"]
+                        location = robotState.get("objects", "last_seen_location", int(key_parts[1])) #robotState.items[int(key_parts[1])]["item_location"]
                 
                         self.message_text += MessagePattern.order_sense(robot_id, location, self.env.convert_to_real_coordinates)
                         
@@ -2518,7 +2543,7 @@ class DecisionControl:
                    
 
         already_requested = False        
-        for teammate_idx in range(len(robotState.robots)): #If an agent has previously been requested help, wait some time until we take it into consideration again
+        for teammate_idx in range(robotState.get_num_robots()): #If an agent has previously been requested help, wait some time until we take it into consideration again
             
             if teammate_idx in self.help_request_time.keys() and time.time() - self.help_request_time[teammate_idx][0] < self.help_request_time[teammate_idx][1]: 
                 if teammate_idx not in pickup_excluded:
@@ -2531,7 +2556,7 @@ class DecisionControl:
                 already_requested = True
                 
         if already_requested: #Include everyone if already requested help
-            for teammate_idx in range(len(robotState.robots)):
+            for teammate_idx in range(robotState.get_num_robots()):
                 if teammate_idx not in pickup_excluded:
                     pickup_excluded.append(teammate_idx)
                         
@@ -2541,7 +2566,7 @@ class DecisionControl:
                    
                 
         if "role" in self.team_structure and self.team_structure["role"][self.env.robot_id] == "lifter": #If you are only lifting, exclude yourself from sensing
-            sensing_excluded.append(len(robotState.robots))    
+            sensing_excluded.append(robotState.get_num_robots())    
                 
                     
         initial_agents_distance = self.calculate_neighbor_distance(robotState, info, ego_location, pickup_excluded) #Calculate the distances between yourself and the other robots but exclude some of the robots according to roles
@@ -2551,12 +2576,12 @@ class DecisionControl:
         all_robot_combinations = []
         robot_range = []
         
-        for i in range(len(robotState.robots)):
-            if robotState.robots[i]["neighbor_disabled"] != 1: #Only take into account those robots that are not disabled
+        for i in range(robotState.get_num_robots()):
+            if robotState.get("agents", "disabled", i) != 1: #Only take into account those robots that are not disabled
                 robot_range.append(i)
         
         for i in range(len(robot_range)): #Compute all possible combinations of robot groups
-            all_robot_combinations.extend(combinations([*robot_range, len(robotState.robots)], i+1))
+            all_robot_combinations.extend(combinations([*robot_range, robotState.get_num_robots()], i+1))
         
         '''
         pickup_not_available = []
@@ -2573,14 +2598,17 @@ class DecisionControl:
                 break
             else:
                 cost_agents.append((closest_idx, agents_distance[closest_idx])) #Cost to reach one of the agents in sequence
-                next_location = np.array([[robotState.robots[robot_range[closest_idx]]["neighbor_location"][0]],[robotState.robots[robot_range[closest_idx]]["neighbor_location"][1]]])
+                
+                robo_location = robotState.get("agents", "last_seen_location", robot_range[closest_idx])
+                
+                next_location = np.array([[robo_location[0]],[robo_location[1]]])
                 agents_distance = self.calculate_neighbor_distance(robotState, info, next_location, pickup_excluded)
 
         
         
         pickup_ready = False
         if self.movement.help_status != self.movement.HelpState.accepted: #If we are not helping anyone
-            for ob_idx,ob in enumerate(robotState.items): #For all possible objects
+            for ob_idx in range(robotState.get_num_objects()): #For all possible objects
             
                 try:
                     object_id = list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(ob_idx)]
@@ -2593,24 +2621,28 @@ class DecisionControl:
                 possible_actions[ob_idx] = {}
                 request_cost = 0
                 
-                if (ob["item_location"][0] == -1 and ob["item_location"][1] == -1) or tuple(ob["item_location"]) in self.extended_goal_coords: #If the location of this objects is not known, continue
+                ob_location = robotState.get("objects", "last_seen_location", ob_idx)
+                
+                if (ob_location[0] == -1 and ob_location[1] == -1) or tuple(ob_location) in self.extended_goal_coords: #If the location of this objects is not known, continue
                     continue
                 else:
                     
-                    if ob["item_weight"] > 1: #If the object requires greater strength
+                    ob_weight = robotState.get("objects", "weight", ob_idx)
+                    
+                    if ob_weight > 1: #If the object requires greater strength
                         
                         
-                        if len(cost_agents) < ob["item_weight"] -1 -number_helping: #If we have more agents helping than needed for this particular object, just skip it
+                        if len(cost_agents) < ob_weight -1 -number_helping: #If we have more agents helping than needed for this particular object, just skip it
                             continue
                         
-                        if ob["item_weight"]-1 <= number_helping: #If we have enough helping agents to carry
+                        if ob_weight-1 <= number_helping: #If we have enough helping agents to carry
                         
-                            _, next_locs, _, _ = self.movement.go_to_location(ob["item_location"][0], ob["item_location"][1], self.occMap, robotState, info, ego_location, self.action_index, checking=True, help_sensing=self.helping_type == self.HelpType.sensing)
+                            _, next_locs, _, _ = self.movement.go_to_location(ob_location[0], ob_location[1], self.occMap, robotState, info, ego_location, self.action_index, checking=True, help_sensing=self.helping_type == self.HelpType.sensing)
                             distance = len(next_locs)
                             
                         else: #Otherwise we also have to consider the cost of requesting help
                         
-                            for ag_idx in range(ob["item_weight"]-1 -number_helping): #Add the cost of requesting help from the needed amount of agents
+                            for ag_idx in range(ob_weight-1 -number_helping): #Add the cost of requesting help from the needed amount of agents
                                 request_cost += cost_agents[ag_idx][1]
                             
                             try:
@@ -2619,15 +2651,16 @@ class DecisionControl:
                                 pdb.set_trace()
                             
                             robo_idx = cost_agents[ag_idx][0]
-                            next_ego_location = np.array([[robotState.robots[robot_range[robo_idx]]["neighbor_location"][0]],[robotState.robots[robot_range[robo_idx]]["neighbor_location"][1]]])
-                            _, next_locs, _, _ = self.movement.go_to_location(ob["item_location"][0], ob["item_location"][1], self.occMap, robotState, info, next_ego_location, self.action_index, checking=True, help_sensing=self.helping_type == self.HelpType.sensing)
+                            robo_location = robotState.get("agents", "last_seen_location", robot_range[robo_idx])
+                            next_ego_location = np.array([[robo_location[0]],[robo_location[1]]])
+                            _, next_locs, _, _ = self.movement.go_to_location(ob_location[0], ob_location[1], self.occMap, robotState, info, next_ego_location, self.action_index, checking=True, help_sensing=self.helping_type == self.HelpType.sensing)
                             distance = len(next_locs)
                         
                         
                         #print("pickup args", possible_actions[ob_idx]["pickup_args"])
                         
                     else: #If we can carry the object alone
-                        _, next_locs, _, _ = self.movement.go_to_location(ob["item_location"][0], ob["item_location"][1], self.occMap, robotState, info, ego_location, self.action_index, checking=True, help_sensing=self.helping_type == self.HelpType.sensing)
+                        _, next_locs, _, _ = self.movement.go_to_location(ob_location[0], ob_location[1], self.occMap, robotState, info, ego_location, self.action_index, checking=True, help_sensing=self.helping_type == self.HelpType.sensing)
                         distance = len(next_locs)
                     
                     if not distance: #If the distance is 0, ignore
@@ -2635,7 +2668,7 @@ class DecisionControl:
                         
                             
                     goal_location = np.array([[goal_x],[goal_y]])
-                    _, next_locs, _, _ = self.movement.go_to_location(ob["item_location"][0], ob["item_location"][1], self.occMap, robotState, info, goal_location, self.action_index, checking=True, help_sensing=self.helping_type == self.HelpType.sensing)
+                    _, next_locs, _, _ = self.movement.go_to_location(ob_location[0], ob_location[1], self.occMap, robotState, info, goal_location, self.action_index, checking=True, help_sensing=self.helping_type == self.HelpType.sensing)
                     return_distance = len(next_locs) #calculate distance to return to goal from object
                     
                     pickup_cost = distance + return_distance + request_cost #pickup cost is equal to adding the distance to get to the object + the distances between the agents to whom request help + the distance to move the object to the goal area
@@ -2651,8 +2684,9 @@ class DecisionControl:
                     
                         if ia < float("inf"): #If agent is reacheable calculate distance to it
                         
-                            next_ego_location = np.array([[robotState.robots[robot_range[ia_idx]]["neighbor_location"][0]],[robotState.robots[robot_range[ia_idx]]["neighbor_location"][1]]])
-                            _, next_locs, _, _ = self.movement.go_to_location(ob["item_location"][0], ob["item_location"][1], self.occMap, robotState, info, next_ego_location, self.action_index, checking=True, help_sensing=self.helping_type == self.HelpType.sensing)
+                            robo_location = robotState.get("agents", "last_seen_location", robot_range[ia_idx])
+                            next_ego_location = np.array([[robo_location[0]],[robo_location[1]]])
+                            _, next_locs, _, _ = self.movement.go_to_location(ob_location[0], ob_location[1], self.occMap, robotState, info, next_ego_location, self.action_index, checking=True, help_sensing=self.helping_type == self.HelpType.sensing)
                             ask_sense_distance = len(next_locs)
                             
                             if not ask_sense_distance: #If distance is zero, ignore
@@ -2666,12 +2700,12 @@ class DecisionControl:
                             not_available.append(robot_range[ia_idx])
                 
                     
-                    for robo_idx in range(len(robotState.item_estimates[ob_idx])): #Check if we already have an estimate for that object from specific agents
-                        if robo_idx not in not_available and (robotState.item_estimates[ob_idx][robo_idx]["item_danger_level"] != 0): # or robo_idx in pickup_not_available): # or (robo_idx in self.sense_request_time.keys() and time.time() - self.sense_request_time[robo_idx][0] < self.sense_request_time[robo_idx][1]):
+                    for robo_idx in range(robotState.get_num_estimates(ob_idx)): #Check if we already have an estimate for that object from specific agents
+                        if robo_idx not in not_available and (robotState.get("object_estimates", "danger_status", [ob_idx,robo_idx]) != 0): # or robo_idx in pickup_not_available): # or (robo_idx in self.sense_request_time.keys() and time.time() - self.sense_request_time[robo_idx][0] < self.sense_request_time[robo_idx][1]):
                             not_available.append(robo_idx)
                                 
-                    if robotState.item_estimates[ob_idx][-1]["item_danger_level"] != 0: #Check also if we already sensed the objects ourselve
-                        not_available.append(len(robotState.robots))
+                    if robotState.get("object_estimates", "danger_status", [ob_idx,robotState.get_num_estimates(ob_idx)-1]) != 0: #Check also if we already sensed the objects ourselve
+                        not_available.append(robotState.get_num_robots())
                     
                     possible_actions[ob_idx]["sensing"] = {}
                     
@@ -2683,11 +2717,11 @@ class DecisionControl:
                         
                         if not any(el in not_available or el in sensing_excluded for el in comb): #If no agent in that subset has not been excluded
                             actual_combinations.append(comb)
-                            if not (len(comb) == 1 and len(robotState.robots) in comb): #If it's not us only the ones in that combination
+                            if not (len(comb) == 1 and robotState.get_num_robots() in comb): #If it's not us only the ones in that combination
                                 
                                 for elem_idx,elem in enumerate(comb):
                                 
-                                    if elem == len(robotState.robots):
+                                    if elem == robotState.get_num_robots():
                                         continue
                                         
                                     if not elem_idx: 
@@ -2705,8 +2739,9 @@ class DecisionControl:
                         
                     
                     
+                    ob_danger = robotState.get("objects", "danger_status", ob_idx)
                     
-                    if ob["item_danger_level"] and "pickup" in possible_actions[ob_idx]: #If we already have an estimation of the danger level of the object, create the decision network to compute the costs of picking that object 
+                    if ob_danger and "pickup" in possible_actions[ob_idx]: #If we already have an estimation of the danger level of the object, create the decision network to compute the costs of picking that object 
                             
                         pickup_ready = True
                             
@@ -2727,16 +2762,17 @@ class DecisionControl:
                         """
 
                         danger_percentage = 0.50
+                        ob_danger_estimate = robotState.get("objects", "estimate_correct_percentage", ob_idx)
 
-                        if ob["item_danger_level"] == 0:
+                        if ob_danger == 0:
                             #diag.cpt(Estimate).fillWith([0.70, 0.30])
                             pass
-                        elif ob["item_danger_level"] == 1:
-                            confidence = ob["item_danger_confidence"][0]
+                        elif ob_danger == 1:
+                            confidence = ob_danger_estimate
                             #diag.cpt(Estimate).fillWith([confidence, 1-confidence])
                             danger_percentage = 1-confidence
-                        elif ob["item_danger_level"] == 2:
-                            confidence = ob["item_danger_confidence"][0]
+                        elif ob_danger == 2:
+                            confidence = ob_danger_estimate
                             #diag.cpt(Estimate).fillWith([1-confidence, confidence])
                             danger_percentage = confidence
                             
@@ -2788,12 +2824,12 @@ class DecisionControl:
                             prior_benign = 0.5
                             prior_dangerous = 0.5
                             
-                            if robotState.items[ob_idx]["item_danger_level"] == 1:
-                                prior_dangerous = 1-robotState.items[ob_idx]["item_danger_confidence"][0]
-                                prior_benign = robotState.items[ob_idx]["item_danger_confidence"][0]
-                            elif robotState.items[ob_idx]["item_danger_level"] == 2:
-                                prior_dangerous = robotState.items[ob_idx]["item_danger_confidence"][0]
-                                prior_benign = 1-robotState.items[ob_idx]["item_danger_confidence"][0]
+                            if robotState.get("objects", "danger_status", ob_idx) == 1:
+                                prior_dangerous = 1-robotState.get("objects", "estimate_correct_percentage", ob_idx)
+                                prior_benign = robotState.get("objects", "estimate_correct_percentage", ob_idx)
+                            elif robotState.get("objects", "danger_status", ob_idx) == 2:
+                                prior_dangerous = robotState.get("objects", "estimate_correct_percentage", ob_idx)
+                                prior_benign = 1-robotState.get("objects", "estimate_correct_percentage", ob_idx)
                             
                             utility_str = ""
                             
@@ -2850,7 +2886,7 @@ class DecisionControl:
                             
                                 for ie_idx in s_comb:
                                     for item_danger_level in [1,2]:
-                                        if ie_idx == len(robotState.robots):
+                                        if ie_idx == robotState.get_num_robots():
                                             if item_danger_level == 2:
                                                 benign = 1-robotState.sensor_parameters[0]
                                                 dangerous = robotState.sensor_parameters[1]
@@ -2960,7 +2996,7 @@ class DecisionControl:
                 _,self.message_text,self.action_index = self.movement.cancel_cooperation(self.State.decision_state,self.message_text, message=MessagePattern.carry_help_finish())
                 
             
-            if int(sense_args[2]) == len(robotState.robots): #If we don't need help, just sense object
+            if int(sense_args[2]) == robotState.get_num_robots(): #If we don't need help, just sense object
                 function_output = "sense_object('" + object_id + "'," + str([]) + ")"
             else: #If we need help, go towards agent and ask for help
                 agent_id = list(info['robot_key_to_index'].keys())[list(info['robot_key_to_index'].values()).index(int(sense_args[2]))]
@@ -2978,16 +3014,16 @@ class DecisionControl:
             
                 if self.helping_type == self.HelpType.sensing: #Cancel help if we requested help only for sensing
                     _,self.message_text,self.action_index = self.movement.cancel_cooperation(self.State.decision_state,self.message_text, message=MessagePattern.carry_help_finish())
-                elif self.helping_type == self.HelpType.carrying and len(self.movement.help_status_info[0]) > robotState.items[ob_idx]["item_weight"]-1: #If we have more agents than needed, reject some of them
-                    remove = len(self.movement.help_status_info[0]) - (robotState.items[ob_idx]["item_weight"]-1)
+                elif self.helping_type == self.HelpType.carrying and len(self.movement.help_status_info[0]) > robotState.get("objects", "weight", ob_idx)-1: #If we have more agents than needed, reject some of them
+                    remove = len(self.movement.help_status_info[0]) - (robotState.get("objects", "weight", ob_idx)-1)
                     
                     for r in range(remove-1,-1,-1):
                         self.message_text += MessagePattern.carry_help_reject(self.movement.help_status_info[0][r])
                         del self.movement.help_status_info[0][r]
             
-            print("OBJECT TO CARRY:", robotState.items[ob_idx]["item_danger_level"], robotState.items[ob_idx]["item_danger_confidence"])
+            print("OBJECT TO CARRY:", robotState.get("objects", "danger_status", ob_idx), robotState.get("objects", "estimate_correct_percentage", ob_idx))
             
-            if robotState.items[ob_idx]["item_weight"] == 1 or (robotState.items[ob_idx]["item_weight"] > 1 and self.movement.help_status == self.movement.HelpState.being_helped and len(self.movement.help_status_info[0]) == robotState.items[ob_idx]["item_weight"]-1): #If we can pickup alone the object or we already have enough agents helping
+            if robotState.get("objects", "weight", ob_idx) == 1 or (robotState.get("objects", "weight", ob_idx) > 1 and self.movement.help_status == self.movement.HelpState.being_helped and len(self.movement.help_status_info[0]) == robotState.get("objects", "weight", ob_idx)-1): #If we can pickup alone the object or we already have enough agents helping
                 function_output = "collect_object('" + object_id + "')"
             else: #Otherwise let's ask for help
                 try:

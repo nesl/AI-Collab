@@ -33,11 +33,11 @@ class MessagePattern:
     
         message_text = ""
                             
-        if robotState.items[item_idx]["item_weight"]:
+        if robotState.get("objects", "weight", item_idx):
                             
-            item_loc = robotState.items[item_idx]['item_location']
+            item_loc = robotState.get("objects", "last_seen_location", item_idx)
         
-            mins, remainder = divmod(robotState.items[item_idx]["item_time"][0], 60)
+            mins, remainder = divmod(robotState.get("objects", "last_seen_time", item_idx), 60)
 
             secs,millisecs = divmod(remainder,1)
             
@@ -50,13 +50,16 @@ class MessagePattern:
             else:
                real_location = [99.99,99.99]
         
-            message_text = "Object " + str(object_id) + " (weight: " +  str(robotState.items[item_idx]["item_weight"]) + ") Last seen in (" + str(real_location[0]) + "," + str(real_location[1]) + ") at " + time_formatted + ". "
+            message_text = "Object " + str(object_id) + " (weight: " +  str(robotState.get("objects", "weight", item_idx)) + ") Last seen in (" + str(real_location[0]) + "," + str(real_location[1]) + ") at " + time_formatted + ". "
                 
             status_danger = ""
             prob_correct = ""   
             from_estimates = ""        
-            for robo_idx,roboestimate in enumerate(robotState.item_estimates[item_idx]):        
-                if roboestimate['item_danger_level'] > 0:
+            for robo_idx in range(robotState.get_num_estimates(item_idx)):     
+            
+                roboestimate = robotState.get("object_estimates", "danger_status", [item_idx,robo_idx])
+               
+                if roboestimate > 0:
                     
                     if not status_danger:                
                         status_danger +=  "Status: ["
@@ -67,14 +70,14 @@ class MessagePattern:
                         prob_correct += ","
                         from_estimates += ","
                         
-                    if roboestimate['item_danger_level'] == 1:
+                    if roboestimate == 1:
                         status_danger += "benign"
                     else:
                         status_danger += "dangerous"
                         
-                    prob_correct += str(round(roboestimate["item_danger_confidence"]*100,1)) + "%"
+                    prob_correct += str(round(robotState.get("object_estimates", "estimate_correct_percentage", [item_idx,robo_idx])*100,1)) + "%"
                     
-                    if robo_idx == len(robotState.item_estimates[item_idx])-1:
+                    if robo_idx == robotState.get_num_estimates(item_idx)-1:
                         sensing_robot = robot_id
                     else:
                         sensing_robot = list(info['robot_key_to_index'].keys())[list(info['robot_key_to_index'].values()).index(robo_idx)]
@@ -129,14 +132,14 @@ class MessagePattern:
     @staticmethod
     def sensing_ask_help(robotState, item_idx, object_id, robot_id, convert_to_real_coordinates):
     
-        item_loc = robotState.items[item_idx]['item_location']
+        item_loc = robotState.get("objects", "last_seen_location", item_idx)
     
         if not (item_loc[0] == -1 and item_loc[1] == -1):
             real_location = convert_to_real_coordinates(item_loc)
         else:
            real_location = [99.99,99.99]
            
-        mins, remainder = divmod(robotState.items[item_idx]["item_time"][0], 60)
+        mins, remainder = divmod(robotState.get("objects", "last_seen_time", item_idx), 60)
         secs,millisecs = divmod(remainder,1)
         time_formatted = '{:02d}:{:02d}'.format(int(mins), int(secs))
     
@@ -207,9 +210,9 @@ class MessagePattern:
     
         message_text = ""
                       
-        robot_loc = robotState.robots[robo_idx]['neighbor_location']
+        robot_loc = robotState.get("agents", "last_seen_location", robo_idx)
               
-        mins, remainder = divmod(robotState.robots[robo_idx]["neighbor_time"][0], 60)
+        mins, remainder = divmod(robotState.get("agents", "last_seen_time", robo_idx), 60)
 
         secs,millisecs = divmod(remainder,1)
           
@@ -220,9 +223,9 @@ class MessagePattern:
             
         time_formatted = '{:02d}:{:02d}'.format(int(mins), int(secs))
          
-        if robotState.robots[robo_idx]['neighbor_type'] == 1:
+        if robotState.get("agents", "type", robo_idx) == 1:
             robot_type = "ai"
-        elif not robotState.robots[robo_idx]['neighbor_type']:
+        elif not robotState.get("agents", "type", robo_idx):
             robot_type = "human"
         
         message_text = "Agent " + str(robot_id) + " (type: " +  robot_type + ") Last seen in (" + str(real_location[0]) + "," + str(real_location[1]) + ") at " + time_formatted + ". "
@@ -261,9 +264,12 @@ class MessagePattern:
             message_text += "]. "
         
         objects = []        
-        for it_idx in range(len(robotState.items)):
-            if robotState.items[it_idx]["item_location"][0] >= x_min and robotState.items[it_idx]["item_location"][0] <= x_max and robotState.items[it_idx]["item_location"][1] >= y_min and robotState.items[it_idx]["item_location"][1] <= y_max:
-                real_location = convert_to_real_coordinates(robotState.items[it_idx]["item_location"])
+        for it_idx in range(robotState.get_num_objects()):
+        
+            ob_location = robotState.get("objects", "last_seen_location", it_idx)
+        
+            if ob_location[0] >= x_min and ob_location[0] <= x_max and ob_location[1] >= y_min and ob_location[1] <= y_max:
+                real_location = convert_to_real_coordinates(ob_location)
                 object_id = list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(it_idx)]
                 objects.append((object_id, real_location))
                 
@@ -657,9 +663,11 @@ class MessagePattern:
         
                 if from_list[lidx] not in info['robot_key_to_index']: #This means it is you!
                     agent_idx = -1
+                    agent_id = ""
                 else:
                     agent_idx = info['robot_key_to_index'][from_list[lidx]]
-                robotState.update_items(item,object_idx,agent_idx) #Object gets updated based on higher confidence estimates
+                    agent_id = from_list[lidx]
+                robotState.update_items(item,object_id,object_idx, agent_idx) #Object gets updated based on higher confidence estimates
                 
                 if from_list[lidx] not in other_agents[sender_agent_idx].items[object_id]:
                     other_agents[sender_agent_idx].items[object_id].append(from_list[lidx])
@@ -688,13 +696,13 @@ class MessagePattern:
         
         for noa in nearby_other_agents:   
             
-            for item_idx in range(len(robotState.items)):
-                danger_level = robotState.items[item_idx]["item_danger_level"]
+            for item_idx in range(robotState.get_num_objects()):
+                danger_level = robotState.get("objects", "danger_status", item_idx)
                 
                
                 if danger_level > 0:
                 
-                    confidence = robotState.items[item_idx]["item_danger_confidence"][0]
+                    confidence = robotState.get("objects", "estimate_correct_percentage", item_idx)
                 
                     object_id = list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(item_idx)]
                     
@@ -704,9 +712,9 @@ class MessagePattern:
                     
                     robot_estimates = []
                     send_message = False
-                    for rie_idx,rie in enumerate(robotState.item_estimates[item_idx]):
-                        if rie["item_danger_level"] > 0:
-                            if rie_idx == len(robotState.item_estimates[item_idx])-1: #This is the robot itself:
+                    for rie_idx in range(robotState.get_num_estimates(item_idx)):
+                        if robotState.get("object_estimates", "danger_status", [item_idx,rie_idx]) > 0:
+                            if rie_idx == robotState.get_num_estimates(item_idx)-1: #This is the robot itself:
                                 sensing_robot = robot_id
                             else:
                                 sensing_robot = list(info['robot_key_to_index'].keys())[list(info['robot_key_to_index'].values()).index(rie_idx)]

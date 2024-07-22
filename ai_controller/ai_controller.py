@@ -9,6 +9,8 @@ import sys
 import random
 import cv2
 import yaml
+import sqlite3
+import os
 
 
 from magnebot import ActionStatus
@@ -55,6 +57,7 @@ parser.add_argument("--planning", default="equal", help="Choose a planning role 
 parser.add_argument('--webcam', action="store_true", help="Use images from virtual webcam")
 parser.add_argument('--video-index', type=int, default=0, help='index of the first /dev/video device to capture frames from')
 parser.add_argument('--config', type=str, default='team_structure.yaml', help='Path to team structure configuration file')
+parser.add_argument('--sql', default=True, action="store_true", help='Use SQL for message parsing')
 #parser.add_argument("--openai", action='store_true', help="Use openai.")
 #parser.add_argument("--llm", action='store_true', help="Use LLM.")
 
@@ -199,17 +202,85 @@ actions_to_take = [*[1]*2,*[2]*3,11,19,*[3]*4,*[0]*5,16,19]
 
 
 class RobotState:
-    def __init__(self, latest_map, object_held, env):
+    def __init__(self, latest_map, object_held, env, args):
+    
+        self.args = args
+    
+        if args.sql:
+            database_name = "agent_db_" + str(args.robot_number) + ".db"
+            if os.path.exists(database_name):
+                os.remove(database_name)
+                
+            sqliteConnection = sqlite3.connect(database_name)
+            
+            self.cursor = sqliteConnection.cursor()
+            
+            create_tables = [
+                """CREATE TABLE objects (
+                    object_id INTEGER PRIMARY KEY,
+                    idx INTEGER NOT NULL UNIQUE,
+                    weight INTEGER
+                );""",
+                """CREATE TABLE agents (
+                    agent_id TEXT PRIMARY KEY,
+                    idx INTEGER NOT NULL UNIQUE,
+                    type INTEGER,
+                    last_seen_location TEXT,
+                    last_seen_time REAL,
+                    team TEXT,
+                    carrying_object INTEGER,
+                    disabled INTEGER,
+                    sensor_benign REAL,
+                    sensor_dangerous REAL
+                );""",
+                """CREATE TABLE agent_object_estimates (
+                    idx INTEGER PRIMARY KEY,
+                    last_seen_location TEXT,
+                    last_seen_time REAL,
+                    danger_status INTEGER,
+                    estimate_correct_percentage REAL,
+                    agent_id TEXT,
+                    object_id INTEGER,
+                    FOREIGN KEY (agent_id) REFERENCES agents (agent_id),
+                    FOREIGN KEY (object_id) REFERENCES objects (object_id)
+                );"""]
+              
+            for statement in create_tables:
+                self.cursor.execute(statement)
+            
+
+                    
+    
         self.latest_map = latest_map
         self.object_held = object_held
         self.items = []
         self.item_estimates = {}
-        self.robots = [{"neighbor_type": env.neighbors_info[n][1], "neighbor_location": [-1,-1], "neighbor_time": [0.0], "neighbor_disabled": -1} for n in range(len(env.neighbors_info))] # 0 if human, 1 if ai
+        self.env = env
+        
+        
+        if self.args.sql:
+            for n in range(len(env.neighbors_info)+1):
+            
+                if n == len(env.neighbors_info): #myself
+                    robot_id2 = self.env.robot_id
+                    sensor_parameters = env.sensor_parameters
+                    robot_type = 1
+                    
+                else:
+                    robot_id2 = list(self.env.robot_key_to_index.keys())[list(self.env.robot_key_to_index.values()).index(n)]
+                    sensor_parameters = env.neighbors_sensor_parameters[n]
+                    robot_type = env.neighbors_info[n][1]
+                    
+                self.cursor.execute('''INSERT INTO agents (agent_id, idx, last_seen_location, last_seen_time, type, carrying_object, disabled, sensor_benign, sensor_dangerous) VALUES (?, ?, "[-1,-1]", 0, ?, 0, -1, ?, ?)''', (robot_id2, n, robot_type, sensor_parameters[0],sensor_parameters[1]))  
+        else:
+            self.robots = [{"neighbor_type": env.neighbors_info[n][1], "neighbor_location": [-1,-1], "neighbor_time": [0.0], "neighbor_disabled": -1} for n in range(len(env.neighbors_info))] # 0 if human, 1 if ai
+            
         self.strength = 1
         self.map_metadata = {}
         self.sensor_parameters = env.sensor_parameters
         self.neighbors_sensor_parameters = env.neighbors_sensor_parameters
         self.possible_estimates = {}
+        
         
     def average_fusion(self, item_idx):
     
@@ -245,35 +316,60 @@ class RobotState:
         
         self.possible_estimates[item_idx] = {}
     
-        for ie_idx,ie in enumerate(self.item_estimates[item_idx]):
-        
-            if ie["item_danger_level"]:
+    
+        if self.args.sql:
+            #object_id = list(self.env.object_key_to_index.keys())[list(self.env.object_key_to_index.values()).index(item_idx)]
+            estimates = self.cursor.execute("SELECT aoe.danger_status, a.sensor_benign, a.sensor_dangerous FROM agent_object_estimates aoe INNER JOIN agents a ON a.agent_id = aoe.agent_id INNER JOIN objects o ON o.object_id = aoe.object_id WHERE o.idx = ?;""", (item_idx,)).fetchall()
             
-                samples = True
-                
-                if ie_idx == len(self.item_estimates[item_idx])-1:
-                    if ie["item_danger_level"] == 2:
-                        benign = 1-self.sensor_parameters[0]
-                        dangerous = self.sensor_parameters[1]
-                    elif ie["item_danger_level"] == 1:
-                        benign = self.sensor_parameters[0]
-                        dangerous = 1-self.sensor_parameters[1]
-                        
-                else:
-                    if ie["item_danger_level"] == 2:
-                        benign = 1-self.neighbors_sensor_parameters[ie_idx][0]
-                        dangerous = self.neighbors_sensor_parameters[ie_idx][1]
-                    elif ie["item_danger_level"] == 1:
-                        benign = self.neighbors_sensor_parameters[ie_idx][0]
-                        dangerous = 1-self.neighbors_sensor_parameters[ie_idx][1]
+            for ie in estimates: #we update according to results already obtained
             
-                prob_evidence = (prior_benign*benign + prior_dangerous*dangerous)
+                if ie[0]:
                 
-                prior_benign = benign*prior_benign/prob_evidence
-                prior_dangerous = dangerous*prior_dangerous/prob_evidence
+                    samples = True
+                    
+                    if ie[0] == 2:
+                        benign = 1-ie[1]
+                        dangerous = ie[2]
+                    elif ie[0] == 1:
+                        benign = ie[1]
+                        dangerous = 1-ie[2]
+                
+                    prob_evidence = (prior_benign*benign + prior_dangerous*dangerous)
+                    
+                    prior_benign = benign*prior_benign/prob_evidence
+                    prior_dangerous = dangerous*prior_dangerous/prob_evidence
+        else:
+    
+            for ie_idx,ie in enumerate(self.item_estimates[item_idx]): #we update according to results already obtained
+            
+                if ie["item_danger_level"]:
+                
+                    samples = True
+                    
+                    if ie_idx == len(self.item_estimates[item_idx])-1:
+                        if ie["item_danger_level"] == 2:
+                            benign = 1-self.sensor_parameters[0]
+                            dangerous = self.sensor_parameters[1]
+                        elif ie["item_danger_level"] == 1:
+                            benign = self.sensor_parameters[0]
+                            dangerous = 1-self.sensor_parameters[1]
+                            
+                    else:
+                        if ie["item_danger_level"] == 2:
+                            benign = 1-self.neighbors_sensor_parameters[ie_idx][0]
+                            dangerous = self.neighbors_sensor_parameters[ie_idx][1]
+                        elif ie["item_danger_level"] == 1:
+                            benign = self.neighbors_sensor_parameters[ie_idx][0]
+                            dangerous = 1-self.neighbors_sensor_parameters[ie_idx][1]
+                
+                    prob_evidence = (prior_benign*benign + prior_dangerous*dangerous)
+                    
+                    prior_benign = benign*prior_benign/prob_evidence
+                    prior_dangerous = dangerous*prior_dangerous/prob_evidence
                 
                 
-        for ie_idx,ie in enumerate(self.item_estimates[item_idx]):
+        """
+        for ie_idx,ie in enumerate(self.item_estimates[item_idx]): #we get possible estimates
         
             if not ie["item_danger_level"]:
             
@@ -309,7 +405,7 @@ class RobotState:
                     
                     self.possible_estimates[item_idx][ie_idx].append(prior_list[dangerous_level])
                 
-                
+        """        
                 
                 
                     
@@ -320,44 +416,260 @@ class RobotState:
             self.items[item_idx]["item_danger_level"] = dangerous_level + 1
             self.items[item_idx]["item_danger_confidence"] = [prior_list[dangerous_level]]
         
+    
+    def get_num_robots(self):
+    
+        if self.args.sql:
+            count = len(self.cursor.execute("SELECT * FROM agents WHERE agent_id != ?;", (self.env.robot_id,)).fetchall())
+        else:
+            count = len(self.robots)
+                
+        return count
+        
+    def get_num_estimates(self, idx):
+                
+        if self.args.sql:
+            count = len(self.cursor.execute("SELECT * FROM agent_object_estimates aoe INNER JOIN objects o ON o.object_id = aoe.object_id WHERE o.idx = ?;", (idx,)).fetchall())
+        else:
+            count = len(self.item_estimates[idx])
+    
+        return count
+        
+    def get_object_keys(self):
+    
+        if self.args.sql:
+            keys = [k[0] for k in self.cursor.execute("SELECT idx FROM objects;").fetchall()]
+        else:
+            keys = self.item_estimates.keys()
+            
+        return keys
+    
+    def get_num_objects(self):
+    
+        if self.args.sql:
+            count = len(self.cursor.execute("SELECT * FROM objects;").fetchall())
+        else:
+            count = len(self.items)
+                
+        return count
+    
+    def get(self, database, propert, idx):
+    
+        
+    
+        if self.args.sql:
+            
+            if database == "agents":
+                if idx == -1:
+                    row = self.cursor.execute("SELECT " + propert + " FROM " + database + ";").fetchall()
+
+                else:
+                    row = self.cursor.execute("SELECT " + propert + " FROM " + database + " WHERE idx = ?;", (idx,)).fetchall()
+                    
+                    
+            elif database == "object_estimates":
+                row = self.cursor.execute("SELECT aoe." + propert + " FROM agent_object_estimates aoe INNER JOIN objects o ON o.object_id = aoe.object_id INNER JOIN agents a ON a.agent_id = aoe.agent_id WHERE o.idx = ? AND a.idx = ?;", (idx[0],idx[1],)).fetchall()
+            
+            elif database == "objects":
+            
+                if propert == "weight":
+                    row = self.cursor.execute("SELECT " + propert + " FROM " + database + " WHERE idx = ?;", (idx,)).fetchall()
+                elif propert in ["danger_status", "estimate_correct_percentage"]:
+                    legacy_to_sql = {"danger_status": "item_danger_level", "estimate_correct_percentage": "item_danger_confidence"}
+                
+                    row = [(self.items[idx][legacy_to_sql[propert]],)]
+                    
+                    if propert == "estimate_correct_percentage":
+                        row = row[0]
+                else:
+                    row = self.cursor.execute("SELECT " + propert + " FROM agent_object_estimates aoe INNER JOIN objects o ON o.object_id = aoe.object_id WHERE last_seen_time = (SELECT MAX(aoe.last_seen_time) FROM agent_object_estimates aoe INNER JOIN objects o ON o.object_id = aoe.object_id WHERE o.idx = ?) AND o.idx = ?;", (idx,idx,)).fetchall()
+             
+            if idx == -1:
+                row_tmp = []
+                for r in row:
+                    row_tmp.append(r[0])
+                row = row_tmp
+            else:    
+                row = row[0][0]
+   
+            
+            if propert == "last_seen_location":
+                row = eval(row)
+                
+            #elif propert == "last_seen_time":
+            #    pdb.set_trace()
+                
+        else:
+        
+            if database == "agents":
+                legacy_to_sql = {"type": "neighbor_type", "disabled": "neighbor_disabled", "last_seen_location": "neighbor_location", "last_seen_time": "neighbor_time"}
+                
+                if idx == -1:
+                    row = [rc[legacy_to_sql[propert]] for rc in self.robots]
+                else:
+                    row = self.robots[idx][legacy_to_sql[propert]]
+                    
+                    if propert == "last_seen_time":
+                        row = row[0]
+                
+            elif database == "object_estimates":
+                legacy_to_sql = {"danger_status": "item_danger_level", "estimate_correct_percentage": "item_danger_confidence"}
+                
+                row = self.item_estimates[idx[0]][idx[1]][legacy_to_sql[propert]]
+                
+            elif database == "objects":
+                legacy_to_sql = {"weight":"item_weight", "danger_status": "item_danger_level", "estimate_correct_percentage": "item_danger_confidence", "last_seen_location": "item_location", "last_seen_time": "item_time"}
+                
+                row = self.items[idx][legacy_to_sql[propert]]
+                
+                if propert == "estimate_correct_percentage":
+                    row = row[0]
+                elif propert == "last_seen_time":
+                    row = row[0]
+                    
+        return row
+            
+    def set(self, database, propert, idx, value, time):
+    
+        if self.args.sql:
+        
+            if propert == "last_seen_location":
+                value = str(value)
+        
+            if database == "objects":
+                #print("object myself", time, self.cursor.execute("SELECT * FROM agent_object_estimates aoe INNER JOIN objects o ON o.object_id = aoe.object_id ;""", ).fetchall())
+                try:
+                    self.cursor.execute("UPDATE agent_object_estimates SET " + propert + " = ?, last_seen_time = ? WHERE agent_id = ? AND object_id IN (SELECT object_id FROM objects WHERE idx = ?);", (value, float(time), self.env.robot_id, idx,)).fetchall()
+                except:
+                    pdb.set_trace()
+            elif database == "agents":
+                try:
+                    self.cursor.execute("UPDATE " + database + " SET " + propert + " = ? WHERE idx = ?;", (value, idx,)).fetchall()
+                except:
+                    pdb.set_trace()
+                
+        else:
+            if database == "objects":
+                legacy_to_sql = {"weight":"item_weight", "danger_status": "item_danger_level", "estimate_correct_percentage": "item_danger_confidence", "last_seen_location": "item_location", "last_seen_time": "item_time"}
+                
+                self.items[idx][legacy_to_sql[propert]] = value
+                
+            elif database == "agents":
+                legacy_to_sql = {"type": "neighbor_type", "disabled": "neighbor_disabled", "last_seen_location": "neighbor_location", "last_seen_time": "neighbor_time"}
+                self.robots[idx][legacy_to_sql[propert]] = value
+        
+        
     def update_robots(self, neighbor_output, robot_idx):
     
-        if neighbor_output["neighbor_type"] >= 0:
-            self.robots[robot_idx]["neighbor_type"] = neighbor_output["neighbor_type"]
-    
-        if neighbor_output["neighbor_disabled"] >= 0:
-            self.robots[robot_idx]["neighbor_disabled"] = neighbor_output["neighbor_disabled"]
-    
-        if self.robots[robot_idx]["neighbor_time"][0] <= neighbor_output["neighbor_time"][0]:
+        if self.args.sql:
+            if neighbor_output["neighbor_type"] >= 0:
+                self.cursor.execute("""UPDATE agents SET type = ? WHERE idx = ?;""", (neighbor_output["neighbor_type"], robot_idx,)) 
         
-            self.robots[robot_idx]["neighbor_location"] = [int(neighbor_output["neighbor_location"][0]),int(neighbor_output["neighbor_location"][1])]
-            self.robots[robot_idx]["neighbor_time"] = neighbor_output["neighbor_time"]
+            if neighbor_output["neighbor_disabled"] >= 0:
+                self.cursor.execute("""UPDATE agents SET disabled = ? WHERE idx = ?;""", (neighbor_output["neighbor_disabled"], robot_idx,))
+        
+            try:
+                self.get("agents", "last_seen_time", robot_idx) <= neighbor_output["neighbor_time"][0]
+            except:
+                pdb.set_trace()
+            if self.get("agents", "last_seen_time", robot_idx) <= neighbor_output["neighbor_time"][0]:
             
-            if self.latest_map[self.robots[robot_idx]["neighbor_location"][0], self.robots[robot_idx]["neighbor_location"][1]] != 5:
-                self.latest_map[self.robots[robot_idx]["neighbor_location"][0], self.robots[robot_idx]["neighbor_location"][1]] = 3
+                robot_location = [int(neighbor_output["neighbor_location"][0]),int(neighbor_output["neighbor_location"][1])]
+                
+                #print("neighbor", neighbor_output["neighbor_time"][0], self.cursor.execute("SELECT * FROM agent_object_estimates aoe INNER JOIN objects o ON o.object_id = aoe.object_id ;""", ).fetchall())
+                
+                self.cursor.execute("""UPDATE agents SET last_seen_location = ?, last_seen_time = ? WHERE idx = ?;""", (str(robot_location), float(neighbor_output["neighbor_time"][0]), robot_idx,))
+                
+                
+                if self.latest_map[robot_location[0], robot_location[1]] != 5:
+                    self.latest_map[robot_location[0], robot_location[1]] = 3
+        else:
+            if neighbor_output["neighbor_type"] >= 0:
+                self.robots[robot_idx]["neighbor_type"] = neighbor_output["neighbor_type"]
+        
+            if neighbor_output["neighbor_disabled"] >= 0:
+                self.robots[robot_idx]["neighbor_disabled"] = neighbor_output["neighbor_disabled"]
+        
+            if self.robots[robot_idx]["neighbor_time"][0] <= neighbor_output["neighbor_time"][0]:
+            
+                self.robots[robot_idx]["neighbor_location"] = [int(neighbor_output["neighbor_location"][0]),int(neighbor_output["neighbor_location"][1])]
+                self.robots[robot_idx]["neighbor_time"] = neighbor_output["neighbor_time"]
+                
+                if self.latest_map[self.robots[robot_idx]["neighbor_location"][0], self.robots[robot_idx]["neighbor_location"][1]] != 5:
+                    self.latest_map[self.robots[robot_idx]["neighbor_location"][0], self.robots[robot_idx]["neighbor_location"][1]] = 3
     
-    def update_items(self,item_output, item_idx, robot_idx): #Updates items
+    
+    def initialize_object(self, item_id, item_idx):
+    
+        self.cursor.execute('''INSERT INTO objects (object_id, idx, weight) VALUES (?, ?, 0)''', (item_id, item_idx,))
+                
+        num_robots = self.get_num_robots()
+        for n in range(num_robots+1):
+        
+            if n == num_robots:
+                robot_id2 = self.env.robot_id
+            else:
+                robot_id2 = list(self.env.robot_key_to_index.keys())[list(self.env.robot_key_to_index.values()).index(n)]
+                
+            self.cursor.execute('''INSERT INTO agent_object_estimates (idx, object_id, last_seen_location, last_seen_time, danger_status, estimate_correct_percentage, agent_id) VALUES (NULL,?,"[-1,-1]", 0, 0, 0, ?)''', (item_id, robot_id2,))  
+    
+    def update_items(self,item_output, item_id, item_idx, robot_idx): #Updates items
 
         information_change = False
         #We save estimates from all robots
-        if item_idx >= len(self.items):
+        
+        num_objects = self.get_num_objects()
+        if item_idx >= num_objects:
             
-            diff_len = item_idx+1 - len(self.items)
+            diff_len = item_idx+1 - num_objects
             #print("item_change", item_idx, len(self.items), diff_len)
+            
+            if self.args.sql:
+                for d in range(num_objects,item_idx+1):
+                    item_id = list(self.env.object_key_to_index.keys())[list(self.env.object_key_to_index.values()).index(d)]
+                    self.initialize_object(item_id, d)
+            
             self.items.extend([{'item_weight': 0, 'item_danger_level': 0, 'item_danger_confidence': np.array([0.]), 'item_location': np.array([-1, -1], dtype=np.int16), 'item_time': np.array([0], dtype=np.int16)} for d in range(diff_len)])
             information_change = True
 
-        if item_idx not in self.item_estimates:
-            self.item_estimates[item_idx] = [{"item_danger_level": 0, "item_danger_confidence": 0, "item_location": [-1,-1], "item_time": 0} for n in range(len(self.robots)+1)]
-            information_change = True
+
+        if self.args.sql:
+            row_exists = self.cursor.execute("""SELECT COUNT(*) FROM objects WHERE idx = ?;""", (item_idx,)).fetchall()
             
-        self.item_estimates[item_idx][robot_idx]["item_location"] = [int(item_output["item_location"][0]),int(item_output["item_location"][1])]
-        self.item_estimates[item_idx][robot_idx]["item_time"] = item_output["item_time"]
-        
-        if item_output["item_danger_level"]:
-            self.item_estimates[item_idx][robot_idx]["item_danger_level"] = item_output["item_danger_level"]
-            self.item_estimates[item_idx][robot_idx]["item_danger_confidence"] = item_output["item_danger_confidence"][0]
-            information_change = True
+            if not row_exists[0][0]:
+            
+                self.initialize_object(item_id, item_idx)
+                
+                information_change = True
+                
+            if robot_idx == -1:
+                robot_id2 = self.env.robot_id
+            else:
+                robot_id2 = list(self.env.robot_key_to_index.keys())[list(self.env.robot_key_to_index.values()).index(robot_idx)]
+                
+            #print("myself", item_output["item_time"][0], self.cursor.execute("SELECT * FROM agent_object_estimates aoe INNER JOIN objects o ON o.object_id = aoe.object_id ;""", ).fetchall())
+
+                
+            self.cursor.execute("""UPDATE agent_object_estimates SET last_seen_location = ?, last_seen_time = ? WHERE object_id = ? AND agent_id = ?;""", (str([int(item_output["item_location"][0]),int(item_output["item_location"][1])]), float(item_output["item_time"][0]),item_id, robot_id2,))
+            
+            
+            if item_output["item_danger_level"]:
+                self.cursor.execute("""UPDATE agent_object_estimates SET danger_status = ?, estimate_correct_percentage = ? WHERE object_id = ? AND agent_id = ?;""", (item_output["item_danger_level"], item_output["item_danger_confidence"][0], item_id, robot_id2,))    
+                information_change = True
+                
+        else:     
+
+            if item_idx not in self.item_estimates:
+                self.item_estimates[item_idx] = [{"item_danger_level": 0, "item_danger_confidence": 0, "item_location": [-1,-1], "item_time": 0} for n in range(len(self.robots)+1)]
+                information_change = True
+                
+            self.item_estimates[item_idx][robot_idx]["item_location"] = [int(item_output["item_location"][0]),int(item_output["item_location"][1])]
+            self.item_estimates[item_idx][robot_idx]["item_time"] = item_output["item_time"]
+            
+            if item_output["item_danger_level"]:
+                self.item_estimates[item_idx][robot_idx]["item_danger_level"] = item_output["item_danger_level"]
+                self.item_estimates[item_idx][robot_idx]["item_danger_confidence"] = item_output["item_danger_confidence"][0]
+                information_change = True
 
 
             
@@ -385,6 +697,9 @@ class RobotState:
             
         if item_output["item_weight"]:
             self.items[item_idx]["item_weight"] = item_output["item_weight"]
+            
+            if self.args.sql:
+                self.cursor.execute("""UPDATE objects SET weight = ? WHERE object_id = ?;""", (item_output["item_weight"], item_id,))    
         
         
         
@@ -436,7 +751,7 @@ while True:
     
     
     print(env.neighbors_info)
-    robotState = RobotState(observation['frame'].copy(), 0, env)
+    robotState = RobotState(observation['frame'].copy(), 0, env, args)
     #observation, reward, terminated, truncated, info = env.step(17)
     done = False
 
@@ -622,7 +937,8 @@ while True:
 
 
         if args.message_loop:
-            info["robot_key_to_index"][env.robot_id] = len(robotState.robots)-1
+            info["robot_key_to_index"][env.robot_id] = robotState.get_num_robots()-1
+
         
         
         if reward != 0:
@@ -639,9 +955,15 @@ while True:
         else:
             fell_down = 0
             
-        if next_observation["num_items"] > len(robotState.items):
-            diff_len = next_observation["num_items"] - len(robotState.items)
+        num_objects = robotState.get_num_objects()
+        if next_observation["num_items"] > num_objects:
+            diff_len = next_observation["num_items"] - num_objects
             robotState.items.extend([{'item_weight': 0, 'item_danger_level': 0, 'item_danger_confidence': np.array([0.]), 'item_location': np.array([-1, -1], dtype=np.int16), 'item_time': np.array([0], dtype=np.int16)} for d in range(diff_len)])
+            
+            if args.sql:
+                for d in range(num_objects,next_observation["num_items"]):
+                    item_id = list(env.object_key_to_index.keys())[list(env.object_key_to_index.values()).index(d)]
+                    robotState.initialize_object(item_id, d)
             
         robotState.strength = next_observation["strength"]
             
@@ -655,14 +977,19 @@ while True:
             
             robotState.latest_map[previous_ego_location[0][0],previous_ego_location[1][0]] = 0 #If there was an agent there it will eliminate it from the map
             
-            for ob_key in range(len(robotState.robots)): #If the agent is not where it was last seen, mark it
-                robo_location = robotState.latest_map[robotState.robots[ob_key]["neighbor_location"][0],robotState.robots[ob_key]["neighbor_location"][1]]
-                if robotState.robots[ob_key]["neighbor_location"][0] != -1 and robotState.robots[ob_key]["neighbor_location"][1] != -1 and previous_ego_location[0][0] == robotState.robots[ob_key]["neighbor_location"][0] and previous_ego_location[1][0] == robotState.robots[ob_key]["neighbor_location"][1]:
+            robot_count = robotState.get_num_robots()
+                
+            for ob_key in range(robot_count):
+            
+                location = robotState.get("agents", "last_seen_location", ob_key)
+                disabled = robotState.get("agents", "disabled", ob_key)
+
+                
+                if location[0] != -1 and location[1] != -1 and previous_ego_location[0][0] == location[0] and previous_ego_location[1][0] == location[1]:
                     robotState.latest_map[previous_ego_location[0][0],previous_ego_location[1][0]] = 3
                     
-                if robotState.robots[ob_key]["neighbor_disabled"] == 1 and robotState.robots[ob_key]["neighbor_location"][0] != -1 and robotState.robots[ob_key]["neighbor_location"][1] != -1:
-                    robotState.latest_map[robotState.robots[ob_key]["neighbor_location"][0],robotState.robots[ob_key]["neighbor_location"][1]] = 1
-            
+                if disabled == 1 and location[0] != -1 and location[1] != -1:
+                    robotState.latest_map[location[0],location[1]] = 1
             
 
             
@@ -689,7 +1016,7 @@ while True:
                                 ob_key = info["object_key_to_index"][map_object[1]]
                              
                                 template_item_info = {'item_weight': 0, 'item_danger_level': 0, 'item_danger_confidence': np.array([0.]), 'item_location': np.array([int(m_key_xy[0]), int(m_key_xy[1])], dtype=np.int16), 'item_time': np.array([info["time"]], dtype=np.int16)}
-                                robotState.update_items(template_item_info, ob_key, -1)
+                                robotState.update_items(template_item_info, map_object[1], ob_key, -1)
                                 #robotState.items[ob_key]["item_location"] = [int(m_key_xy[0]), int(m_key_xy[1])]
                     
 
@@ -712,7 +1039,8 @@ while True:
                 elif Action(last_action[1]) == Action.check_item:
                 
                     #robotState.items[last_action_arguments[0]] = next_observation["item_output"]
-                    robotState.update_items(next_observation["item_output"],last_action_arguments[0], -1)
+                    object_id = list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(last_action_arguments[0])]
+                    robotState.update_items(next_observation["item_output"], object_id, last_action_arguments[0], -1)
                     
                 elif Action(last_action[1]) == Action.check_robot: #Make sure to update estimates and take the one with the highest confidence
                 
@@ -746,20 +1074,31 @@ while True:
             robotState.latest_map[ego_location[0][0],ego_location[1][0]] = 5 #Set ego robot in map
             
             
-            for ob_key in range(len(robotState.robots)): #If the agent is not where it was last seen, mark it
-                robo_location = robotState.latest_map[robotState.robots[ob_key]["neighbor_location"][0],robotState.robots[ob_key]["neighbor_location"][1]]
-                if robo_location != 5 and robo_location != 3 and robotState.robots[ob_key]["neighbor_location"][0] != -1 and robotState.robots[ob_key]["neighbor_location"][1] != -1 and robotState.robots[ob_key]["neighbor_disabled"] != 1:
+    
+            robot_count = robotState.get_num_robots()
+                
+            for ob_key in range(robot_count):
+            
+                location = robotState.get("agents", "last_seen_location", ob_key)
+                disabled = robotState.get("agents", "disabled", ob_key)
+
+            
+                robo_location = robotState.latest_map[location[0],location[1]]
+                if robo_location != 5 and robo_location != 3 and location[0] != -1 and location[1] != -1 and disabled != 1:
                     #pdb.set_trace()
-                    print("ROBOT NOT FOUND", ob_key, robotState.robots[ob_key]["neighbor_location"])
-                    robotState.robots[ob_key]["neighbor_location"] = [-1,-1]
+                    print("ROBOT NOT FOUND", ob_key, location)
+                    
+                    robotState.set("agents","last_seen_location",ob_key, [-1,-1], info["time"]) 
+                    
                     
                     #robotState.robots[ob_key]["neighbor_time"] = info["time"]
                     
-            for ob_key in range(len(robotState.items)): #If the agent is not where it was last seen, mark it
+            for ob_key in range(robotState.get_num_objects()): #If the agent is not where it was last seen, mark it
                 try:
-                    item_location = robotState.latest_map[robotState.items[ob_key]["item_location"][0],robotState.items[ob_key]["item_location"][1]]
+                    ob_location = robotState.get("objects", "last_seen_location", ob_key)
+                    item_location = robotState.latest_map[ob_location[0],ob_location[1]]
                     if item_location == 0:
-                        robotState.items[ob_key]["item_location"] = [-1,-1]
+                        robotState.set("objects", "last_seen_location", ob_key, [-1,-1], info["time"])
                 except:
                     pdb.set_trace()
             	
@@ -925,8 +1264,8 @@ while True:
             done = True
             
             objects_to_report = []
-            for ob_key in range(len(robotState.items)):
-                if robotState.items[ob_key]["item_weight"] >= len(env.map_config['all_robots'])+1 and robotState.items[ob_key]["item_danger_level"] == 2:
+            for ob_key in range(robotState.get_num_objects()):
+                if robotState.get("objects", "weight", ob_key) >= len(env.map_config['all_robots'])+1 and robotState.get("objects", "danger_status", ob_key) == 2:
                     object_id = list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(ob_key)]
                     objects_to_report.append(object_id)
 

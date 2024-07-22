@@ -409,7 +409,7 @@ How would you adapt this message to send it to [Agent B, Agent C]?[/INST]
             return {}
 
 
-    def json_to_message(self, extracted_json, info, items):
+    def json_to_message(self, extracted_json, info, robotState):
         action = extracted_json.get('action')
 
         if action:
@@ -459,7 +459,10 @@ How would you adapt this message to send it to [Agent B, Agent C]?[/INST]
                             else:
                                 if info and extracted_json["object_id"] in info["object_key_to_index"].keys():
                                     ob_idx = info["object_key_to_index"][extracted_json["object_id"]]
-                                    if items[ob_idx]["item_location"][0] == -1 and items[ob_idx]["item_location"][1] == -1:
+                                    
+                                    ob_location = robotState.get("objects", "last_seen_location", ob_idx)
+                                    
+                                    if ob_location[0] == -1 and ob_location[1] == -1:
                                         missing_arguments.append("I need the coordinate location. ")
                                     else:
                                         extracted_json["location"] = "(99.99,99.99)"
@@ -530,7 +533,7 @@ How would you adapt this message to send it to [Agent B, Agent C]?[/INST]
             return "The generated JSON requires the keyword 'action'",1
 
 
-    def convert_to_ai(self, sender, text, info, items, message_history, print_debug):
+    def convert_to_ai(self, sender, text, info, robotState, message_history, print_debug):
         
         reply_prompt_cont = "</s><s>[INST]History of messages: " + str(list(message_history)[-self.max_message_history:]) + "\nNew message: " + str({"Sender": sender, "Message": text}) + "\n" + "Who is Agent " + sender + " replying to? Output a JSON.[/INST]\n\n"
         llm_time = time.time()
@@ -624,7 +627,7 @@ How would you adapt this message to send it to [Agent B, Agent C]?[/INST]
                         print("======================================================")
 
 
-                    result_str,result_err = self.json_to_message(first_json, info, items)
+                    result_str,result_err = self.json_to_message(first_json, info, robotState)
                     if print_debug:
                         print(result_str)
                     
