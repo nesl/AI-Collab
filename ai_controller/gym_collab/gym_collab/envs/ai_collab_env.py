@@ -1534,19 +1534,25 @@ class AICollabEnv(gym.Env):
     # world, which is not the same system the simulator uses
     def convert_to_grid_coordinates(self, location):
 
-        min_pos = self.map_config['edge_coordinate']
-        multiple = self.map_config['cell_size']
-        pos_new = [round((location[0] + abs(min_pos[0])) / multiple),
-                   round((location[1] + abs(min_pos[1])) / multiple)]
+        if not location:
+            pos_new = [-1,-1]
+        else:
+            min_pos = self.map_config['edge_coordinate']
+            multiple = self.map_config['cell_size']
+            pos_new = [round((location[0] + abs(min_pos[0])) / multiple),
+                       round((location[1] + abs(min_pos[1])) / multiple)]
 
         return pos_new
 
     #Convert from grid coordinates to real
     def convert_to_real_coordinates(self, position):
 
-        min_pos = self.map_config['edge_coordinate']
-        multiple = self.map_config['cell_size']
-        pos_new = [position[0]*multiple - abs(min_pos[0]), position[1]*multiple - abs(min_pos[1])]
+        if position == [-1,-1]:
+            pos_new = []
+        else:
+            min_pos = self.map_config['edge_coordinate']
+            multiple = self.map_config['cell_size']
+            pos_new = [position[0]*multiple - abs(min_pos[0]), position[1]*multiple - abs(min_pos[1])]
 
     
         return pos_new

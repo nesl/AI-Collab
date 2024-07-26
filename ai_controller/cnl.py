@@ -10,6 +10,9 @@ class MessagePattern:
         real_current_location = convert_to_real_coordinates(current_location)
         output_string = "My goal is " + str(object_id) + " (" + str(real_goal[0]) + "," + str(real_goal[1]) + "), I'm moving towards (" + str(real_next_location[0]) + "," + str(real_next_location[1]) + "). My current location is (" + str(real_current_location[0]) + "," + str(real_current_location[1]) + "). "
         
+        if not real_goal or not real_next_location or not real_current_location:
+            pdb.set_trace()
+        
         if carrying:
             output_string += "Carrying object " + str(carrying) + ". "
             

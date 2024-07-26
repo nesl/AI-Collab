@@ -11,6 +11,7 @@ import cv2
 import yaml
 import sqlite3
 import os
+from enum import Enum
 
 
 from magnebot import ActionStatus
@@ -205,6 +206,7 @@ class RobotState:
     def __init__(self, latest_map, object_held, env, args):
     
         self.args = args
+        self.create_tables = ''
     
         if args.sql:
             database_name = "agent_db_" + str(args.robot_number) + ".db"
@@ -215,7 +217,7 @@ class RobotState:
             
             self.cursor = sqliteConnection.cursor()
             
-            create_tables = [
+            self.create_tables = [
                 """CREATE TABLE objects (
                     object_id INTEGER PRIMARY KEY,
                     idx INTEGER NOT NULL UNIQUE,
@@ -237,7 +239,7 @@ class RobotState:
                     idx INTEGER PRIMARY KEY,
                     last_seen_location TEXT,
                     last_seen_time REAL,
-                    danger_status INTEGER,
+                    danger_status TEXT,
                     estimate_correct_percentage REAL,
                     agent_id TEXT,
                     object_id INTEGER,
@@ -245,12 +247,11 @@ class RobotState:
                     FOREIGN KEY (object_id) REFERENCES objects (object_id)
                 );"""]
               
-            for statement in create_tables:
+            for statement in self.create_tables:
                 self.cursor.execute(statement)
             
 
-                    
-    
+        
         self.latest_map = latest_map
         self.object_held = object_held
         self.items = []
@@ -271,7 +272,7 @@ class RobotState:
                     sensor_parameters = env.neighbors_sensor_parameters[n]
                     robot_type = env.neighbors_info[n][1]
                     
-                self.cursor.execute('''INSERT INTO agents (agent_id, idx, last_seen_location, last_seen_time, type, carrying_object, disabled, sensor_benign, sensor_dangerous) VALUES (?, ?, "[-1,-1]", 0, ?, 0, -1, ?, ?)''', (robot_id2, n, robot_type, sensor_parameters[0],sensor_parameters[1]))  
+                self.cursor.execute('''INSERT INTO agents (agent_id, idx, last_seen_location, last_seen_time, type, carrying_object, disabled, sensor_benign, sensor_dangerous) VALUES (?, ?, "[]", 0, ?, 0, -1, ?, ?)''', (robot_id2, n, robot_type, sensor_parameters[0],sensor_parameters[1]))  
         else:
             self.robots = [{"neighbor_type": env.neighbors_info[n][1], "neighbor_location": [-1,-1], "neighbor_time": [0.0], "neighbor_disabled": -1} for n in range(len(env.neighbors_info))] # 0 if human, 1 if ai
             
@@ -280,6 +281,11 @@ class RobotState:
         self.sensor_parameters = env.sensor_parameters
         self.neighbors_sensor_parameters = env.neighbors_sensor_parameters
         self.possible_estimates = {}
+        
+    class Danger_Status(Enum):
+        unknown = 0
+        benign = 1
+        dangerous = 2
         
         
     def average_fusion(self, item_idx):
@@ -323,14 +329,14 @@ class RobotState:
             
             for ie in estimates: #we update according to results already obtained
             
-                if ie[0]:
+                if self.Danger_Status[ie[0]].value:
                 
                     samples = True
                     
-                    if ie[0] == 2:
+                    if self.Danger_Status[ie[0]].value == 2:
                         benign = 1-ie[1]
                         dangerous = ie[2]
-                    elif ie[0] == 1:
+                    elif self.Danger_Status[ie[0]].value == 1:
                         benign = ie[1]
                         dangerous = 1-ie[2]
                 
@@ -470,6 +476,8 @@ class RobotState:
             elif database == "object_estimates":
                 row = self.cursor.execute("SELECT aoe." + propert + " FROM agent_object_estimates aoe INNER JOIN objects o ON o.object_id = aoe.object_id INNER JOIN agents a ON a.agent_id = aoe.agent_id WHERE o.idx = ? AND a.idx = ?;", (idx[0],idx[1],)).fetchall()
             
+                if propert == "danger_status":
+                    row = [(self.Danger_Status[row[0][0]].value,)]
             elif database == "objects":
             
                 if propert == "weight":
@@ -494,7 +502,7 @@ class RobotState:
    
             
             if propert == "last_seen_location":
-                row = eval(row)
+                row = self.env.convert_to_grid_coordinates(eval(row))
                 
             #elif propert == "last_seen_time":
             #    pdb.set_trace()
@@ -534,10 +542,14 @@ class RobotState:
         if self.args.sql:
         
             if propert == "last_seen_location":
-                value = str(value)
+                value = str(self.env.convert_to_real_coordinates(value))
         
             if database == "objects":
                 #print("object myself", time, self.cursor.execute("SELECT * FROM agent_object_estimates aoe INNER JOIN objects o ON o.object_id = aoe.object_id ;""", ).fetchall())
+                
+                if propert == "danger_status":
+                    pdb.set_trace()
+                
                 try:
                     self.cursor.execute("UPDATE agent_object_estimates SET " + propert + " = ?, last_seen_time = ? WHERE agent_id = ? AND object_id IN (SELECT object_id FROM objects WHERE idx = ?);", (value, float(time), self.env.robot_id, idx,)).fetchall()
                 except:
@@ -574,15 +586,15 @@ class RobotState:
                 pdb.set_trace()
             if self.get("agents", "last_seen_time", robot_idx) <= neighbor_output["neighbor_time"][0]:
             
-                robot_location = [int(neighbor_output["neighbor_location"][0]),int(neighbor_output["neighbor_location"][1])]
-                
+                grid_location = [int(neighbor_output["neighbor_location"][0]),int(neighbor_output["neighbor_location"][1])]
+                robot_location = self.env.convert_to_real_coordinates(grid_location)
                 #print("neighbor", neighbor_output["neighbor_time"][0], self.cursor.execute("SELECT * FROM agent_object_estimates aoe INNER JOIN objects o ON o.object_id = aoe.object_id ;""", ).fetchall())
                 
                 self.cursor.execute("""UPDATE agents SET last_seen_location = ?, last_seen_time = ? WHERE idx = ?;""", (str(robot_location), float(neighbor_output["neighbor_time"][0]), robot_idx,))
                 
                 
-                if self.latest_map[robot_location[0], robot_location[1]] != 5:
-                    self.latest_map[robot_location[0], robot_location[1]] = 3
+                if self.latest_map[grid_location[0], grid_location[1]] != 5:
+                    self.latest_map[grid_location[0], grid_location[1]] = 3
         else:
             if neighbor_output["neighbor_type"] >= 0:
                 self.robots[robot_idx]["neighbor_type"] = neighbor_output["neighbor_type"]
@@ -611,7 +623,7 @@ class RobotState:
             else:
                 robot_id2 = list(self.env.robot_key_to_index.keys())[list(self.env.robot_key_to_index.values()).index(n)]
                 
-            self.cursor.execute('''INSERT INTO agent_object_estimates (idx, object_id, last_seen_location, last_seen_time, danger_status, estimate_correct_percentage, agent_id) VALUES (NULL,?,"[-1,-1]", 0, 0, 0, ?)''', (item_id, robot_id2,))  
+            self.cursor.execute('''INSERT INTO agent_object_estimates (idx, object_id, last_seen_location, last_seen_time, danger_status, estimate_correct_percentage, agent_id) VALUES (NULL,?,"[]", 0, ?, 0, ?)''', (item_id, self.Danger_Status(0).name, robot_id2,))  
     
     def update_items(self,item_output, item_id, item_idx, robot_idx): #Updates items
 
@@ -649,12 +661,13 @@ class RobotState:
                 
             #print("myself", item_output["item_time"][0], self.cursor.execute("SELECT * FROM agent_object_estimates aoe INNER JOIN objects o ON o.object_id = aoe.object_id ;""", ).fetchall())
 
-                
-            self.cursor.execute("""UPDATE agent_object_estimates SET last_seen_location = ?, last_seen_time = ? WHERE object_id = ? AND agent_id = ?;""", (str([int(item_output["item_location"][0]),int(item_output["item_location"][1])]), float(item_output["item_time"][0]),item_id, robot_id2,))
+            item_loc = str(self.env.convert_to_real_coordinates([int(item_output["item_location"][0]),int(item_output["item_location"][1])]))
+            self.cursor.execute("""UPDATE agent_object_estimates SET last_seen_location = ?, last_seen_time = ? WHERE object_id = ? AND agent_id = ?;""", (item_loc, float(item_output["item_time"][0]),item_id, robot_id2,))
             
             
             if item_output["item_danger_level"]:
-                self.cursor.execute("""UPDATE agent_object_estimates SET danger_status = ?, estimate_correct_percentage = ? WHERE object_id = ? AND agent_id = ?;""", (item_output["item_danger_level"], item_output["item_danger_confidence"][0], item_id, robot_id2,))    
+                danger_level_translate = self.Danger_Status(item_output["item_danger_level"]).name
+                self.cursor.execute("""UPDATE agent_object_estimates SET danger_status = ?, estimate_correct_percentage = ? WHERE object_id = ? AND agent_id = ?;""", (danger_level_translate, item_output["item_danger_confidence"][0], item_id, robot_id2,))    
                 information_change = True
                 
         else:     

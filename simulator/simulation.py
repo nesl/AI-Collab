@@ -160,7 +160,21 @@ class Stats():
 #This class inherits the magnebot class, we just add a number of attributes over it
 class Enhanced_Magnebot(Magnebot):
 
-    def __init__(self,robot_id, position, controlled_by, key_set=None,image_frequency=ImageFrequency.never,pass_masks=['_img'],strength=1, check_version=False):
+    def sensor_paramenter_lower_threshold(self):
+    
+        low_threshold = 0.5
+    
+        if self.difficulty_level:
+            if self.difficulty_level == 1:
+                low_threshold = 0.9
+            elif self.difficulty_level == 2:
+                low_threshold = 0.75
+            elif self.difficulty_level == 3:
+                low_threshold = 0.6
+                
+        return low_threshold
+
+    def __init__(self,robot_id, position, controlled_by, difficulty_level, key_set=None,image_frequency=ImageFrequency.never,pass_masks=['_img'],strength=1, check_version=False):
         super().__init__(robot_id=robot_id, position=position,image_frequency=image_frequency,check_version=check_version)
         self.key_set = key_set
         self.ui = []
@@ -187,8 +201,10 @@ class Enhanced_Magnebot(Magnebot):
         self.last_position = np.array([])
         self.stats = Stats()
         self.skip_frames = 0
-        self.p11 = float(random.uniform(0.5, 0.9)) #Binary channel
-        self.p22 = float(random.uniform(0.5, 0.9))
+        self.difficulty_level = difficulty_level
+        low_thresh = self.sensor_paramenter_lower_threshold()
+        self.p11 = float(random.uniform(low_thresh, 0.9)) #Binary channel
+        self.p22 = float(random.uniform(low_thresh, 0.9))
         self.current_teammates = {}
         self.reported_objects = []
         
@@ -208,8 +224,9 @@ class Enhanced_Magnebot(Magnebot):
         self.last_output = False
         self.stats = Stats()
         self.last_position = np.array([])
-        self.p11 = float(random.uniform(0.5, 0.9)) #Binary channel
-        self.p22 = float(random.uniform(0.5, 0.9))
+        low_thresh = self.sensor_paramenter_lower_threshold()
+        self.p11 = float(random.uniform(low_thresh, 0.9)) #Binary channel
+        self.p22 = float(random.uniform(low_thresh, 0.9))
         self.current_teammates = {}
         self.reported_objects = []
         self.danger_estimates = []
@@ -630,7 +647,7 @@ class Simulation(Controller):
         robots_type = []
         for magn in [*self.user_magnebots,*self.ai_magnebots]:
             robot_id = self.robot_names_translate[str(magn.robot_id)]
-            robots_type.append([robot_id,magn.controlled_by])
+            robots_type.append([robot_id,magn.controlled_by,magn.p11,magn.p22])
             
         scenario_dict = {"scenario_size": self.scenario_size, "wall_length": self.wall_length, "walls": self.walls, "env_objects": env_objects_data, "robots_type": robots_type, "objects": self.objects_spawned}
 
@@ -705,16 +722,16 @@ class Simulation(Controller):
         #Create user magnebots
         for us_idx in range(num_users):
             robot_id = self.get_unique_id()
-            self.user_magnebots.append(Enhanced_Magnebot(robot_id=robot_id, position=user_spawn_positions[us_idx], image_frequency=ImageFrequency.always, pass_masks=['_img'],key_set=self.proposed_key_sets[us_idx], controlled_by='human'))
+            self.user_magnebots.append(Enhanced_Magnebot(robot_id=robot_id, position=user_spawn_positions[us_idx], image_frequency=ImageFrequency.always, pass_masks=['_img'],key_set=self.proposed_key_sets[us_idx], controlled_by='human', difficulty_level=self.options.level))
             self.robot_names_translate[str(robot_id)] = chr(ord('A') + us_idx)
     
         #Create ai magnebots
         for ai_idx in range(num_ais+extra_ai_agents):  
             robot_id = self.get_unique_id()                                 
             if self.options.ai_vision:
-                self.ai_magnebots.append(Enhanced_Magnebot(robot_id=robot_id, position=ai_spawn_positions[ai_idx],image_frequency=ImageFrequency.always, pass_masks=['_img'], controlled_by='ai'))
+                self.ai_magnebots.append(Enhanced_Magnebot(robot_id=robot_id, position=ai_spawn_positions[ai_idx],image_frequency=ImageFrequency.always, pass_masks=['_img'], controlled_by='ai', difficulty_level=self.options.level))
             else:
-                self.ai_magnebots.append(Enhanced_Magnebot(robot_id=robot_id, position=ai_spawn_positions[ai_idx],image_frequency=ImageFrequency.never, controlled_by='ai'))
+                self.ai_magnebots.append(Enhanced_Magnebot(robot_id=robot_id, position=ai_spawn_positions[ai_idx],image_frequency=ImageFrequency.never, controlled_by='ai', difficulty_level=self.options.level))
             
             self.robot_names_translate[str(robot_id)] = chr(ord('A') + ai_idx + num_users)
         
@@ -1212,6 +1229,106 @@ class Simulation(Controller):
             modifications = [[1.0,1.0],[-1.0,1.0],[1.0,-1.0],[-1.0,-1.0]]
             #modifications = [[1.0,1.0]]
             
+            total_num_objects = sum(np.array(list(object_models.values()))*len(modifications))
+            
+            if self.options.level:
+                if self.options.level == 1:
+                    num_dangerous = round(float(random.uniform(0.2, 0.3))*total_num_objects)
+                elif self.options.level == 2:
+                    num_dangerous = round(float(random.uniform(0.45, 0.55))*total_num_objects)
+                elif self.options.level == 3:
+                    num_dangerous = round(float(random.uniform(0.7, 0.8))*total_num_objects)
+                
+                dangerous_candidates = random.sample(list(range(total_num_objects)),num_dangerous)
+            
+                percentage_weight = 0.5
+                weight_assignment = {}
+                objects_remaining = total_num_objects
+            
+                
+                if self.options.level == 2: #approx. normal distribution
+                    middle_weight = round((num_users+num_ais+1)/2)
+                    
+                    first_half = list(range(middle_weight-1,0,-1))
+                    second_half = list(range(middle_weight+1, num_users+num_ais+2))
+
+                    if len(first_half) > len(second_half):
+                        weight_range = first_half
+                        other_weight_range = second_half
+                    else:
+                        weight_range = second_half
+                        other_weight_range = first_half
+                        
+                    num_objects_to_assign = round(total_num_objects*percentage_weight)
+                    weight_assignment[middle_weight] = num_objects_to_assign
+                    objects_remaining = total_num_objects-num_objects_to_assign
+                    percentage_weight /= 2
+                        
+                    for wi in range(len(weight_range)):
+                        
+                        num_objects_to_assign = math.ceil(total_num_objects*percentage_weight)
+                    
+                        if objects_remaining-num_objects_to_assign < 0 or (not num_objects_to_assign and objects_remaining):
+                            num_objects_to_assign = objects_remaining
+                        
+                        half_assign = math.ceil(num_objects_to_assign/2)
+                        
+                        #if num_objects_to_assign/2 == 0.5:
+                        #    half_assign = 1
+                        
+                        weight_assignment[weight_range[wi]] = half_assign
+                        
+                        if wi < len(other_weight_range):
+                            weight_assignment[other_weight_range[wi]] = num_objects_to_assign-half_assign
+                        else:
+                            weight_assignment[other_weight_range[wi-1]] += num_objects_to_assign-half_assign
+                        
+                        objects_remaining -= num_objects_to_assign
+                        
+                        if not objects_remaining:
+                            break
+                        
+                        percentage_weight /= 2
+                        
+                    
+                elif self.options.level == 1 or self.options.level == 3: #positively skewed or negatively skewed distribution
+                
+                    if self.options.level == 1:
+                        weight_range = list(range(1,num_users+num_ais+2))
+                    elif self.options.level == 3:
+                        weight_range = list(range(num_users+num_ais,0,-1))
+                        weight_range.append(num_users+num_ais+1)
+                    
+                
+                
+                    objects_remaining = total_num_objects
+                    for w in weight_range:
+                        num_objects_to_assign = round(total_num_objects*percentage_weight)
+                        
+                        if objects_remaining-num_objects_to_assign < 0 or (not num_objects_to_assign and objects_remaining):
+                            num_objects_to_assign = objects_remaining
+                        
+                        weight_assignment[w] = num_objects_to_assign
+                        
+                        objects_remaining -= num_objects_to_assign
+                        
+                        if not objects_remaining:
+                            break
+                        
+                        percentage_weight /= 2
+  
+                    
+                object_index_list = list(range(total_num_objects))
+                random.shuffle(object_index_list)
+                
+                weight_object_assignment = {}
+                
+                for k in weight_assignment.keys():
+                    for ob in object_index_list[:weight_assignment[k]]:
+                        weight_object_assignment[ob] = k
+                        
+                    object_index_list = object_index_list[weight_assignment[k]:]
+                    
             danger_prob = self.cfg['danger_prob']*100 #0.3 #1.0 #0.3
 
             final_coords = {objm: [] for objm in object_models.keys()}
@@ -1234,30 +1351,39 @@ class Simulation(Controller):
             for fc in final_coords.keys():
                 for c in final_coords[fc]:
                     
-                    possible_weights = list(range(1,num_users+num_ais+2)) #Add 1 for objects too heavy to carry [1] #list(range(1,num_users+num_ais+1))
-                    weights_probs = [100]*len(possible_weights)
+                    if self.options.level:
                     
-                    """
-                    for p_idx in range(len(possible_weights)):
-                        if not p_idx:
-                            weights_probs[p_idx] /= 2
-                        elif p_idx == len(possible_weights)-1:
-                            weights_probs[p_idx] = weights_probs[p_idx-1]
+                        if object_index in dangerous_candidates:
+                            danger_level = 2
                         else:
-                            weights_probs[p_idx] = weights_probs[p_idx-1]/2
-                    """
-                    
-                    weights_probs = [int(100/len(possible_weights))]*len(possible_weights)
-                    
-                    if len(possible_weights) == 1:
-                        weight = 1
+                            danger_level = 1
+                        weight = weight_object_assignment[object_index]
+                        
                     else:
-                        weight = int(random.choices(possible_weights,weights=weights_probs)[0])
-                    danger_level = random.choices([1,2],weights=[100-danger_prob,danger_prob])[0]
-                    
-                    
-                    #weight = 1
-                    #danger_level = 2
+                        possible_weights = list(range(1,num_users+num_ais+2)) #Add 1 for objects too heavy to carry [1] #list(range(1,num_users+num_ais+1))
+                        weights_probs = [100]*len(possible_weights)
+                        
+                        """
+                        for p_idx in range(len(possible_weights)):
+                            if not p_idx:
+                                weights_probs[p_idx] /= 2
+                            elif p_idx == len(possible_weights)-1:
+                                weights_probs[p_idx] = weights_probs[p_idx-1]
+                            else:
+                                weights_probs[p_idx] = weights_probs[p_idx-1]/2
+                        """
+                        
+                        weights_probs = [int(100/len(possible_weights))]*len(possible_weights)
+                        
+                        if len(possible_weights) == 1:
+                            weight = 1
+                        else:
+                            weight = int(random.choices(possible_weights,weights=weights_probs)[0])
+                        danger_level = random.choices([1,2],weights=[100-danger_prob,danger_prob])[0]
+                        
+                        
+                        #weight = 1
+                        #danger_level = 2
                     
                     try:
                         commands.extend(self.instantiate_object(fc,{"x": c[0], "y": 0, "z": c[1]},{"x": 0, "y": 0, "z": 0},1000,danger_level,weight, object_index))
@@ -3880,7 +4006,7 @@ class Simulation(Controller):
                 #Create ai magnebots
                 for ai_idx in range(extra_ai_agents):  
                     robot_id = self.get_unique_id()                                 
-                    self.ai_magnebots.append(Enhanced_Magnebot(robot_id=robot_id, position=ai_spawn_positions[ai_idx],image_frequency=ImageFrequency.never, controlled_by='ai'))
+                    self.ai_magnebots.append(Enhanced_Magnebot(robot_id=robot_id, position=ai_spawn_positions[ai_idx],image_frequency=ImageFrequency.never, controlled_by='ai', difficulty_level=self.options.level))
                     #self.ai_magnebots.append(Enhanced_Magnebot(robot_id=robot_id, position=ai_spawn_positions[ai_idx],image_frequency=ImageFrequency.always, pass_masks=['_img'], controlled_by='ai'))
                     self.robot_names_translate[str(robot_id)] = chr(ord('A') + ai_idx + num_users)
                 
@@ -3953,6 +4079,7 @@ if __name__ == "__main__":
     parser.add_argument('--no-human-test', action='store_true', help="Do not run human tests")
     parser.add_argument('--single-object', action='store_true', help="Single object")
     parser.add_argument('--ai-vision', action='store_true', help="Activate cameras for AI agents")
+    parser.add_argument('--level', type=int, default=0, help="Difficulty level [1,2,3]")
     
     
     

@@ -90,7 +90,7 @@ class DecisionControl:
         
         self.human_to_ai_text = []
         if not all(robot[1] for robot in env.neighbors_info): #Check if there are human peers    
-            self.human_to_ai_text = Human2AIText(env)
+            self.human_to_ai_text = Human2AIText(env, robotState)
        
     class Other_Agent:
         
