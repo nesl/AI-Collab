@@ -166,9 +166,9 @@ class Enhanced_Magnebot(Magnebot):
     
         if self.difficulty_level:
             if self.difficulty_level == 1:
-                low_threshold = 0.9
+                low_threshold = 0.8
             elif self.difficulty_level == 2:
-                low_threshold = 0.75
+                low_threshold = 0.7
             elif self.difficulty_level == 3:
                 low_threshold = 0.6
                 

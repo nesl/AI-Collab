@@ -337,6 +337,8 @@ io.sockets.on("connection", socket => { //When a client connects
 		}
 	}
   	
+  	console.log(stats, reset_count, all_ids.length);
+  	
   	if(socket.id == broadcaster || reset_count == all_ids.length){
 
     	socket.to(simulator).emit("reset"); //, socket_to_simulator_id(socket.id));

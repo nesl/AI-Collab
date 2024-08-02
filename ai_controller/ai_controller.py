@@ -217,6 +217,7 @@ class RobotState:
             
             self.cursor = sqliteConnection.cursor()
             
+            #CHECK(collaborative_score >= 0 AND collaborative_score <= 10)
             self.create_tables = [
                 """CREATE TABLE objects (
                     object_id INTEGER PRIMARY KEY,
@@ -229,6 +230,8 @@ class RobotState:
                     type INTEGER,
                     last_seen_location TEXT,
                     last_seen_time REAL,
+                    collaborative_score REAL,
+                    collaborative_score_of_me REAL,
                     team TEXT,
                     carrying_object INTEGER,
                     disabled INTEGER,
@@ -236,7 +239,6 @@ class RobotState:
                     sensor_dangerous REAL
                 );""",
                 """CREATE TABLE agent_object_estimates (
-                    idx INTEGER PRIMARY KEY,
                     last_seen_location TEXT,
                     last_seen_time REAL,
                     danger_status TEXT,
@@ -244,7 +246,8 @@ class RobotState:
                     agent_id TEXT,
                     object_id INTEGER,
                     FOREIGN KEY (agent_id) REFERENCES agents (agent_id),
-                    FOREIGN KEY (object_id) REFERENCES objects (object_id)
+                    FOREIGN KEY (object_id) REFERENCES objects (object_id),
+                    PRIMARY KEY (agent_id,object_id)
                 );"""]
               
             for statement in self.create_tables:
@@ -272,15 +275,14 @@ class RobotState:
                     sensor_parameters = env.neighbors_sensor_parameters[n]
                     robot_type = env.neighbors_info[n][1]
                     
-                self.cursor.execute('''INSERT INTO agents (agent_id, idx, last_seen_location, last_seen_time, type, carrying_object, disabled, sensor_benign, sensor_dangerous) VALUES (?, ?, "[]", 0, ?, 0, -1, ?, ?)''', (robot_id2, n, robot_type, sensor_parameters[0],sensor_parameters[1]))  
+                self.cursor.execute('''INSERT INTO agents (agent_id, idx, last_seen_location, last_seen_time, type, carrying_object, disabled, sensor_benign, sensor_dangerous,collaborative_score,collaborative_score_of_me) VALUES (?, ?, "[]", 0, ?, 0, -1, ?, ?, 10, 10)''', (robot_id2, n, robot_type, sensor_parameters[0],sensor_parameters[1]))  
         else:
-            self.robots = [{"neighbor_type": env.neighbors_info[n][1], "neighbor_location": [-1,-1], "neighbor_time": [0.0], "neighbor_disabled": -1} for n in range(len(env.neighbors_info))] # 0 if human, 1 if ai
+            self.robots = [{"neighbor_type": env.neighbors_info[n][1], "neighbor_location": [-1,-1], "neighbor_time": [0.0], "neighbor_disabled": -1, "collaborative_score":10, "collaborative_score_of_me":10} for n in range(len(env.neighbors_info))] # 0 if human, 1 if ai
             
         self.strength = 1
         self.map_metadata = {}
-        self.sensor_parameters = env.sensor_parameters
-        self.neighbors_sensor_parameters = env.neighbors_sensor_parameters
         self.possible_estimates = {}
+        self.collaborative_score = [{"collaborative_score":[], "collaborative_score_of_me":[]} for n in range(len(env.neighbors_info)+1)]
         
     class Danger_Status(Enum):
         unknown = 0
@@ -354,19 +356,19 @@ class RobotState:
                     
                     if ie_idx == len(self.item_estimates[item_idx])-1:
                         if ie["item_danger_level"] == 2:
-                            benign = 1-self.sensor_parameters[0]
-                            dangerous = self.sensor_parameters[1]
+                            benign = 1-self.env.sensor_parameters[0]
+                            dangerous = self.env.sensor_parameters[1]
                         elif ie["item_danger_level"] == 1:
-                            benign = self.sensor_parameters[0]
-                            dangerous = 1-self.sensor_parameters[1]
+                            benign = self.env.sensor_parameters[0]
+                            dangerous = 1-self.env.sensor_parameters[1]
                             
                     else:
                         if ie["item_danger_level"] == 2:
-                            benign = 1-self.neighbors_sensor_parameters[ie_idx][0]
-                            dangerous = self.neighbors_sensor_parameters[ie_idx][1]
+                            benign = 1-self.env.neighbors_sensor_parameters[ie_idx][0]
+                            dangerous = self.env.neighbors_sensor_parameters[ie_idx][1]
                         elif ie["item_danger_level"] == 1:
-                            benign = self.neighbors_sensor_parameters[ie_idx][0]
-                            dangerous = 1-self.neighbors_sensor_parameters[ie_idx][1]
+                            benign = self.env.neighbors_sensor_parameters[ie_idx][0]
+                            dangerous = 1-self.env.neighbors_sensor_parameters[ie_idx][1]
                 
                     prob_evidence = (prior_benign*benign + prior_dangerous*dangerous)
                     
@@ -498,7 +500,10 @@ class RobotState:
                     row_tmp.append(r[0])
                 row = row_tmp
             else:    
-                row = row[0][0]
+                try:
+                    row = row[0][0]
+                except:
+                    pdb.set_trace()
    
             
             if propert == "last_seen_location":
@@ -539,6 +544,10 @@ class RobotState:
             
     def set(self, database, propert, idx, value, time):
     
+        if propert == "collaborative_score" or propert == "collaborative_score_of_me":
+            self.collaborative_score[idx][propert].append(value)
+            value = sum(self.collaborative_score[idx][propert])/len(self.collaborative_score[idx][propert])
+    
         if self.args.sql:
         
             if propert == "last_seen_location":
@@ -564,11 +573,18 @@ class RobotState:
             if database == "objects":
                 legacy_to_sql = {"weight":"item_weight", "danger_status": "item_danger_level", "estimate_correct_percentage": "item_danger_confidence", "last_seen_location": "item_location", "last_seen_time": "item_time"}
                 
-                self.items[idx][legacy_to_sql[propert]] = value
+                if propert in legacy_to_sql:
+                    propert = legacy_to_sql[propert]
+                    
+                self.items[idx][propert] = value
                 
             elif database == "agents":
                 legacy_to_sql = {"type": "neighbor_type", "disabled": "neighbor_disabled", "last_seen_location": "neighbor_location", "last_seen_time": "neighbor_time"}
-                self.robots[idx][legacy_to_sql[propert]] = value
+                
+                if propert in legacy_to_sql:
+                    propert = legacy_to_sql[propert]
+                    
+                self.robots[idx][propert] = value
         
         
     def update_robots(self, neighbor_output, robot_idx):
@@ -623,7 +639,7 @@ class RobotState:
             else:
                 robot_id2 = list(self.env.robot_key_to_index.keys())[list(self.env.robot_key_to_index.values()).index(n)]
                 
-            self.cursor.execute('''INSERT INTO agent_object_estimates (idx, object_id, last_seen_location, last_seen_time, danger_status, estimate_correct_percentage, agent_id) VALUES (NULL,?,"[]", 0, ?, 0, ?)''', (item_id, self.Danger_Status(0).name, robot_id2,))  
+            self.cursor.execute('''INSERT INTO agent_object_estimates (object_id, last_seen_location, last_seen_time, danger_status, estimate_correct_percentage, agent_id) VALUES (?,"[]", 0, ?, 0, ?)''', (item_id, self.Danger_Status(0).name, robot_id2,))  
     
     def update_items(self,item_output, item_id, item_idx, robot_idx): #Updates items
 
@@ -995,13 +1011,13 @@ while True:
             for ob_key in range(robot_count):
             
                 location = robotState.get("agents", "last_seen_location", ob_key)
-                disabled = robotState.get("agents", "disabled", ob_key)
+                neighbor_disabled = robotState.get("agents", "disabled", ob_key)
 
                 
                 if location[0] != -1 and location[1] != -1 and previous_ego_location[0][0] == location[0] and previous_ego_location[1][0] == location[1]:
                     robotState.latest_map[previous_ego_location[0][0],previous_ego_location[1][0]] = 3
                     
-                if disabled == 1 and location[0] != -1 and location[1] != -1:
+                if neighbor_disabled == 1 and location[0] != -1 and location[1] != -1:
                     robotState.latest_map[location[0],location[1]] = 1
             
 
@@ -1093,11 +1109,11 @@ while True:
             for ob_key in range(robot_count):
             
                 location = robotState.get("agents", "last_seen_location", ob_key)
-                disabled = robotState.get("agents", "disabled", ob_key)
+                neighbor_disabled = robotState.get("agents", "disabled", ob_key)
 
             
                 robo_location = robotState.latest_map[location[0],location[1]]
-                if robo_location != 5 and robo_location != 3 and location[0] != -1 and location[1] != -1 and disabled != 1:
+                if robo_location != 5 and robo_location != 3 and location[0] != -1 and location[1] != -1 and neighbor_disabled != 1:
                     #pdb.set_trace()
                     print("ROBOT NOT FOUND", ob_key, location)
                     

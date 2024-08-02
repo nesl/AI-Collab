@@ -193,6 +193,11 @@ class DecisionControl:
                 
                 template_match = True
                 
+                #Calculate utility. When to collaborate? -> When to accept or offer collaboration? -> Collaboration score of others and expectation of such collaboration score
+                #Finish other strategies
+                
+        
+                              
                 self.other_agents[agent_idx].observations.append("Asked me to help carry object " + rematch.group(2))
                 
                 self.message_text,self.action_index,_ = self.movement.message_processing_carry_help(rm, robotState, self.action_index, self.message_text)
@@ -2063,8 +2068,555 @@ class DecisionControl:
             agents_distance.append(robot_distance)
             
         return agents_distance
-        
     
+    
+    def get_agents_distance(self, pickup_excluded, robotState, info):
+    
+        ego_location = np.where(robotState.latest_map == 5)
+        initial_agents_distance = self.calculate_neighbor_distance(robotState, info, ego_location, pickup_excluded) #Calculate the distances between yourself and the other robots but exclude some of the robots according to roles
+        agents_distance = initial_agents_distance.copy()
+        cost_agents = []
+        
+        
+        all_robot_combinations = []
+        robot_range = []
+        
+        for i in range(robotState.get_num_robots()):
+            if robotState.get("agents", "disabled", i) != 1: #Only take into account those robots that are not disabled
+                robot_range.append(i)
+        
+        for i in range(len(robot_range)): #Compute all possible combinations of robot groups
+            all_robot_combinations.extend(combinations([*robot_range, robotState.get_num_robots()], i+1))
+        
+        '''
+        pickup_not_available = []
+        for robo_idx in robot_range:
+            if (robo_idx in self.help_request_time.keys() and time.time() - self.help_request_time[robo_idx][0] < self.help_request_time[robo_idx][1]): #If an agent has previously been requested help, wait some time until we take it into consideration again.
+                pickup_not_available.append(robo_idx)
+        '''
+        
+        for ag in range(len(robot_range)): #For all robots that can help and are closeby, compute the distance it would take to reach one of them and then the others in sequence
+                    
+            closest_idx = np.argmin(agents_distance)
+                        
+            if agents_distance[closest_idx] == float("inf"):
+                break
+            else:
+                cost_agents.append((closest_idx, agents_distance[closest_idx])) #Cost to reach one of the agents in sequence
+                
+                robo_location = robotState.get("agents", "last_seen_location", robot_range[closest_idx])
+                
+                next_location = np.array([[robo_location[0]],[robo_location[1]]])
+                agents_distance = self.calculate_neighbor_distance(robotState, info, next_location, pickup_excluded)
+                
+        return initial_agents_distance,all_robot_combinations,robot_range,cost_agents
+    
+    def cost_carry(self, ob_idx, cost_agents, number_helping, robot_range, robotState, info):
+    
+        ob_location = robotState.get("objects", "last_seen_location", ob_idx)
+        
+        if (ob_location[0] == -1 and ob_location[1] == -1) or tuple(ob_location) in self.extended_goal_coords: #If the location of this objects is not known, continue
+            return 0,-1,0
+        
+        ob_weight = robotState.get("objects", "weight", ob_idx)
+        pickup_args = -1
+        request_cost = 0
+        
+        goal_x = int(self.occMap.shape[0] / 2)
+        goal_y = int(self.occMap.shape[1] / 2)
+        
+        ego_location = np.where(robotState.latest_map == 5)
+        
+        if ob_weight > 1: #If the object requires greater strength
+                        
+                        
+            if len(cost_agents) < ob_weight -1 -number_helping: #If we have more agents helping than needed for this particular object, just skip it
+                return 0,-1,0
+                        
+            if ob_weight-1 <= number_helping: #If we have enough helping agents to carry
+                        
+                _, next_locs, _, _ = self.movement.go_to_location(ob_location[0], ob_location[1], self.occMap, robotState, info, ego_location, self.action_index, checking=True, help_sensing=self.helping_type == self.HelpType.sensing)
+                distance = len(next_locs)
+                            
+            else: #Otherwise we also have to consider the cost of requesting help
+                        
+                for ag_idx in range(ob_weight-1 -number_helping): #Add the cost of requesting help from the needed amount of agents
+                    request_cost += cost_agents[ag_idx][1]
+                            
+                try:
+                    pickup_args = cost_agents[0][0] #agent ID of the closest agent
+                except:
+                    pdb.set_trace()
+                          
+                robo_idx = cost_agents[ag_idx][0]
+                robo_location = robotState.get("agents", "last_seen_location", robot_range[robo_idx])
+                next_ego_location = np.array([[robo_location[0]],[robo_location[1]]])
+                _, next_locs, _, _ = self.movement.go_to_location(ob_location[0], ob_location[1], self.occMap, robotState, info, next_ego_location, self.action_index, checking=True, help_sensing=self.helping_type == self.HelpType.sensing)
+                distance = len(next_locs)
+                        
+                        
+                #print("pickup args", possible_actions[ob_idx]["pickup_args"])
+                        
+        else: #If we can carry the object alone
+            _, next_locs, _, _ = self.movement.go_to_location(ob_location[0], ob_location[1], self.occMap, robotState, info, ego_location, self.action_index, checking=True, help_sensing=self.helping_type == self.HelpType.sensing)
+            distance = len(next_locs)
+                    
+        if not distance: #If the distance is 0, ignore
+            return 0,-1,0
+                        
+                            
+        goal_location = np.array([[goal_x],[goal_y]])
+        _, next_locs, _, _ = self.movement.go_to_location(ob_location[0], ob_location[1], self.occMap, robotState, info, goal_location, self.action_index, checking=True, help_sensing=self.helping_type == self.HelpType.sensing)
+        return_distance = len(next_locs) #calculate distance to return to goal from object
+                   
+        pickup_cost = distance + return_distance + request_cost #pickup cost is equal to adding the distance to get to the object + the distances between the agents to whom request help + the distance to move the object to the goal area
+    
+        return pickup_cost,pickup_args,distance    
+        
+        
+    def cost_sensing(self, ob_idx, initial_agents_distance, all_robot_combinations, robot_range, sensing_excluded, distance, robotState, info):
+    
+        ask_sensing_cost = {}
+        distance_object_agent = {} 
+        not_available = []
+        
+        ob_location = robotState.get("objects", "last_seen_location", ob_idx)
+        
+        if (ob_location[0] == -1 and ob_location[1] == -1) or tuple(ob_location) in self.extended_goal_coords: #If the location of this objects is not known, continue
+            return {}
+        
+        for ia_idx,ia in enumerate(initial_agents_distance):
+        
+            if ia < float("inf"): #If agent is reacheable calculate distance to it
+            
+                robo_location = robotState.get("agents", "last_seen_location", robot_range[ia_idx])
+                next_ego_location = np.array([[robo_location[0]],[robo_location[1]]])
+                _, next_locs, _, _ = self.movement.go_to_location(ob_location[0], ob_location[1], self.occMap, robotState, info, next_ego_location, self.action_index, checking=True, help_sensing=self.helping_type == self.HelpType.sensing)
+                ask_sense_distance = len(next_locs)
+                
+                if not ask_sense_distance: #If distance is zero, ignore
+                    not_available.append(robot_range[ia_idx])
+                    continue
+            
+                tmp_cost = ia + ask_sense_distance #sensing cost is the addition of going towards the agent and then to the object we are requesting to be sensed # + return_distance
+                ask_sensing_cost[robot_range[ia_idx]] = tmp_cost
+                distance_object_agent[robot_range[ia_idx]] = ask_sense_distance
+            else: #if agent is not reachable
+                not_available.append(robot_range[ia_idx])
+    
+        
+        for robo_idx in range(robotState.get_num_estimates(ob_idx)): #Check if we already have an estimate for that object from specific agents
+            if robo_idx not in not_available and (robotState.get("object_estimates", "danger_status", [ob_idx,robo_idx]) != 0): # or robo_idx in pickup_not_available): # or (robo_idx in self.sense_request_time.keys() and time.time() - self.sense_request_time[robo_idx][0] < self.sense_request_time[robo_idx][1]):
+                not_available.append(robo_idx)
+                    
+        if robotState.get("object_estimates", "danger_status", [ob_idx,robotState.get_num_estimates(ob_idx)-1]) != 0: #Check also if we already sensed the objects ourselve
+            not_available.append(robotState.get_num_robots())
+        
+        sensing_combs = {}
+        
+        actual_combinations = []
+        
+        #print("Not available", not_available)
+        for comb in all_robot_combinations: #For all possible sequences where we move sequentially to a subset of the agents
+            comb_cost = 0
+            
+            if not any(el in not_available or el in sensing_excluded for el in comb): #If no agent in that subset has not been excluded
+                actual_combinations.append(comb)
+                if not (len(comb) == 1 and robotState.get_num_robots() in comb): #If it's not us only the ones in that combination
+                    
+                    for elem_idx,elem in enumerate(comb):
+                    
+                        if elem == robotState.get_num_robots():
+                            continue
+                            
+                        if not elem_idx: 
+                            try:
+                                comb_cost += ask_sensing_cost[elem] #Add the costs of going towards that robot and requesting help
+                            except:
+                                pdb.set_trace()
+                        else:
+                            comb_cost += distance_object_agent[elem]*2 #Add the cost of reaching towards that agent
+                
+                else:
+                    comb_cost = distance    
+                #comb_cost += pickup_cost #Add the cost of actually picking the object
+                sensing_combs[comb] = comb_cost
+                
+        return sensing_combs
+    
+    def utility_calculation_carry(self, ob_idx, collab_score, cost, robotState):
+    
+        ob_danger = robotState.get("objects", "danger_status", ob_idx)
+        utility = 0
+        
+        if ob_danger:#If we already have an estimation of the danger level of the object, create the decision network to compute the costs of picking that object 
+                
+                
+            """
+            diag = gum.InfluenceDiagram()
+
+            Estimate=diag.addChanceNode(gum.LabelizedVariable("Estimate","Estimate",2))
+            Pickup=diag.addDecisionNode(gum.LabelizedVariable("Pickup","Pickup",2))
+            Pickup_Utility=diag.addUtilityNode(gum.LabelizedVariable("Pickup_Utility","Pickup_Utility",1))
+            Pickup_Cost=diag.addUtilityNode(gum.LabelizedVariable("Pickup_Cost","Pickup_Cost",1))
+
+
+            diag.addArc(Estimate,Pickup)
+            diag.addArc(Estimate,Pickup_Utility)
+            diag.addArc(Pickup,Pickup_Utility)
+            diag.addArc(Pickup,Pickup_Cost)
+            
+            """
+
+            danger_percentage = 0.50
+            ob_danger_estimate = robotState.get("objects", "estimate_correct_percentage", ob_idx)
+
+            if ob_danger == 0:
+                #diag.cpt(Estimate).fillWith([0.70, 0.30])
+                pass
+            elif ob_danger == 1:
+                confidence = ob_danger_estimate
+                #diag.cpt(Estimate).fillWith([confidence, 1-confidence])
+                danger_percentage = 1-confidence
+            elif ob_danger == 2:
+                confidence = ob_danger_estimate
+                #diag.cpt(Estimate).fillWith([1-confidence, confidence])
+                danger_percentage = confidence
+                
+            """
+            #diag.utility(Pickup_Utility)[{'Pickup':0}] = [[100],[0]]
+            diag.utility(Pickup_Utility)[{'Pickup':0}] = [[0],[0]]
+            #diag.utility(Pickup_Utility)[{'Pickup':1}] = [[0],[100]]
+            diag.utility(Pickup_Utility)[{'Pickup':1}] = [[0],[1]]
+
+            diag.utility(Pickup_Cost)[{'Pickup':0}] = 0
+            diag.utility(Pickup_Cost)[{'Pickup':1}] = 0#-possible_actions[ob_idx]["pickup"]
+
+            ie=gum.ShaferShenoyLIMIDInference(diag)
+            ie.addEvidence('Pickup',1)
+            ie.makeInference() 
+            
+            """
+            
+            if danger_percentage >= 0.7:
+            
+                #utility["pickup_" + str(ob_idx)] = 100 - (1-ie.MEU()["mean"])*possible_actions[ob_idx]["pickup"]
+                utility = 100 - ((1-danger_percentage)+(1-collab_score/10))/2*cost
+                
+        return utility
+        
+    def utility_calculation_sensing(self, ob_idx, s_comb, cost, robotState):
+    
+        utility = 0
+        
+        collab_score = 0
+        for ie_idx in s_comb:
+            collab_score += robotState.get("agents", "collaborative_score", int(ie_idx))
+
+
+        collab_score /= len(s_comb)
+        """
+    
+        diag = gum.InfluenceDiagram()
+
+        Estimate_Benign=diag.addChanceNode(gum.LabelizedVariable("Estimate_Benign","Estimate_Benign",2))
+        Estimate_Dangerous=diag.addChanceNode(gum.LabelizedVariable("Estimate_Dangerous","Estimate_Dangerous",2))
+        Pickup_2=diag.addDecisionNode(gum.LabelizedVariable("Pickup_2","Pickup_2",2))
+        Pickup_Utility_2=diag.addUtilityNode(gum.LabelizedVariable("Pickup_Utility_2","Pickup_Utility_2",1))
+        Pickup_Cost_2=diag.addUtilityNode(gum.LabelizedVariable("Pickup_Cost_2","Pickup_Cost_2",1))
+
+
+        diag.addArc(Estimate_Benign,Pickup_2)
+        diag.addArc(Estimate_Dangerous,Pickup_2)
+        diag.addArc(Estimate_Benign,Pickup_Utility_2)
+        diag.addArc(Estimate_Dangerous,Pickup_Utility_2)
+        diag.addArc(Pickup_2,Pickup_Utility_2)
+        diag.addArc(Pickup_2,Pickup_Cost_2)
+        
+        """
+        
+        prior_benign = 0.5
+        prior_dangerous = 0.5
+        
+        if robotState.get("objects", "danger_status", ob_idx) == 1:
+            prior_dangerous = 1-robotState.get("objects", "estimate_correct_percentage", ob_idx)
+            prior_benign = robotState.get("objects", "estimate_correct_percentage", ob_idx)
+        elif robotState.get("objects", "danger_status", ob_idx) == 2:
+            prior_dangerous = robotState.get("objects", "estimate_correct_percentage", ob_idx)
+            prior_benign = 1-robotState.get("objects", "estimate_correct_percentage", ob_idx)
+        
+        
+        """
+        for item_danger_level in [1,2]:
+            for ie_idx in s_comb:
+                
+                
+                    
+                if ie_idx == len(robotState.robots):
+                    if item_danger_level == 2:
+                        benign = 1-robotState.sensor_parameters[0]
+                        dangerous = robotState.sensor_parameters[1]
+                    elif item_danger_level == 1:
+                        benign = robotState.sensor_parameters[0]
+                        dangerous = 1-robotState.sensor_parameters[1]
+                            
+                else:
+                    if item_danger_level == 2:
+                        benign = 1-robotState.neighbors_sensor_parameters[ie_idx][0]
+                        dangerous = robotState.neighbors_sensor_parameters[ie_idx][1]
+                    elif item_danger_level == 1:
+                        benign = robotState.neighbors_sensor_parameters[ie_idx][0]
+                        dangerous = 1-robotState.neighbors_sensor_parameters[ie_idx][1]
+                
+                prob_evidence = (prior_benign*benign + prior_dangerous*dangerous)
+                    
+                prior_benign_temp = benign*prior_benign/prob_evidence
+                prior_dangerous_temp = dangerous*prior_dangerous/prob_evidence
+                
+                if item_danger_level == 1:
+                    prior_benign = prior_benign_temp
+                    prior_dangerous = 1-prior_benign
+                elif item_danger_level == 2:
+                    prior_dangerous = prior_dangerous_temp
+                    prior_benign = 1-prior_dangerous
+            
+            if item_danger_level == 1:        
+                benign_est = prior_benign
+            elif item_danger_level == 2:
+                danger_est = prior_dangerous
+
+        """
+        
+        def sequence_sensing(s_comb, prior_benign, prior_dangerous):
+        
+            results = []
+        
+            for ie_idx in s_comb:
+                for item_danger_level in [1,2]:
+                    if ie_idx == robotState.get_num_robots():
+                        if item_danger_level == 2:
+                            benign = 1-robotState.env.sensor_parameters[0]
+                            dangerous = robotState.env.sensor_parameters[1]
+                        elif item_danger_level == 1:
+                            benign = robotState.env.sensor_parameters[0]
+                            dangerous = 1-robotState.env.sensor_parameters[1]
+                                
+                    else:
+                        if item_danger_level == 2:
+                            benign = 1-robotState.env.neighbors_sensor_parameters[ie_idx][0]
+                            dangerous = robotState.env.neighbors_sensor_parameters[ie_idx][1]
+                        elif item_danger_level == 1:
+                            benign = robotState.env.neighbors_sensor_parameters[ie_idx][0]
+                            dangerous = 1-robotState.env.neighbors_sensor_parameters[ie_idx][1]
+                            
+                    prob_evidence = (prior_benign*benign + prior_dangerous*dangerous)
+                    
+                    if item_danger_level == 1:
+                        prior_benign_tmp = benign*prior_benign/prob_evidence
+                        prior_dangerous_tmp = 1-prior_benign_tmp
+                    elif item_danger_level == 2:
+                        prior_dangerous_tmp = dangerous*prior_dangerous/prob_evidence
+                        prior_benign_tmp = 1-prior_dangerous_tmp
+                    
+                    if len(s_comb) > 1:
+                        results.extend(sequence_sensing(s_comb[1:], prior_benign_tmp, prior_dangerous_tmp))
+                    else:    
+                        results.append([prior_benign_tmp,prior_dangerous_tmp])   
+            
+                    
+            return results             
+                        
+                
+        sensing_results = sequence_sensing(s_comb, prior_benign, prior_dangerous)
+        
+        danger_est = sensing_results[1][1]
+        benign_est = sensing_results[0][0]
+        
+        sensing_results_np = np.array(sensing_results)
+        #print(np.average(sensing_results_np,axis=0),np.var(sensing_results_np,axis=0)) 
+        
+        #if len(s_comb) > 2:
+        #    pdb.set_trace()
+        
+        """
+        #benign_est = robotState.possible_estimates[ob_idx][s_comb[0]][0]
+        diag.cpt(Estimate_Benign).fillWith([benign_est, 1-benign_est])
+        #danger_est = robotState.possible_estimates[ob_idx][s_comb[0]][1]
+        diag.cpt(Estimate_Dangerous).fillWith([1-danger_est, danger_est])
+
+        diag.utility(Pickup_Utility_2)[{'Pickup_2':0, 'Estimate_Benign':0}] = [[100],[0]]
+        diag.utility(Pickup_Utility_2)[{'Pickup_2':0, 'Estimate_Benign':1}] = [[0],[0]]
+        diag.utility(Pickup_Utility_2)[{'Pickup_2':1, 'Estimate_Benign':0}] = [[0],[0]]
+        diag.utility(Pickup_Utility_2)[{'Pickup_2':1, 'Estimate_Benign':1}] = [[0],[100]]
+
+        diag.utility(Pickup_Cost_2)[{'Pickup_2':0}] = 0
+        diag.utility(Pickup_Cost_2)[{'Pickup_2':1}] = 0#-possible_actions[ob_idx]["sensing"][s_comb]
+
+        ie=gum.ShaferShenoyLIMIDInference(diag)
+        #ie.addEvidence('Pickup_2',1)
+        ie.makeInference()
+        
+        """
+        
+        #utility["sense_" + str(ob_idx) + "_" + utility_str] = 100 - (1-(abs(benign_est - (1-danger_est)) + (abs(danger_est - (1-danger_est)) + abs(benign_est - (1-benign_est)))/2)/2)*possible_actions[ob_idx]["sensing"][s_comb] #ie.MEU()["mean"]
+        utility = 100 - ((1-(min(1,np.average(sensing_results_np,axis=0)[1] + np.std(sensing_results_np,axis=0)[1]))) + (1-collab_score/10))/2*cost
+        #utility["sense_" + str(ob_idx) + "_" + utility_str] = 100 - (1-(min(1,prior_dangerous + np.std(sensing_results_np,axis=0)[1])))*possible_actions[ob_idx]["sensing"][s_comb]
+        
+        #print("Estimations", s_comb, danger_est, benign_est)
+        
+        #if utility_str == "4":
+        #    pdb.set_trace()
+        
+        return utility
+        
+     
+    def agents_exclusion(self, robotState, info):
+    
+        #Exclude requests to certain agents according to role
+        pickup_excluded = []
+        sensing_excluded = []
+        if "role" in self.team_structure:
+            for teammate in self.team_structure["role"].keys():
+            
+                if teammate == self.env.robot_id:
+                    continue
+            
+                teammate_idx = info['robot_key_to_index'][teammate]
+                
+                if self.team_structure["role"][teammate] == "sensing": #If you are only sensing, you cannot ask others to pickup objects. 
+                    pickup_excluded.append(teammate_idx)
+                elif self.team_structure["role"][teammate] == "lifter": #If you are only lifting, you cannot ask others to sense objects
+                    sensing_excluded.append(teammate_idx)
+                   
+
+        already_requested = False        
+        for teammate_idx in range(robotState.get_num_robots()): #If an agent has previously been requested help, wait some time until we take it into consideration again
+            
+            if teammate_idx in self.help_request_time.keys() and time.time() - self.help_request_time[teammate_idx][0] < self.help_request_time[teammate_idx][1]: 
+                if teammate_idx not in pickup_excluded:
+                    pickup_excluded.append(teammate_idx)
+                        
+                if teammate_idx not in sensing_excluded:
+                    sensing_excluded.append(teammate_idx)
+                    
+                    
+                already_requested = True
+                
+        if already_requested: #Include everyone if already requested help
+            for teammate_idx in range(robotState.get_num_robots()):
+                if teammate_idx not in pickup_excluded:
+                    pickup_excluded.append(teammate_idx)
+                        
+                if teammate_idx not in sensing_excluded:
+                    sensing_excluded.append(teammate_idx)
+                
+                   
+                
+        if "role" in self.team_structure and self.team_structure["role"][self.env.robot_id] == "lifter": #If you are only lifting, exclude yourself from sensing
+            sensing_excluded.append(robotState.get_num_robots())   
+            
+        
+        return pickup_excluded,sensing_excluded
+        
+    def calculate_overall_utility(self, robotState, info):
+    
+        if self.movement.help_status == self.movement.HelpState.being_helped: #if we are already being helped, get the number of helper agents
+            number_helping = len(self.movement.help_status_info[0])
+        else:
+            number_helping = 0
+
+        possible_actions = {}
+        utility = {}
+        
+        #initial_agents_distance = self.calculate_neighbor_distance(robotState, info, ego_location, []) #Calculate the distances between yourself and the other robots
+        
+        pickup_excluded,sensing_excluded = self.agents_exclusion(robotState, info)   
+                
+                    
+        initial_agents_distance,all_robot_combinations,robot_range,cost_agents = self.get_agents_distance(pickup_excluded, robotState, info)
+
+        
+        
+        for ob_idx in range(robotState.get_num_objects()): #For all possible objects
+        
+        
+            collab_score = 10
+            try:
+                object_id = list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(ob_idx)]
+            except:
+                pdb.set_trace()
+        
+            if object_id in self.carried_objects.values(): #If this object is being carried by someone else continue with the others
+                continue
+        
+            possible_actions[ob_idx] = {}
+            
+            
+            ob_location = robotState.get("objects", "last_seen_location", ob_idx)
+            
+            
+            
+            if (ob_location[0] == -1 and ob_location[1] == -1) or tuple(ob_location) in self.extended_goal_coords: #If the location of this objects is not known, continue
+                continue
+            else:
+                
+                pickup_cost,pickup_args,distance = self.cost_carry(ob_idx, cost_agents, number_helping, robot_range, robotState, info)
+            
+                if not pickup_cost:
+                    continue
+            
+                if pickup_args >= 0:
+                    possible_actions[ob_idx]["pickup_args"] = pickup_args
+                    collab_score = robotState.get("agents", "collaborative_score", int(pickup_args))
+                
+                if not ("role" in self.team_structure and self.team_structure["role"][self.env.robot_id] == "sensing"): #If you are not sensing, a possible action can be to pickup this object #not ("pickup_args" in possible_actions[ob_idx] and possible_actions[ob_idx]["pickup_args"] in pickup_not_available) and not ("role" in self.team_structure and self.team_structure["role"][self.env.robot_id] == "sensing"):
+                    possible_actions[ob_idx]["pickup"] = pickup_cost
+                
+                
+                possible_actions[ob_idx]["sensing"] = self.cost_sensing(ob_idx, initial_agents_distance, all_robot_combinations, robot_range, sensing_excluded, distance, robotState, info)
+                
+                if "pickup" in possible_actions[ob_idx]:
+                
+                    
+                    utility_calculation = self.utility_calculation_carry(ob_idx, collab_score, possible_actions[ob_idx]["pickup"], robotState)
+                    
+                    if utility_calculation:
+                        utility["pickup_" + str(ob_idx)] = utility_calculation
+                
+                
+                
+                for s_comb in possible_actions[ob_idx]["sensing"].keys(): #Now for sensing the object compute the decision network 
+                
+                    if s_comb:
+                    
+                        utility_calculation = self.utility_calculation_sensing(ob_idx, s_comb, possible_actions[ob_idx]["sensing"][s_comb], robotState)
+                    
+                        if utility_calculation:
+                        
+                            utility_str = ""
+    
+                            for s_idx in range(len(s_comb)):
+                                if not s_idx:
+                                    utility_str += str(s_comb[s_idx])
+                                else:
+                                    utility_str += "_" + str(s_comb[s_idx])
+                        
+                            utility["sense_" + str(ob_idx) + "_" + utility_str] = utility_calculation
+         
+                            
+                      
+        
+        #pdb.set_trace()
+        unexplored = np.where(robotState.latest_map == -2)
+        explored = round((robotState.latest_map.size-unexplored[0].size)/robotState.latest_map.size,2) #calculate the utility of exploring the area
+        
+        if explored < 1:
+            utility["explore"] = math.exp(-2*explored)*100
+            
+        utility['end'] = ((pow(100,info['time']/self.env.map_config['timer_limit']) - 1)/(100-1))*100
+        
+        
+        return possible_actions,utility
             
     def decision_obey(self,messages, robotState, info, output, nearby_other_agents, next_observation):
     
@@ -2352,19 +2904,19 @@ class DecisionControl:
                                         
                                     if ie_idx == robotState.get_num_robots():
                                         if item_danger_level == 2:
-                                            benign = 1-robotState.sensor_parameters[0]
-                                            dangerous = robotState.sensor_parameters[1]
+                                            benign = 1-robotState.env.sensor_parameters[0]
+                                            dangerous = robotState.env.sensor_parameters[1]
                                         elif item_danger_level == 1:
-                                            benign = robotState.sensor_parameters[0]
-                                            dangerous = 1-robotState.sensor_parameters[1]
+                                            benign = robotState.env.sensor_parameters[0]
+                                            dangerous = 1-robotState.env.sensor_parameters[1]
                                                 
                                     else:
                                         if item_danger_level == 2:
-                                            benign = 1-robotState.neighbors_sensor_parameters[ie_idx][0]
-                                            dangerous = robotState.neighbors_sensor_parameters[ie_idx][1]
+                                            benign = 1-robotState.env.neighbors_sensor_parameters[ie_idx][0]
+                                            dangerous = robotState.env.neighbors_sensor_parameters[ie_idx][1]
                                         elif item_danger_level == 1:
-                                            benign = robotState.neighbors_sensor_parameters[ie_idx][0]
-                                            dangerous = 1-robotState.neighbors_sensor_parameters[ie_idx][1]
+                                            benign = robotState.env.neighbors_sensor_parameters[ie_idx][0]
+                                            dangerous = 1-robotState.env.neighbors_sensor_parameters[ie_idx][1]
                                     
                                     prob_evidence = (prior_benign*benign + prior_dangerous*dangerous)
                                         
@@ -2509,468 +3061,15 @@ class DecisionControl:
     
     def decision(self,messages, robotState, info, output, nearby_other_agents, help_requests):
 
-        possible_functions = ["sense", "pickup", "explore"]
-        
-        if self.movement.help_status == self.movement.HelpState.being_helped: #if we are already being helped, get the number of helper agents
-            number_helping = len(self.movement.help_status_info[0])
-        else:
-            number_helping = 0
 
-        possible_actions = {}
-        ego_location = np.where(robotState.latest_map == 5)
-
-        goal_x = int(self.occMap.shape[0] / 2)
-        goal_y = int(self.occMap.shape[1] / 2)
         utility = {}
-        
-        #initial_agents_distance = self.calculate_neighbor_distance(robotState, info, ego_location, []) #Calculate the distances between yourself and the other robots
-        
-        #Exclude requests to certain agents according to role
-        pickup_excluded = []
-        sensing_excluded = []
-        if "role" in self.team_structure:
-            for teammate in self.team_structure["role"].keys():
-            
-                if teammate == self.env.robot_id:
-                    continue
-            
-                teammate_idx = info['robot_key_to_index'][teammate]
-                
-                if self.team_structure["role"][teammate] == "sensing": #If you are only sensing, you cannot ask others to pickup objects. 
-                    pickup_excluded.append(teammate_idx)
-                elif self.team_structure["role"][teammate] == "lifter": #If you are only lifting, you cannot ask others to sense objects
-                    sensing_excluded.append(teammate_idx)
-                   
-
-        already_requested = False        
-        for teammate_idx in range(robotState.get_num_robots()): #If an agent has previously been requested help, wait some time until we take it into consideration again
-            
-            if teammate_idx in self.help_request_time.keys() and time.time() - self.help_request_time[teammate_idx][0] < self.help_request_time[teammate_idx][1]: 
-                if teammate_idx not in pickup_excluded:
-                    pickup_excluded.append(teammate_idx)
-                        
-                if teammate_idx not in sensing_excluded:
-                    sensing_excluded.append(teammate_idx)
-                    
-                    
-                already_requested = True
-                
-        if already_requested: #Include everyone if already requested help
-            for teammate_idx in range(robotState.get_num_robots()):
-                if teammate_idx not in pickup_excluded:
-                    pickup_excluded.append(teammate_idx)
-                        
-                if teammate_idx not in sensing_excluded:
-                    sensing_excluded.append(teammate_idx)
-                
-                   
-                
-        if "role" in self.team_structure and self.team_structure["role"][self.env.robot_id] == "lifter": #If you are only lifting, exclude yourself from sensing
-            sensing_excluded.append(robotState.get_num_robots())    
-                
-                    
-        initial_agents_distance = self.calculate_neighbor_distance(robotState, info, ego_location, pickup_excluded) #Calculate the distances between yourself and the other robots but exclude some of the robots according to roles
-        agents_distance = initial_agents_distance.copy()
-        cost_agents = []
-        
-        all_robot_combinations = []
-        robot_range = []
-        
-        for i in range(robotState.get_num_robots()):
-            if robotState.get("agents", "disabled", i) != 1: #Only take into account those robots that are not disabled
-                robot_range.append(i)
-        
-        for i in range(len(robot_range)): #Compute all possible combinations of robot groups
-            all_robot_combinations.extend(combinations([*robot_range, robotState.get_num_robots()], i+1))
-        
-        '''
-        pickup_not_available = []
-        for robo_idx in robot_range:
-            if (robo_idx in self.help_request_time.keys() and time.time() - self.help_request_time[robo_idx][0] < self.help_request_time[robo_idx][1]): #If an agent has previously been requested help, wait some time until we take it into consideration again.
-                pickup_not_available.append(robo_idx)
-        '''
-        
-        for ag in range(len(robot_range)): #For all robots that can help and are closeby, compute the distance it would take to reach one of them and then the others in sequence
-                    
-            closest_idx = np.argmin(agents_distance)
-                        
-            if agents_distance[closest_idx] == float("inf"):
-                break
-            else:
-                cost_agents.append((closest_idx, agents_distance[closest_idx])) #Cost to reach one of the agents in sequence
-                
-                robo_location = robotState.get("agents", "last_seen_location", robot_range[closest_idx])
-                
-                next_location = np.array([[robo_location[0]],[robo_location[1]]])
-                agents_distance = self.calculate_neighbor_distance(robotState, info, next_location, pickup_excluded)
-
-        
-        
-        pickup_ready = False
-        if self.movement.help_status != self.movement.HelpState.accepted: #If we are not helping anyone
-            for ob_idx in range(robotState.get_num_objects()): #For all possible objects
-            
-                try:
-                    object_id = list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(ob_idx)]
-                except:
-                    pdb.set_trace()
-            
-                if object_id in self.carried_objects.values(): #If this object is being carried by someone else continue with the others
-                    continue
-            
-                possible_actions[ob_idx] = {}
-                request_cost = 0
-                
-                ob_location = robotState.get("objects", "last_seen_location", ob_idx)
-                
-                if (ob_location[0] == -1 and ob_location[1] == -1) or tuple(ob_location) in self.extended_goal_coords: #If the location of this objects is not known, continue
-                    continue
-                else:
-                    
-                    ob_weight = robotState.get("objects", "weight", ob_idx)
-                    
-                    if ob_weight > 1: #If the object requires greater strength
-                        
-                        
-                        if len(cost_agents) < ob_weight -1 -number_helping: #If we have more agents helping than needed for this particular object, just skip it
-                            continue
-                        
-                        if ob_weight-1 <= number_helping: #If we have enough helping agents to carry
-                        
-                            _, next_locs, _, _ = self.movement.go_to_location(ob_location[0], ob_location[1], self.occMap, robotState, info, ego_location, self.action_index, checking=True, help_sensing=self.helping_type == self.HelpType.sensing)
-                            distance = len(next_locs)
-                            
-                        else: #Otherwise we also have to consider the cost of requesting help
-                        
-                            for ag_idx in range(ob_weight-1 -number_helping): #Add the cost of requesting help from the needed amount of agents
-                                request_cost += cost_agents[ag_idx][1]
-                            
-                            try:
-                                possible_actions[ob_idx]["pickup_args"] = cost_agents[0][0] #agent ID of the closest agent
-                            except:
-                                pdb.set_trace()
-                            
-                            robo_idx = cost_agents[ag_idx][0]
-                            robo_location = robotState.get("agents", "last_seen_location", robot_range[robo_idx])
-                            next_ego_location = np.array([[robo_location[0]],[robo_location[1]]])
-                            _, next_locs, _, _ = self.movement.go_to_location(ob_location[0], ob_location[1], self.occMap, robotState, info, next_ego_location, self.action_index, checking=True, help_sensing=self.helping_type == self.HelpType.sensing)
-                            distance = len(next_locs)
-                        
-                        
-                        #print("pickup args", possible_actions[ob_idx]["pickup_args"])
-                        
-                    else: #If we can carry the object alone
-                        _, next_locs, _, _ = self.movement.go_to_location(ob_location[0], ob_location[1], self.occMap, robotState, info, ego_location, self.action_index, checking=True, help_sensing=self.helping_type == self.HelpType.sensing)
-                        distance = len(next_locs)
-                    
-                    if not distance: #If the distance is 0, ignore
-                        continue
-                        
-                            
-                    goal_location = np.array([[goal_x],[goal_y]])
-                    _, next_locs, _, _ = self.movement.go_to_location(ob_location[0], ob_location[1], self.occMap, robotState, info, goal_location, self.action_index, checking=True, help_sensing=self.helping_type == self.HelpType.sensing)
-                    return_distance = len(next_locs) #calculate distance to return to goal from object
-                    
-                    pickup_cost = distance + return_distance + request_cost #pickup cost is equal to adding the distance to get to the object + the distances between the agents to whom request help + the distance to move the object to the goal area
-                    
-                    if not ("role" in self.team_structure and self.team_structure["role"][self.env.robot_id] == "sensing"): #If you are not sensing, a possible action can be to pickup this object #not ("pickup_args" in possible_actions[ob_idx] and possible_actions[ob_idx]["pickup_args"] in pickup_not_available) and not ("role" in self.team_structure and self.team_structure["role"][self.env.robot_id] == "sensing"):
-                        possible_actions[ob_idx]["pickup"] = pickup_cost
-                    
-                    
-                    ask_sensing_cost = {}
-                    distance_object_agent = {} 
-                    not_available = []   
-                    for ia_idx,ia in enumerate(initial_agents_distance):
-                    
-                        if ia < float("inf"): #If agent is reacheable calculate distance to it
-                        
-                            robo_location = robotState.get("agents", "last_seen_location", robot_range[ia_idx])
-                            next_ego_location = np.array([[robo_location[0]],[robo_location[1]]])
-                            _, next_locs, _, _ = self.movement.go_to_location(ob_location[0], ob_location[1], self.occMap, robotState, info, next_ego_location, self.action_index, checking=True, help_sensing=self.helping_type == self.HelpType.sensing)
-                            ask_sense_distance = len(next_locs)
-                            
-                            if not ask_sense_distance: #If distance is zero, ignore
-                                not_available.append(robot_range[ia_idx])
-                                continue
-                        
-                            tmp_cost = ia + ask_sense_distance #sensing cost is the addition of going towards the agent and then to the object we are requesting to be sensed # + return_distance
-                            ask_sensing_cost[robot_range[ia_idx]] = tmp_cost
-                            distance_object_agent[robot_range[ia_idx]] = ask_sense_distance
-                        else: #if agent is not reachable
-                            not_available.append(robot_range[ia_idx])
-                
-                    
-                    for robo_idx in range(robotState.get_num_estimates(ob_idx)): #Check if we already have an estimate for that object from specific agents
-                        if robo_idx not in not_available and (robotState.get("object_estimates", "danger_status", [ob_idx,robo_idx]) != 0): # or robo_idx in pickup_not_available): # or (robo_idx in self.sense_request_time.keys() and time.time() - self.sense_request_time[robo_idx][0] < self.sense_request_time[robo_idx][1]):
-                            not_available.append(robo_idx)
-                                
-                    if robotState.get("object_estimates", "danger_status", [ob_idx,robotState.get_num_estimates(ob_idx)-1]) != 0: #Check also if we already sensed the objects ourselve
-                        not_available.append(robotState.get_num_robots())
-                    
-                    possible_actions[ob_idx]["sensing"] = {}
-                    
-                    actual_combinations = []
-                    
-                    #print("Not available", not_available)
-                    for comb in all_robot_combinations: #For all possible sequences where we move sequentially to a subset of the agents
-                        comb_cost = 0
-                        
-                        if not any(el in not_available or el in sensing_excluded for el in comb): #If no agent in that subset has not been excluded
-                            actual_combinations.append(comb)
-                            if not (len(comb) == 1 and robotState.get_num_robots() in comb): #If it's not us only the ones in that combination
-                                
-                                for elem_idx,elem in enumerate(comb):
-                                
-                                    if elem == robotState.get_num_robots():
-                                        continue
-                                        
-                                    if not elem_idx: 
-                                        try:
-                                            comb_cost += ask_sensing_cost[elem] #Add the costs of going towards that robot and requesting help
-                                        except:
-                                            pdb.set_trace()
-                                    else:
-                                        comb_cost += distance_object_agent[elem]*2 #Add the cost of reaching towards that agent
-                            
-                            else:
-                                comb_cost = distance    
-                            #comb_cost += pickup_cost #Add the cost of actually picking the object
-                            possible_actions[ob_idx]["sensing"][comb] = comb_cost
-                        
-                    
-                    
-                    ob_danger = robotState.get("objects", "danger_status", ob_idx)
-                    
-                    if ob_danger and "pickup" in possible_actions[ob_idx]: #If we already have an estimation of the danger level of the object, create the decision network to compute the costs of picking that object 
-                            
-                        pickup_ready = True
-                            
-                        """
-                        diag = gum.InfluenceDiagram()
-
-                        Estimate=diag.addChanceNode(gum.LabelizedVariable("Estimate","Estimate",2))
-                        Pickup=diag.addDecisionNode(gum.LabelizedVariable("Pickup","Pickup",2))
-                        Pickup_Utility=diag.addUtilityNode(gum.LabelizedVariable("Pickup_Utility","Pickup_Utility",1))
-                        Pickup_Cost=diag.addUtilityNode(gum.LabelizedVariable("Pickup_Cost","Pickup_Cost",1))
-
-
-                        diag.addArc(Estimate,Pickup)
-                        diag.addArc(Estimate,Pickup_Utility)
-                        diag.addArc(Pickup,Pickup_Utility)
-                        diag.addArc(Pickup,Pickup_Cost)
-                        
-                        """
-
-                        danger_percentage = 0.50
-                        ob_danger_estimate = robotState.get("objects", "estimate_correct_percentage", ob_idx)
-
-                        if ob_danger == 0:
-                            #diag.cpt(Estimate).fillWith([0.70, 0.30])
-                            pass
-                        elif ob_danger == 1:
-                            confidence = ob_danger_estimate
-                            #diag.cpt(Estimate).fillWith([confidence, 1-confidence])
-                            danger_percentage = 1-confidence
-                        elif ob_danger == 2:
-                            confidence = ob_danger_estimate
-                            #diag.cpt(Estimate).fillWith([1-confidence, confidence])
-                            danger_percentage = confidence
-                            
-                        """
-                        #diag.utility(Pickup_Utility)[{'Pickup':0}] = [[100],[0]]
-                        diag.utility(Pickup_Utility)[{'Pickup':0}] = [[0],[0]]
-                        #diag.utility(Pickup_Utility)[{'Pickup':1}] = [[0],[100]]
-                        diag.utility(Pickup_Utility)[{'Pickup':1}] = [[0],[1]]
-
-                        diag.utility(Pickup_Cost)[{'Pickup':0}] = 0
-                        diag.utility(Pickup_Cost)[{'Pickup':1}] = 0#-possible_actions[ob_idx]["pickup"]
-
-                        ie=gum.ShaferShenoyLIMIDInference(diag)
-                        ie.addEvidence('Pickup',1)
-                        ie.makeInference() 
-                        
-                        """
-                        
-                        if danger_percentage >= 0.7:
-                        
-                            #utility["pickup_" + str(ob_idx)] = 100 - (1-ie.MEU()["mean"])*possible_actions[ob_idx]["pickup"]
-                            utility["pickup_" + str(ob_idx)] = 100 - (1-danger_percentage)*possible_actions[ob_idx]["pickup"]
-                    
-                    for s_comb in possible_actions[ob_idx]["sensing"].keys(): #Now for sensing the object compute the decision network 
-                    
-                        if s_comb:
-                        
-                        
-                            """
-                        
-                            diag = gum.InfluenceDiagram()
-
-                            Estimate_Benign=diag.addChanceNode(gum.LabelizedVariable("Estimate_Benign","Estimate_Benign",2))
-                            Estimate_Dangerous=diag.addChanceNode(gum.LabelizedVariable("Estimate_Dangerous","Estimate_Dangerous",2))
-                            Pickup_2=diag.addDecisionNode(gum.LabelizedVariable("Pickup_2","Pickup_2",2))
-                            Pickup_Utility_2=diag.addUtilityNode(gum.LabelizedVariable("Pickup_Utility_2","Pickup_Utility_2",1))
-                            Pickup_Cost_2=diag.addUtilityNode(gum.LabelizedVariable("Pickup_Cost_2","Pickup_Cost_2",1))
-
-
-                            diag.addArc(Estimate_Benign,Pickup_2)
-                            diag.addArc(Estimate_Dangerous,Pickup_2)
-                            diag.addArc(Estimate_Benign,Pickup_Utility_2)
-                            diag.addArc(Estimate_Dangerous,Pickup_Utility_2)
-                            diag.addArc(Pickup_2,Pickup_Utility_2)
-                            diag.addArc(Pickup_2,Pickup_Cost_2)
-                            
-                            """
-                            
-                            prior_benign = 0.5
-                            prior_dangerous = 0.5
-                            
-                            if robotState.get("objects", "danger_status", ob_idx) == 1:
-                                prior_dangerous = 1-robotState.get("objects", "estimate_correct_percentage", ob_idx)
-                                prior_benign = robotState.get("objects", "estimate_correct_percentage", ob_idx)
-                            elif robotState.get("objects", "danger_status", ob_idx) == 2:
-                                prior_dangerous = robotState.get("objects", "estimate_correct_percentage", ob_idx)
-                                prior_benign = 1-robotState.get("objects", "estimate_correct_percentage", ob_idx)
-                            
-                            utility_str = ""
-                            
-                            for s_idx in range(len(s_comb)):
-                                if not s_idx:
-                                    utility_str += str(s_comb[s_idx])
-                                else:
-                                    utility_str += "_" + str(s_comb[s_idx])
-                            
-                            """
-                            for item_danger_level in [1,2]:
-                                for ie_idx in s_comb:
-                                    
-                                    
-                                        
-                                    if ie_idx == len(robotState.robots):
-                                        if item_danger_level == 2:
-                                            benign = 1-robotState.sensor_parameters[0]
-                                            dangerous = robotState.sensor_parameters[1]
-                                        elif item_danger_level == 1:
-                                            benign = robotState.sensor_parameters[0]
-                                            dangerous = 1-robotState.sensor_parameters[1]
-                                                
-                                    else:
-                                        if item_danger_level == 2:
-                                            benign = 1-robotState.neighbors_sensor_parameters[ie_idx][0]
-                                            dangerous = robotState.neighbors_sensor_parameters[ie_idx][1]
-                                        elif item_danger_level == 1:
-                                            benign = robotState.neighbors_sensor_parameters[ie_idx][0]
-                                            dangerous = 1-robotState.neighbors_sensor_parameters[ie_idx][1]
-                                    
-                                    prob_evidence = (prior_benign*benign + prior_dangerous*dangerous)
-                                        
-                                    prior_benign_temp = benign*prior_benign/prob_evidence
-                                    prior_dangerous_temp = dangerous*prior_dangerous/prob_evidence
-                                    
-                                    if item_danger_level == 1:
-                                        prior_benign = prior_benign_temp
-                                        prior_dangerous = 1-prior_benign
-                                    elif item_danger_level == 2:
-                                        prior_dangerous = prior_dangerous_temp
-                                        prior_benign = 1-prior_dangerous
-                                
-                                if item_danger_level == 1:        
-                                    benign_est = prior_benign
-                                elif item_danger_level == 2:
-                                    danger_est = prior_dangerous
-
-                            """
-                            
-                            def sequence_sensing(s_comb, prior_benign, prior_dangerous):
-                            
-                                results = []
-                            
-                                for ie_idx in s_comb:
-                                    for item_danger_level in [1,2]:
-                                        if ie_idx == robotState.get_num_robots():
-                                            if item_danger_level == 2:
-                                                benign = 1-robotState.sensor_parameters[0]
-                                                dangerous = robotState.sensor_parameters[1]
-                                            elif item_danger_level == 1:
-                                                benign = robotState.sensor_parameters[0]
-                                                dangerous = 1-robotState.sensor_parameters[1]
-                                                    
-                                        else:
-                                            if item_danger_level == 2:
-                                                benign = 1-robotState.neighbors_sensor_parameters[ie_idx][0]
-                                                dangerous = robotState.neighbors_sensor_parameters[ie_idx][1]
-                                            elif item_danger_level == 1:
-                                                benign = robotState.neighbors_sensor_parameters[ie_idx][0]
-                                                dangerous = 1-robotState.neighbors_sensor_parameters[ie_idx][1]
-                                                
-                                        prob_evidence = (prior_benign*benign + prior_dangerous*dangerous)
-                                        
-                                        if item_danger_level == 1:
-                                            prior_benign_tmp = benign*prior_benign/prob_evidence
-                                            prior_dangerous_tmp = 1-prior_benign_tmp
-                                        elif item_danger_level == 2:
-                                            prior_dangerous_tmp = dangerous*prior_dangerous/prob_evidence
-                                            prior_benign_tmp = 1-prior_dangerous_tmp
-                                        
-                                        if len(s_comb) > 1:
-                                            results.extend(sequence_sensing(s_comb[1:], prior_benign_tmp, prior_dangerous_tmp))
-                                        else:    
-                                            results.append([prior_benign_tmp,prior_dangerous_tmp])   
-                                
-                                        
-                                return results             
-                                            
-                                    
-                            sensing_results = sequence_sensing(s_comb, prior_benign, prior_dangerous)
-                            
-                            danger_est = sensing_results[1][1]
-                            benign_est = sensing_results[0][0]
-                            
-                            sensing_results_np = np.array(sensing_results)
-                            #print(np.average(sensing_results_np,axis=0),np.var(sensing_results_np,axis=0)) 
-                            
-                            #if len(s_comb) > 2:
-                            #    pdb.set_trace()
-                            
-                            """
-                            #benign_est = robotState.possible_estimates[ob_idx][s_comb[0]][0]
-                            diag.cpt(Estimate_Benign).fillWith([benign_est, 1-benign_est])
-                            #danger_est = robotState.possible_estimates[ob_idx][s_comb[0]][1]
-                            diag.cpt(Estimate_Dangerous).fillWith([1-danger_est, danger_est])
-
-                            diag.utility(Pickup_Utility_2)[{'Pickup_2':0, 'Estimate_Benign':0}] = [[100],[0]]
-                            diag.utility(Pickup_Utility_2)[{'Pickup_2':0, 'Estimate_Benign':1}] = [[0],[0]]
-                            diag.utility(Pickup_Utility_2)[{'Pickup_2':1, 'Estimate_Benign':0}] = [[0],[0]]
-                            diag.utility(Pickup_Utility_2)[{'Pickup_2':1, 'Estimate_Benign':1}] = [[0],[100]]
-
-                            diag.utility(Pickup_Cost_2)[{'Pickup_2':0}] = 0
-                            diag.utility(Pickup_Cost_2)[{'Pickup_2':1}] = 0#-possible_actions[ob_idx]["sensing"][s_comb]
-
-                            ie=gum.ShaferShenoyLIMIDInference(diag)
-                            #ie.addEvidence('Pickup_2',1)
-                            ie.makeInference()
-                            
-                            """
-                            
-                            #utility["sense_" + str(ob_idx) + "_" + utility_str] = 100 - (1-(abs(benign_est - (1-danger_est)) + (abs(danger_est - (1-danger_est)) + abs(benign_est - (1-benign_est)))/2)/2)*possible_actions[ob_idx]["sensing"][s_comb] #ie.MEU()["mean"]
-                            utility["sense_" + str(ob_idx) + "_" + utility_str] = 100 - (1-(min(1,np.average(sensing_results_np,axis=0)[1] + np.std(sensing_results_np,axis=0)[1])))*possible_actions[ob_idx]["sensing"][s_comb]
-                            #utility["sense_" + str(ob_idx) + "_" + utility_str] = 100 - (1-(min(1,prior_dangerous + np.std(sensing_results_np,axis=0)[1])))*possible_actions[ob_idx]["sensing"][s_comb]
-                            
-                            #print("Estimations", s_comb, danger_est, benign_est)
-                            
-                            #if utility_str == "4":
-                            #    pdb.set_trace()
-                            
+        if self.movement.help_status != self.movement.HelpState.accepted:
+            possible_actions,utility = self.calculate_overall_utility(robotState, info)
         else: #If there is no possible action to do, just wait
-            utility["wait"] = 100                    
+            utility["wait"] = 100
         
-        #pdb.set_trace()
-        unexplored = np.where(robotState.latest_map == -2)
-        explored = round((robotState.latest_map.size-unexplored[0].size)/robotState.latest_map.size,2) #calculate the utility of exploring the area
         
-        if explored < 1:
-            utility["explore"] = math.exp(-2*explored)*100
-            
-        utility['end'] = ((pow(100,info['time']/self.env.map_config['timer_limit']) - 1)/(100-1))*100
+        ego_location = np.where(robotState.latest_map == 5)
         
         max_utility = 0
         max_utility_key = ""

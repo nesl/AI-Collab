@@ -13,11 +13,13 @@ from groq import Groq
 
 class Human2AIText:
 
-    def __init__(self, env):
+    def __init__(self, env, robotState):
     
         self.openai = True
         
         agent_id = env.robot_id
+        
+        self.sql_tables = robotState.create_tables
         
         self.agent_names = list(env.robot_key_to_index.keys())
         self.agent_names.append(agent_id)
@@ -180,59 +182,153 @@ The type of messages are the following: """ + str(self.CNL_MESSAGES)
         
         
         self.reply_prompt = """
-<s>[INST]<<SYS>>
-You are Agent """ + agent_id + """. You are part of a team whose mission is to dispose of all dangerous objects in a scene. You can move around, detect whether an object is dangerous or not, and carry objects. Objects are all of the same type, they only differ in their location, weight, and whether they are dangerous. Once you find a dangerous object you must check if you have the necessary strength to pick it up and put it in the safe area you already know. Try to engage with your teammates to come up with a strategy. Be brief in your responses.  Analyze the content of each message and try to tell me who are they answering to. Some messages may be directed towards a subset of the group. Output a JSON format with the following field for each analyzed message: "reply_to", which should be any of the set {"Agent A", "Agent B", "Agent C", "Agent D", "Everyone"}.
-<</SYS>>
+<|begin_of_text|><|start_header_id|>system<|end_header_id|>
+You are Agent """ + agent_id + """. You are part of a team whose mission is to dispose of all dangerous objects in a scene. You can move around, detect whether an object is dangerous or not, and carry objects. Objects are all of the same type, they only differ in their location, weight, and whether they are dangerous. Once you find a dangerous object you must check if you have the necessary strength to pick it up and put it in the safe area you already know. Try to engage with your teammates to come up with a strategy. Be brief in your responses.  Analyze the content of each message and try to tell me who are they answering to. Some messages may be directed towards a subset of the group. Also, score the collaborative disposition of the agent sending the message and the collaborative disposition you think they have of you. Output a JSON format with the following field for each analyzed message: "reply_to", which should be any of the set {"Agent A", "Agent B", "Agent C", "Agent D", "Everyone"}, "their_collaborative_score" and "their_collaborative_score_of_me" , which should be an integer from 0 to 10 and correspond to collaborative score you assign to the sender of the new message and to the collaborative score you think they have of you so far, respectively; and "observations", a string indicating any observations about their collaboration and their perception of my collaboration.
+<|eot_id|><|start_header_id|>user<|end_header_id|>
 
 History of messages: [{'Sender': 'Agent D', 'Message': 'Hi everyone'}]
 New message: {'Sender': 'Agent B', 'Message': 'hi'}
-Who is Agent B replying to? Output a JSON.[/INST]
+Who is Agent B replying to? Output a JSON.<|eot_id|><|start_header_id|>assistant<|end_header_id|>
 
->> {"reply_to": ["Agent D"]}
+>> {"reply_to": ["Agent D"], "their_collaborative_score": 10, "their_collaborative_score_of_me": 0, "observations": "Agent B greets Agent D back, but I haven't said anything to it so far"}
 
-</s><s>[INST]History of messages: [{'Sender': 'Agent A', 'Message': 'Hey C'}, {'Sender': 'Agent A', 'Message': 'A do you have more info'}]
+<|eot_id|><|start_header_id|>user<|end_header_id|>History of messages: [{'Sender': 'Agent A', 'Message': 'Hey C'}, {'Sender': 'Agent A', 'Message': 'C do you have more info'}]
 New message: {'Sender': 'Agent C', 'Message': 'Need help?'}
-Who is Agent C replying to? Output a JSON.[/INST]
+Who is Agent C replying to? Output a JSON.<|eot_id|><|start_header_id|>assistant<|end_header_id|>
 
->> {"reply_to": ["Agent A"]}
+>> {"reply_to": ["Agent A"], "their_collaborative_score": 10, "their_collaborative_score_of_me": 9, "observations": "C volunteering to help, I have been requesting their help"}
 
-</s><s>[INST]History of messages: [{'Sender': 'Agent B', 'Message': 'hello'}, {'Sender': 'Agent C', 'Message': 'hi'}, {'Sender': 'Agent D', 'Message': 'Hello everyone'}]
+<|eot_id|><|start_header_id|>user<|end_header_id|>History of messages: [{'Sender': 'Agent B', 'Message': 'hello'}, {'Sender': 'Agent C', 'Message': 'hi'}, {'Sender': 'Agent D', 'Message': 'Hello everyone'}]
 New message: {'Sender': 'Agent D', 'Message': 'Do we want to try a different strategy today'}
-Who is Agent D replying to? Output a JSON.[/INST]
+Who is Agent D replying to? Output a JSON.<|eot_id|><|start_header_id|>assistant<|end_header_id|>
 
->> {"reply_to": ["Everyone"]}
+>> {"reply_to": ["Everyone"], "their_collaborative_score": 10, "their_collaborative_score_of_me": 0, "observations": "D tries to organize the team strategy, I haven't said anything to it."}
 
 """
         
         self.phrase_generation ="""
-<s>[INST]<<SYS>>
+<|begin_of_text|><|start_header_id|>system<|end_header_id|>
 You are part of a team whose mission is to dispose of all dangerous objects in a scene. You can use a sensor to sense whether an object is dangerous or benign. You are going to be given a phrase and you have to create variations of it.
-<</SYS>>
+<|eot_id|><|start_header_id|>user<|end_header_id|>
 
 Phrase: "I need 2 more robots to help carry object 8."
-Write at least 3 possible variations of the phrase and put them inside a list.[/INST]
+Write at least 3 possible variations of the phrase and put them inside a list.<|eot_id|><|start_header_id|>assistant<|end_header_id|>
         
 >> ["can 2 other robots help me carry object 8", "hey I need help to carry an object", "come with me I need help for lifting an object"]
 
-</s><s>[INST]Phrase: "I need you to move B."
-Write at least 3 possible variations of the phrase and put them inside a list.[/INST]
+<|eot_id|><|start_header_id|>user<|end_header_id|>Phrase: "I need you to move B."
+Write at least 3 possible variations of the phrase and put them inside a list.<|eot_id|><|start_header_id|>assistant<|end_header_id|>
         
 >> ["please move!", "hey B why don't you move", "can you step aside"]
 
 """
 
         self.output_personalization = """
-<s>[INST]<<SYS>>
+<|begin_of_text|><|start_header_id|>system<|end_header_id|>
 You are Agent """ + agent_id + """. You are part of a team whose mission is to dispose of all dangerous objects in a scene. You can move around, detect whether an object is dangerous or not, and carry objects. Objects are all of the same type, they only differ in their location, weight, and whether they are dangerous. Once you find a dangerous object you must check if you have the necessary strength to pick it up and put it in the safe area you already know. Try to engage with your teammates to come up with a strategy. Be brief in your responses. You will try to create an appropriate message directed toward a specific agent according to how previous interactions with that agent have been.
-<</SYS>>
+<|eot_id|><|start_header_id|>user<|end_header_id|>
 
 History of messages: [{'Sender': 'Agent B', 'Message': 'hello'}, {'Sender': 'Agent C', 'Message': 'hi'}, {'Sender': 'Agent D', 'Message': 'Hello everyone'}]
 Message to send: "I need 2 more robots to help carry object 8."
-How would you adapt this message to send it to [Agent B, Agent C]?[/INST]
+How would you adapt this message to send it to [Agent B, Agent C]?<|eot_id|><|start_header_id|>assistant<|end_header_id|>
 
 >> {"Message": "Hey B and C, would you help me carry object 8? I know you are very strong!"}        
         
 """
+
+        self.sql_parameters = {'idx': "Index, ignore this parameter", 'agent_id': "Agent ID", 'object_id': "Object ID", 'last_seen_location': "Coordinates where the object or agent was last seen at", 'last_seen_time': 'the time in seconds when the object or agent was last seen', 'danger_status': "estimation of whether an object is dangerous or benign", "estimate_correct_percentage": "the confidence over the registered danger status estimation"}
+
+        self.output_personalization_sql = """
+<|begin_of_text|><|start_header_id|>system<|end_header_id|>
+You are Agent """ + agent_id + """. You are part of a team whose mission is to dispose of all dangerous objects in a scene. You can move around, detect whether an object is dangerous or not, and carry objects. Objects are all of the same type, they only differ in their location, weight, and whether they are dangerous. Once you find a dangerous object you must check if you have the necessary strength to pick it up and put it in the safe area you already know. Try to engage with your teammates to come up with a strategy. Be brief in your responses. You will try to create an appropriate message directed toward a specific agent according to how previous interactions with that agent have been and the result of searching through your SQL database. Just provide the information and nothing else. Also, score your collaborative disposition, given your interactions in the past. The next list provides an explanation of the parameters you may find: """ + str(self.sql_parameters) + """ Output a JSON format with the following field for each analyzed message: "Message", a personalized message.
+<|eot_id|><|start_header_id|>user<|end_header_id|>
+
+History of messages: [{'Sender': 'Agent B', 'Message': 'hello'}, {'Sender': 'Agent C', 'Message': 'hi'}, {'Sender': 'Agent D', 'Message': 'Hello everyone'}]
+New message: {'Sender': 'Agent B', 'Message': 'Hey is object 2 dangerous?'}
+
+SELECT
+    aoe.danger_status,
+    aoe.estimate_correct_percentage
+FROM
+    agent_object_estimates aoe
+JOIN
+    objects o ON aoe.object_id = o.object_id
+WHERE
+    o.object_id = 2; 
+    
+Result (1 entries): [{'danger_status': 'dangerous', 'estimate_correct_percentage': 0.78}]
+
+How would you adapt this result to send it to Agent B?<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+>> {"Message": "Object 2 is dangerous, I estimate it with 0.78% of correctness"}        
+        
+"""
+
+        self.type_request = """
+<|begin_of_text|><|start_header_id|>system<|end_header_id|>
+You are Agent """ + agent_id + """. You are part of a team whose mission is to dispose of all dangerous objects in a scene. You can move around, detect whether an object is dangerous or not, and carry objects. Objects are all of the same type, they only differ in their location, weight, and whether they are dangerous. Once you find a dangerous object you must check if you have the necessary strength to pick it up and put it in the safe area you already know. Try to engage with your teammates to come up with a strategy. Be brief in your responses.  Analyze the content of each message and try to tell me whether they are requesting information or an action from you. Output a JSON format with the following field for each analyzed message: "request_type", which should be one of the following {"information", "action", "none"}.
+<|eot_id|><|start_header_id|>user<|end_header_id|>
+
+History of messages: [{'Sender': 'Agent D', 'Message': 'Hi everyone'}]
+New message: {'Sender': 'Agent B', 'Message': 'hi'}
+What type of request is Agent B making? Output a JSON.<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+>> {"request_type": "none"}
+
+<|eot_id|><|start_header_id|>user<|end_header_id|>History of messages: [{'Sender': 'Agent A', 'Message': 'Hey C'}, {'Sender': 'Agent A', 'Message': 'C do you have more info on object 1'}]
+New message: {'Sender': 'Agent C', 'Message': 'What do you know?'}
+What type of request is Agent C making? Output a JSON.<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+>> {"request_type": "information"}
+
+<|eot_id|><|start_header_id|>user<|end_header_id|>History of messages: [{'Sender': 'Agent B', 'Message': 'hello'}, {'Sender': 'Agent C', 'Message': 'hi'}, {'Sender': 'Agent D', 'Message': 'Hello everyone'}]
+New message: {'Sender': 'Agent D', 'Message': 'Do we want to all go to the next room'}
+What type of request is Agent D making? Output a JSON.<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+>> {"request_type": "action"}
+
+"""
+
+        self.sql_query = """
+<|begin_of_text|><|start_header_id|>system<|end_header_id|>
+You are Agent """ + agent_id + """. You are part of a team whose mission is to dispose of all dangerous objects in a scene. You can move around, detect whether an object is dangerous or not, and carry objects. Objects are all of the same type, they only differ in their location, weight, and whether they are dangerous. Once you find a dangerous object you must check if you have the necessary strength to pick it up and put it in the safe area you already know. Try to engage with your teammates to come up with a strategy. Be brief in your responses. You will try to query an SQL database containing your knowledge in order to answer your teammates information requests.
+Your data is structured in the following way:
+""" + str(robotState.create_tables) + """
+<|eot_id|><|start_header_id|>user<|end_header_id|>
+
+History of messages: [{'Sender': 'Agent B', 'Message': 'hello'}, {'Sender': 'Agent C', 'Message': 'hi'}, {'Sender': 'Agent D', 'Message': 'Hello everyone'}]
+New message: {'Sender': 'Agent D', 'Message': "Hey is object 2 dangerous?"}
+Output an SQL query. Only use SELECT and UPDATE commands, INSERT commands are prohibited.<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+`
+SELECT
+    aoe.danger_status,
+    aoe.estimate_correct_percentage
+FROM
+    agent_object_estimates aoe
+JOIN
+    objects o ON aoe.object_id = o.object_id
+WHERE
+    o.object_id = 2;        
+`
+       
+"""
+
+        self.function_request = """
+<|begin_of_text|><|start_header_id|>system<|end_header_id|>
+You are Agent """ + agent_id + """. You are part of a team whose mission is to dispose of all dangerous objects in a scene. You can move around, detect whether an object is dangerous or not, and carry objects. Objects are all of the same type, they only differ in their location, weight, and whether they are dangerous. Once you find a dangerous object you must check if you have the necessary strength to pick it up and put it in the safe area you already know. Try to engage with your teammates to come up with a strategy. Be brief in your responses.  Analyze the content of each message and try to tell me if there is something to be done according to the next list of actions you can take: carry_object(object_id), sense_object(object_id,location), follow_someone(agent_id), be_followed_by_someone(agent_id), help(agent_id, type), confirm(agent_id), reject(agent_id), retrieve_object_info(object_id),  request_object_info(object_id, agent_id), request_agent_info(agent_id, requested_agent_id), retrieve_agent_info(agent_id), move_away(), finish_mission().
+<|eot_id|><|start_header_id|>user<|end_header_id|>
+
+History of messages: [{'Sender': 'Agent D', 'Message': 'Hi everyone'}]
+New message: {'Sender': 'Agent B', 'Message': 'Can someone help me carry object 3?'}
+Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+>> [confirm('B'), help('B', 'carry')]
+
+"""
+
+        
+
         
         if not self.openai:
             
@@ -250,16 +346,19 @@ How would you adapt this message to send it to [Agent B, Agent C]?[/INST]
         ENDC = '\033[0m'
 
 
-    def setup_llama():
+    def setup_llama(self):
     
-        model = "meta-llama/Meta-Llama-3-8B" #"meta-llama/Llama-2-7b-chat-hf"#"microsoft/phi-2"#"meta-llama/Llama-2-7b-chat-hf"
+        model = "meta-llama/Meta-Llama-3-8B" #"meta-llama/Meta-Llama-3.1-8B-Instruct" #"meta-llama/Meta-Llama-3-8B" #"meta-llama/Llama-2-7b-chat-hf"#"microsoft/phi-2"#"meta-llama/Llama-2-7b-chat-hf"
 
         self.tokenizer = AutoTokenizer.from_pretrained(model)
         
         self.pipeline = transformers.pipeline(
             "text-generation",
             model=model,
-            torch_dtype=torch.float16,
+            model_kwargs={
+                "torch_dtype": torch.bfloat16,
+                #"quantization_config": {"load_in_8bit": True}
+            },
             device_map="sequential",
             #max_memory={0: '20GiB', 1: '12GiB'}
         )
@@ -286,7 +385,7 @@ How would you adapt this message to send it to [Agent B, Agent C]?[/INST]
 
             return text
             
-    def make_query_openai(self, prompt):
+    def make_query_openai(self, prompt, bigger_model=False,response_format=None):
     
         """
         response = openai.ChatCompletion.create(
@@ -300,14 +399,14 @@ How would you adapt this message to send it to [Agent B, Agent C]?[/INST]
 
         return response["choices"][0]["message"].get("content")
         """
+        """
+        system_start_token = "<|begin_of_text|><|start_header_id|>system<|end_header_id|>"
+        system_end_token = "<|eot_id|><|start_header_id|>user<|end_header_id|>"
         
-        system_start_token = "<<SYS>>"
-        system_end_token = "<</SYS>>"
+        instruction_start_token = "<|eot_id|><|start_header_id|>user<|end_header_id|>"
+        instruction_end_token = "<|eot_id|><|start_header_id|>assistant<|end_header_id|>"
         
-        instruction_start_token = "[INST]"
-        instruction_end_token = "[/INST]"
-        
-        string_end_token = "</s>"
+        #string_end_token = "</s>"
         
         system_prompt = prompt[prompt.find(system_start_token) + len(system_start_token):prompt.find(system_end_token)]
         
@@ -327,19 +426,51 @@ How would you adapt this message to send it to [Agent B, Agent C]?[/INST]
                     prompt_messages.append(new_message)
                     new_message = {"role": "user", "content": next_prompt[next_prompt.find(instruction_start_token) + len(instruction_start_token):]}
                     prompt_messages.append(new_message)
+        """
         
+        all_prompts = prompt.strip().split("<|eot_id|>")
         
+        start_header_str = "<|start_header_id|>"
+        end_header_str = "<|end_header_id|>"
         
-        chat_completion = self.client.chat.completions.create(
-            messages=prompt_messages,
-            model="llama3-8b-8192", #"llama3-70b-8192", #"llama3-8b-8192",
-        )
+        prompt_messages = []
+        
+        for p in all_prompts:
+            role = p[p.find(start_header_str) + len(start_header_str): p.find(end_header_str)]
+            new_message = {"role":role, "content": p[p.find(end_header_str)+len(end_header_str):]}
+            prompt_messages.append(new_message)
+        
+        content = ""
+        
+        if self.openai:
+        
+            if not bigger_model:
+                model = "llama3-8b-8192" #"llama-3.1-8b-instant"
+            else:
+                model = "llama3-70b-8192" #"llama-3.1-70b-versatile" #"llama3-70b-8192"
+            
+            chat_completion = self.client.chat.completions.create(
+                messages=prompt_messages,
+                model=model, #"llama3-70b-8192", #"llama3-8b-8192",
+                response_format=response_format
+            )
 
-        #print(chat_completion.choices[0].message.content)
+            #print(chat_completion.choices[0].message.content)
+            
+            content = chat_completion.choices[0].message.content
+            
+        else:
         
+            #tokenized_sentence = self.tokenizer.tokenize(prompt)
+            
+            outputs = self.pipeline(
+                prompt_messages,
+                max_new_tokens=100,
+            )
         
+            content = outputs[0]["generated_text"][-1]["content"]        
         
-        return chat_completion.choices[0].message.content
+        return content
 
     def build_prompt(self, sys_prompt, example_prompts, query, specific_query, message_history):
         example_prompts = list(example_prompts)
@@ -360,8 +491,8 @@ How would you adapt this message to send it to [Agent B, Agent C]?[/INST]
 
 
         return "\n".join(
-            f"{self.START_STR}{self.START_INST}{self.START_SYS}\n{sys_prompt}\n{message_history_prompt}\n{self.END_SYS}\n{prompt}{self.END_INST}" if i == 0 else
-            f"{self.END_STR}{self.START_STR}{self.START_INST}{prompt}{specific_query}{self.END_INST}" if i % 2 == 0 else prompt
+            f"<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n{sys_prompt}\n{message_history_prompt}\n<|eot_id|><|start_header_id|>user<|end_header_id|>\n{prompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>" if i == 0 else
+            f"<|eot_id|><|start_header_id|>user<|end_header_id|>{prompt}{specific_query}<|eot_id|><|start_header_id|>assistant<|end_header_id|>" if i % 2 == 0 else prompt
             for i, (speeker, prompt) in enumerate(example_prompts)
         )
 
@@ -532,16 +663,13 @@ How would you adapt this message to send it to [Agent B, Agent C]?[/INST]
         else:
             return "The generated JSON requires the keyword 'action'",1
 
-
-    def convert_to_ai(self, sender, text, info, robotState, message_history, print_debug):
-        
-        reply_prompt_cont = "</s><s>[INST]History of messages: " + str(list(message_history)[-self.max_message_history:]) + "\nNew message: " + str({"Sender": sender, "Message": text}) + "\n" + "Who is Agent " + sender + " replying to? Output a JSON.[/INST]\n\n"
+    def reply_query(self, sender, text, info, robotState, message_history, print_debug):
+    
+        reply_prompt_cont = "<|eot_id|><|start_header_id|>user<|end_header_id|>History of messages: " + str(list(message_history)[-self.max_message_history:]) + "\nNew message: " + str({"Sender": sender, "Message": text}) + "\n" + "Who is Agent " + sender + " replying to? Output a JSON.<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
         llm_time = time.time()
-        llm_answer = self.free_response(self.reply_prompt + reply_prompt_cont, True)
+        llm_answer = self.free_response(self.reply_prompt + reply_prompt_cont, True, response_format={"type": "json_object"})
         
-        print("Response prompt time:", llm_time - time.time())
         
-        result_err = 0
         
         try:
             open_k = llm_answer.index('{')
@@ -549,140 +677,275 @@ How would you adapt this message to send it to [Agent B, Agent C]?[/INST]
             response = eval(llm_answer[open_k:close_k+1])
         except:
             print("Error reply")
-            return "", False   
+            return False   
         
-        print(response, 'Agent ' + self.agent_id in response["reply_to"], self.agent_id in [agent.upper() for agent in response["reply_to"]], 'Everyone' in response["reply_to"], len(list(message_history)[-self.max_message_history:]) == 1)
+        #print(response, 'Agent ' + self.agent_id in response["reply_to"], self.agent_id in [agent.upper() for agent in response["reply_to"]], 'Everyone' in response["reply_to"], len(list(message_history)[-self.max_message_history:]) == 1)
         
-        if 'Agent ' + self.agent_id in response["reply_to"] or self.agent_id in [agent.upper() for agent in response["reply_to"]]  or 'Everyone' in response["reply_to"] or len(list(message_history)[-self.max_message_history:]) == 1:
+        if "their_collaborative_score" in response:
+            robotState.set("agents", "collaborative_score", info["robot_key_to_index"][sender], float(response["their_collaborative_score"]), 0)
+        if "their_collaborative_score_of_me" in response:    
+            robotState.set("agents", "collaborative_score_of_me", info["robot_key_to_index"][sender], float(response["their_collaborative_score_of_me"]), 0)
+        
+        return 'Agent ' + self.agent_id in response["reply_to"] or self.agent_id in [agent.upper() for agent in response["reply_to"]]  or 'Everyone' in response["reply_to"] or len(list(message_history)[-self.max_message_history:]) == 1
+        
+    def create_message_variants(self, sender, text, info, robotState, message_history, print_debug):
+    
+        max_retries = 3
+        retries = -1
+        while retries < max_retries:
+            phrase_prompt = self.phrase_generation + "<|eot_id|><|start_header_id|>user<|end_header_id|>Phrase: \"" + str(text) + "\"\nWrite at least 3 possible variations of the phrase and put them inside a list.<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+            
+            llm_time = time.time()
+            llm_answer = self.free_response(phrase_prompt, True, response_format={"type": "json_object"})
+            print("Phrase generation time:", llm_time - time.time())
+            
+            try:
+                bracket1_idx = llm_answer.find('[')
+                bracket2_idx = llm_answer.find(']')
+                phrase_list = eval(llm_answer[bracket1_idx:bracket2_idx+1])
+            except:
+                retries += 1
+                continue
+            break
+    
+        if retries >= 3:
+            print("Cannot create phrases")
+            return []
+            
+        return phrase_list
+        
+    def match_message(self, sender, text, info, robotState, message_history, print_debug, phrase_list):
+    
+        prompt = self.build_prompt(self.SYS_PROMPT, self.EXAMPLE_PROMPTS, self.previous_query + "Original message: \"" + text + "\". Alternative messages: " + str(phrase_list) + ". ", self.SELECT_ACTION, list(message_history)[-self.max_message_history:])
+            
+        self.previous_query = ""
+
+        if print_debug:
+            print(prompt)
+            print("======================================================")
+
+
+        max_retries = 3
+        
+        retries = -1
+        message_to_user = False
+        
+        hints = []
+        
+        while True: #retries < max_retries: #Iterate until we get a correct answer
+        
+            llm_time = time.time()
+            if not self.openai:
+                llm_answer = self.make_query_openai(prompt) #self.make_query(self.pipeline, self.tokenizer, prompt)
+            else:
+                try:
+                    llm_answer = self.make_query_openai(prompt)
+                except:
+                    self.openai = False
+                    print("Groq failed")
+                    self.setup_llama()
+                    self.openai = False
+                    llm_answer = self.make_query_openai(prompt) #self.make_query(self.pipeline, self.tokenizer, prompt)
+
+            print("Main prompt time:", llm_time - time.time())
+            if print_debug:
+                print(llm_answer)
+                print("======================================================")
+
+            if True: #try:
+                first_json = self.extract_first_json(llm_answer)
+                
+                if not first_json:
+                    retries += 1
+                    result_str = ""
+                    continue
+
+                if print_debug:
+                    print(first_json)
+                    print("======================================================")
+
+
+                result_str,result_err = self.json_to_message(first_json, info, robotState)
+                if print_debug:
+                    print(result_str)
+                
+                
+                    
+                if result_err:
+                
+                    if result_str:
+                        hints.append(result_str)
+                    
+                    prompt = self.build_prompt(self.SYS_PROMPT, self.EXAMPLE_PROMPTS, self.previous_query + "Original message: \"" + text + "\". Alternative messages: " + str(phrase_list) + ". Hints: [" + ', '.join(["\"" + m + "\"" for m in hints]) + "]", self.SELECT_ACTION, list(message_history)[-self.max_message_history:]) 
+                    
+                    if print_debug:
+                        print(prompt)
+                        print("======================================================")
+                    
+                   
+                    if result_err == 1 or result_err == 2:
+                        retries += 1
+                        result_str = "I didn't understand. "
+                        
+                        """
+                        if not self.openai and result_err == 2 and retries == max_retries:
+                            new_prompt = "To which of the following list of names is '" + first_json.get('action') + "' more similar to? List of names: " + str(list(self.CNL_MESSAGES.keys())) + ". Choose only one\n"
+                            if not self.openai:
+                                llm_answer = self.make_query(self.pipeline, self.tokenizer, new_prompt)
+                            else:
+                                llm_answer = self.make_query_openai(new_prompt)
+                            print(llm_answer)
+                        """
+                        
+
+                    elif result_err == 4:
+                        message_to_user = True
+                        #self.previous_query = text
+                """
+                elif result_str == self.noop:
+                    message_to_user = True
+                    result_str = self.free_response(text,True)
+                """
+          
+                break
+                
+                
+            else: #except:
+
+                print("Error in string format")
+                result_str = ""
+                result_err = 5
+            
+            retries += 1
+        
+        if result_err and result_err != 4:
+             message_to_user = True
+             result_str = "I didn't understand. "
+             
+        return result_str,message_to_user
+
+
+    def type_of_request(self, sender, text, info, robotState, message_history, print_debug):
+    
+        type_of_request_cont = "<|eot_id|><|start_header_id|>user<|end_header_id|>History of messages: " + str(list(message_history)[-self.max_message_history:]) + "\nNew message: " + str({"Sender": sender, "Message": text}) + "\n" + "What type of request is Agent " + sender + " making? Output a JSON.<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+        llm_answer = self.free_response(self.type_request + type_of_request_cont, True, response_format={"type": "json_object"})
+        
+        
+        try:
+            open_k = llm_answer.index('{')
+            close_k = llm_answer.index('}')
+            response = eval(llm_answer[open_k:close_k+1])["request_type"]
+        except:
+            print("Error reply")
+            return "none"   
+        
+        return response
+        
+        
+    def sql_request(self, sender, text, info, robotState, message_history, print_debug):
+    
+        sql_cont = "<|eot_id|><|start_header_id|>user<|end_header_id|>History of messages: " + str(list(message_history)[-self.max_message_history:]) + "\nNew message: " + str({"Sender": sender, "Message": text}) + "\n" + "Output an SQL query. Only use SELECT and UPDATE commands, INSERT commands are prohibited.<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+        llm_answer = self.free_response(self.sql_query + sql_cont, True, bigger_model=True)
+        
+        sql_query_result = ""
+        
+        try:
+            open_k = llm_answer.index('`')
+            close_k = llm_answer.rindex('`')
+            sql_query = llm_answer[open_k+1:close_k]
+            
+            sql_query = sql_query.replace("Agent ", "")
+            
+            if "INSERT" in sql_query and not "INSERT OR REPLACE" in sql_query:
+                sql_query = sql_query.replace("INSERT", "INSERT OR REPLACE")
+            
+            cursor_ob = robotState.cursor.execute(sql_query)
+            
+            result = cursor_ob.fetchall()
+            
+            if result:
+                column_names = [d[0] for d in cursor_ob.description]
+                result_array = []
+                for row in result:
+                    row_dict = {}
+                    for c_idx,column in enumerate(row):
+                        row_dict[column_names[c_idx]] = column
+                    
+                    result_array.append(row_dict)
+                    
+            elif "INSERT" in sql_query or "UPDATE" in sql_query:
+                result_array = "Updated information"
+            else:
+                result_array = "No information"
+            
+            sql_query_result = sql_query + "\n\n" + "Result (" + str(len(result)) + " entries): " + str(result_array) + "\n\n"
+            
+        except:
+            print("Error reply")
+            pdb.set_trace()
+            return ""   
+        
+        #if result:
+        #    pdb.set_trace()
+        
+        return sql_query_result
+        
+        
+    def function_request(self, sender, text, info, robotState, message_history, print_debug):
+    
+        function_cont = "<|eot_id|><|start_header_id|>user<|end_header_id|>History of messages: " + str(list(message_history)[-self.max_message_history:]) + "\nNew message: " + str({"Sender": sender, "Message": text}) + "\n" + "Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+        
+        llm_answer = self.free_response(self.function_query + function_cont, True, bigger_model=True)
+        
+        sql_query_result = ""
+        
+        try:
+            open_k = llm_answer.index('`')
+            close_k = llm_answer.rindex('`')
+            sql_query = llm_answer[open_k+1:close_k]
+            result = robotState.cursor.execute(sql_query).fetchall()
+            
+            sql_query_result = sql_query + "\n\n" + "Result: " + str(result) + "\n\n"
+            
+        except:
+            print("Error reply")
+            return ""   
+        
+        return sql_query_result
+
+    def convert_to_ai(self, sender, text, info, robotState, message_history, print_debug):
+        
+        result_err = 0
+        
+        if self.reply_query(sender, text, info, robotState, message_history, print_debug):
 
             #self.exchanged_messages[sender].append({"Sender": "Agent " + self.agent_id, "Message": text})
 
-            max_retries = 3
-            retries = -1
-            while retries < max_retries:
-                phrase_prompt = self.phrase_generation + "</s><s>[INST]Phrase: \"" + str(text) + "\"\nWrite at least 3 possible variations of the phrase and put them inside a list.[/INST]\n\n"
+            if robotState.args.sql:
+                type_request = self.type_of_request(sender, text, info, robotState, message_history, print_debug)
                 
-                llm_time = time.time()
-                llm_answer = self.free_response(phrase_prompt, True)
-                print("Phrase generation time:", llm_time - time.time())
+                if type_request == "information":
                 
-                try:
-                    bracket1_idx = llm_answer.find('[')
-                    bracket2_idx = llm_answer.find(']')
-                    phrase_list = eval(llm_answer[bracket1_idx:bracket2_idx+1])
-                except:
-                    retries += 1
-                    continue
-                break
-        
-            if retries >= 3:
-                print("Cannot create phrases")
-                return "", False
-        
-            prompt = self.build_prompt(self.SYS_PROMPT, self.EXAMPLE_PROMPTS, self.previous_query + "Original message: \"" + text + "\". Alternative messages: " + str(phrase_list) + ". ", self.SELECT_ACTION, list(message_history)[-self.max_message_history:])
-            
-            self.previous_query = ""
-
-            if print_debug:
-                print(prompt)
-                print("======================================================")
-
-
-            max_retries = 3
-            
-            retries = -1
-            message_to_user = False
-            
-            hints = []
-            
-            while True: #retries < max_retries: #Iterate until we get a correct answer
-            
-                llm_time = time.time()
-                if not self.openai:
-                    llm_answer = self.make_query(self.pipeline, self.tokenizer, prompt)
-                else:
-                    try:
-                        llm_answer = self.make_query_openai(prompt)
-                    except:
-                        self.openai = False
-                        print("Groq failed")
-                        self.setup_llama()
-                        llm_answer = self.make_query(self.pipeline, self.tokenizer, prompt)
-
-                print("Main prompt time:", llm_time - time.time())
-                if print_debug:
-                    print(llm_answer)
-                    print("======================================================")
-
-                if True: #try:
-                    first_json = self.extract_first_json(llm_answer)
+                    sql_result = self.sql_request(sender, text, info, robotState, message_history, print_debug)
                     
-                    if not first_json:
-                        retries += 1
-                        result_str = ""
-                        continue
-
-                    if print_debug:
-                        print(first_json)
-                        print("======================================================")
-
-
-                    result_str,result_err = self.json_to_message(first_json, info, robotState)
-                    if print_debug:
-                        print(result_str)
+                    message_to_user = False
                     
-                    
-                        
-                    if result_err:
-                    
-                        if result_str:
-                            hints.append(result_str)
-                        
-                        prompt = self.build_prompt(self.SYS_PROMPT, self.EXAMPLE_PROMPTS, self.previous_query + "Original message: \"" + text + "\". Alternative messages: " + str(phrase_list) + ". Hints: [" + ', '.join(["\"" + m + "\"" for m in hints]) + "]", self.SELECT_ACTION, list(message_history)[-self.max_message_history:]) 
-                        
-                        if print_debug:
-                            print(prompt)
-                            print("======================================================")
-                        
-                       
-                        if result_err == 1 or result_err == 2:
-                            retries += 1
-                            result_str = "I didn't understand. "
-                            
-                            """
-                            if not self.openai and result_err == 2 and retries == max_retries:
-                                new_prompt = "To which of the following list of names is '" + first_json.get('action') + "' more similar to? List of names: " + str(list(self.CNL_MESSAGES.keys())) + ". Choose only one\n"
-                                if not self.openai:
-                                    llm_answer = self.make_query(self.pipeline, self.tokenizer, new_prompt)
-                                else:
-                                    llm_answer = self.make_query_openai(new_prompt)
-                                print(llm_answer)
-                            """
-                            
-
-                        elif result_err == 4:
-                            message_to_user = True
-                            #self.previous_query = text
-                    """
-                    elif result_str == self.noop:
+                    result_str = self.personalize_message_sql(sender, text, sql_result, message_history)
+                    if result_str:
                         message_to_user = True
-                        result_str = self.free_response(text,True)
-                    """
-              
-                    break
-                    
-                    
-                else: #except:
+                        
+                elif type_request == "action":
+                    type_request = "none"
+                    #self.function_request(sender, text, info, robotState, message_history, print_debug)
 
-                    print("Error in string format")
-                    result_str = ""
-                    result_err = 5
+            if not robotState.args.sql or (robotState.args.sql and type_request == "none"):
+                #phrase_list = self.create_message_variants(sender, text, info, robotState, message_history, print_debug)
                 
-                retries += 1
+                #if not phrase_list:
+                #    return "",False
             
-            if result_err and result_err != 4:
-                 message_to_user = True
-                 result_str = "I didn't understand. "
+                phrase_list = []
+                result_str,message_to_user = self.match_message(sender, text, info, robotState, message_history, print_debug, phrase_list)
             
         else:
             result_str = self.noop
@@ -690,32 +953,52 @@ How would you adapt this message to send it to [Agent B, Agent C]?[/INST]
         
         return result_str,message_to_user
         
-    def free_response(self, text, print_debug):
+    def free_response(self, text, print_debug, bigger_model=False, response_format=None):
     
         prompt = text#"You are a special operative in a mission to sense objects in a scene and collect those that are dangerous. You need to collaborate with your fellow teammates. Output a short response to the following message from one of your teammates: " + text + "\nYOUR RESPONSE >>>\n"
         print("Free response")
         
+        llm_time = time.time()
         if not self.openai:
-            llm_answer = self.make_query(self.pipeline, self.tokenizer, prompt)
+            llm_answer = self.make_query_openai(prompt) #self.make_query(self.pipeline, self.tokenizer, prompt)
         else:
             try:
-                llm_answer = self.make_query_openai(prompt)
+                llm_answer = self.make_query_openai(prompt,bigger_model,response_format)
             except:
                 self.openai = False
                 print("Groq failed")
                 self.setup_llama()
-                llm_answer = self.make_query(self.pipeline, self.tokenizer, prompt)
+                self.openai = False
+                llm_answer = self.make_query_openai(prompt) #self.make_query(self.pipeline, self.tokenizer, prompt)
 
         if print_debug:
             print(prompt,llm_answer)
+            print("Response prompt time:", time.time() - llm_time)
             
         return llm_answer
 
 
     def personalize_message(self, text, target, message_history):
     
-        personalize_prompt_cont = "</s><s>[INST]History of messages: " + str(list(message_history)[-20:]) + "\nMessage to send: \"" + text + "\"\n" + "How would you adapt this message to send it to Agent " + str(target) + "?[/INST]\n\n"
+        personalize_prompt_cont = "<|eot_id|><|start_header_id|>user<|end_header_id|>History of messages: " + str(list(message_history)[-20:]) + "\nMessage to send: \"" + text + "\"\n" + "How would you adapt this message to send it to Agent " + str(target) + "?<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
         llm_answer = self.free_response(self.output_personalization + personalize_prompt_cont, True)
+        
+        return_string = ""
+        
+        try:
+            bracket1_idx = llm_answer.find('{')
+            bracket2_idx = llm_answer.find('}')
+            return_string = eval(llm_answer[bracket1_idx:bracket2_idx+1])["Message"]
+        except:
+            print("No personalization of message")
+            
+        return return_string
+        
+        
+    def personalize_message_sql(self, sender, text, sql_text, message_history):
+    
+        personalize_prompt_cont = "<|eot_id|><|start_header_id|>user<|end_header_id|>History of messages: " + str(list(message_history)[-20:]) + "\nNew message: " + str({"Sender": sender, "Message": text}) + "\n" + sql_text + "\n" + "How would you adapt this result to send it to your teammates?<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+        llm_answer = self.free_response(self.output_personalization_sql + personalize_prompt_cont, True, response_format={"type": "json_object"})
         
         return_string = ""
         
