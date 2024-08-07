@@ -602,6 +602,22 @@ class MessagePattern:
         return "Task finished. "
         
     @staticmethod
+    def order_response(robot_id):
+        return "I will follow your orders " + str(robot_id) + ". "
+        
+    @staticmethod
+    def order_response_regex():
+        return "I will follow your orders (\w+)"
+        
+    @staticmethod
+    def order_response_negative(robot_id):
+        return "I cannot help you right now, I'm following the orders of " + str(robot_id) + ". "
+        
+    @staticmethod
+    def order_response_negative_regex():
+        return "I cannot help you right now, I'm following the orders of (\w+)"
+        
+    @staticmethod
     def finish():
         return "Let's end participation. "
         

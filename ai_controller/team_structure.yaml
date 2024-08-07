@@ -1,1 +1,2 @@
-hierarchy: {A: equal, B: equal, C: equal, D: equal, E: equal}
+hierarchy: {A: order, B: obey, C: obey, D: obey, E: obey}
+role: {A: equal, B: equal, C: equal, D: equal, E: equal}
