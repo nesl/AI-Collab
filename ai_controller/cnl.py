@@ -78,7 +78,10 @@ class MessagePattern:
                     else:
                         status_danger += "dangerous"
                         
-                    prob_correct += str(round(robotState.get("object_estimates", "estimate_correct_percentage", [item_idx,robo_idx])*100,1)) + "%"
+                    try:
+                        prob_correct += str(round(robotState.get("object_estimates", "estimate_correct_percentage", [item_idx,robo_idx])*100,1)) + "%"
+                    except:
+                        pdb.set_trace()
                     
                     if robo_idx == robotState.get_num_estimates(item_idx)-1:
                         sensing_robot = robot_id
@@ -544,15 +547,15 @@ class MessagePattern:
         return response
         
     @staticmethod
-    def order_sense(robot_id, location, convert_to_real_coordinates):
+    def order_sense(robot_id, object_id, location, convert_to_real_coordinates):
    
         real_location = convert_to_real_coordinates(location)
    
-        return str(robot_id) + ", sense location (" + str(real_location[0]) + "," + str(real_location[1]) + "). "
+        return str(robot_id) + ", sense object " + str(object_id) + " at location (" + str(real_location[0]) + "," + str(real_location[1]) + "). "
     
     @staticmethod    
     def order_sense_regex():
-        return "(\w+), sense location (\(-?\d+\.\d+,-?\d+\.\d+\))"
+        return "(\w+), sense object (\d+) at location (\(-?\d+\.\d+,-?\d+\.\d+\))"
         
     @staticmethod
     def order_collect(robot_id, object_id):
@@ -602,20 +605,36 @@ class MessagePattern:
         return "Task finished. "
         
     @staticmethod
-    def order_response(robot_id):
-        return "I will follow your orders " + str(robot_id) + ". "
+    def order_response(robot_id, task):
+        return "I will follow your orders to " + task + ", " + str(robot_id) + ". "
         
     @staticmethod
     def order_response_regex():
-        return "I will follow your orders (\w+)"
+        return "I will follow your orders to (\w+), (\w+)"
         
     @staticmethod
-    def order_response_negative(robot_id):
-        return "I cannot help you right now, I'm following the orders of " + str(robot_id) + ". "
+    def order_response_negative(robot_id, leader_id):
+        return "I cannot help you right now " + str(robot_id) + ", I'm following the orders of " + str(leader_id) + ". "
         
     @staticmethod
     def order_response_negative_regex():
-        return "I cannot help you right now, I'm following the orders of (\w+)"
+        return "I cannot help you right now (\w+), I'm following the orders of (\w+)"
+    
+    @staticmethod
+    def order_not_obey(robot_id):
+        return "You don't have the authority to order me " + str(robot_id) + ". "
+    
+    @staticmethod
+    def order_not_obey_regex():
+        return "You don't have the authority to order me (\w+)"
+        
+    @staticmethod
+    def order_cancel(robot_id):
+        return "Order cancelled " + str(robot_id) + ". "
+    
+    @staticmethod
+    def order_cancel_regex():
+        return "Order cancelled (\w+)"
         
     @staticmethod
     def finish():

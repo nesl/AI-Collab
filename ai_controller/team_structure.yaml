@@ -1,2 +1,3 @@
-hierarchy: {A: order, B: obey, C: obey, D: obey, E: obey}
+hierarchy: {A: equal, B: equal, C: equal, D: equal, E: equal}
 role: {A: equal, B: equal, C: equal, D: equal, E: equal}
+interdependency: {A: followed, B: follower, C: follower, D: followed, E: equal}

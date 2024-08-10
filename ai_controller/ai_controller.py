@@ -683,7 +683,7 @@ class RobotState:
             
             if item_output["item_danger_level"]:
                 danger_level_translate = self.Danger_Status(item_output["item_danger_level"]).name
-                self.cursor.execute("""UPDATE agent_object_estimates SET danger_status = ?, estimate_correct_percentage = ? WHERE object_id = ? AND agent_id = ?;""", (danger_level_translate, item_output["item_danger_confidence"][0], item_id, robot_id2,))    
+                self.cursor.execute("""UPDATE agent_object_estimates SET danger_status = ?, estimate_correct_percentage = ? WHERE object_id = ? AND agent_id = ?;""", (danger_level_translate, float(item_output["item_danger_confidence"][0]), item_id, robot_id2,))    
                 information_change = True
                 
         else:     
