@@ -1136,7 +1136,7 @@ while True:
             if high_level_action_finished: #When a high level action finishes, we sense the environment
                 if last_action[1] == Action.get_messages.value or last_action[1] == Action.check_item.value: #Action.get_occupancy_map.value:
                 
-                    #print_map(robotState.latest_map)
+                    print_map(robotState.latest_map)
                     #print("Held:",robotState.object_held)
                 
                     last_action[1] = 0 #Reset last sensing action
@@ -1154,8 +1154,12 @@ while True:
                     elif args.control == "decision":
                         action,terminated_tmp = decision_control.control(messages, robotState, info, next_observation)
                         
+                        #if action["action"] == Action.send_message.value:
+                        #    print("MEssage:",action)
+                        
                         if action["action"] == Action.send_message.value and "message_ai" in action:
                             if action["message_ai"]:
+                                
                                 if action["message"]:
                                     high_level_action_finished = False
                                     message_queue.append(action["message_ai"])

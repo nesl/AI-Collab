@@ -214,7 +214,7 @@ const config = {
       urls: ["stun:stun.l.google.com:19302"]
     },
     { 
-       "urls": "turn:54.85.22.234:3478?transport=tcp",
+       "urls": "turn:44.203.1.205:3478?transport=tcp",
        "username": config_api.username,
        "credential": config_api.password
     }
@@ -1772,7 +1772,17 @@ function findCheckedRadio(radio_elements,final_string,pattern){
 				
 			} else if(pattern == 'agent'){
 				if(i > 0){
-				    command_string = "Agent " + command_string + " " + document.getElementById(neighbors_list_store[i-1][0] + '_entry').children[0].rows[1].cells[0].textContent;
+				    
+				    var second_string = document.getElementById(neighbors_list_store[i-1][0] + '_entry').children[0].rows[1].cells[0].textContent;
+				    
+				    var remove_distance = second_string.match(/\(Distance: .+\) /)
+				    
+				    if(remove_distance){
+				        second_string = second_string.replace(remove_distance[0], "")
+				        second_string = second_string.replace("time ", "")
+				        second_string = second_string.replace("location ", "")
+				    }
+				    command_string = document.getElementById(neighbors_list_store[i-1][0] + '_entry').children[0].rows[0].cells[0].textContent + " " + second_string;
 					
                     if(match_results){
                         for (const itItem of match_results) {

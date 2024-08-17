@@ -3,6 +3,8 @@ const app = express();
 
 const commander = require('commander');
 
+//TODO enforce communication radius
+
 commander
   .version('1.0.0', '-v, --version')
   .usage('[OPTIONS]...')

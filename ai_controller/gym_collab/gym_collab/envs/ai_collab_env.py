@@ -1226,12 +1226,14 @@ class AICollabEnv(gym.Env):
                 if complete_action["robot"] > 0:
 
                     robot_data = self.neighbors_info[complete_action["robot"] - 1]
-                    if robot_data[4] >= 0 and np.linalg.norm((np.array([robot_data[2],robot_data[3]]) - np.array(ego_location))*self.map_config['cell_size']) < self.map_config['communication_distance_limit']:
+                    
+                    if robot_data[4] >= 0 and not (robot_data[2] == -1 and robot_data[3] == -1) and np.linalg.norm((np.array([robot_data[2],robot_data[3]]) - np.array(ego_location))*self.map_config['cell_size']) < self.map_config['communication_distance_limit']:
                         neighbors_dict = {
                             robot_data[0]: "human" if not robot_data[1] else "ai"}
                 else:
+                    #print(complete_action["message"], self.neighbors_info, occupancy_map, ego_location)
                     for robot_data in self.neighbors_info:
-                        if robot_data[4] >= 0 and np.linalg.norm((np.array([robot_data[2],robot_data[3]]) - np.array(ego_location))*self.map_config['cell_size']) < self.map_config['communication_distance_limit']:
+                        if robot_data[4] >= 0 and not (robot_data[2] == -1 and robot_data[3] == -1) and np.linalg.norm((np.array([robot_data[2],robot_data[3]]) - np.array(ego_location))*self.map_config['cell_size']) < self.map_config['communication_distance_limit']:
                             if not robot_data[1]:
                                 robot_type = "human"
                             else:
@@ -1364,12 +1366,15 @@ class AICollabEnv(gym.Env):
 
                         # Update robots locations
                         robots_locations = np.where(occupancy_map == 3)
+                        robots_found = []
                         for ol_idx in range(len(robots_locations[0])):
                             key = str(
                                 robots_locations[0][ol_idx]) + '_' + str(robots_locations[1][ol_idx])
                             
                             for object_info in objects_metadata[key]:
                                 if object_info[0]:
+                                    robots_found.append(str(object_info[1]))
+                                    
                                     self.update_neighbors_info(
                                         object_info[1], timer, [
                                             robots_locations[0][ol_idx], robots_locations[1][ol_idx]], object_info[2], False)
@@ -1382,7 +1387,12 @@ class AICollabEnv(gym.Env):
                                     self.neighbors_info[ob_idx][4] = timer
                                     break
                             '''
-
+                        for ob in self.neighbors_info: #mark those robots that disappeared
+                        
+                            if ob[0] not in robots_found:
+                                self.update_neighbors_info(
+                                        ob[0], timer, [-1,-1], ob[5], False)
+                            
                     if extra_status[1]:  # Danger estimate received
                         self.last_sensed = []
                         for object_key in danger_sensing_data.keys():

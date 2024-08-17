@@ -492,7 +492,7 @@ class Movement:
         
         occMap[ego_location[0][0],ego_location[1][0]] = 5
         
-        print(occMap)
+        #print(occMap)
      
     def wait_movement(self, agent_idx, agent, action_index):
     

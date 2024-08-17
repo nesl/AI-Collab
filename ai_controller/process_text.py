@@ -10,10 +10,11 @@ import openai
 import time
 from string import Formatter
 from groq import Groq
+import groq
 
 class Human2AIText:
 
-    def __init__(self, env, robotState):
+    def __init__(self, env, robotState, team_structure):
     
         self.openai = True
         
@@ -41,6 +42,10 @@ class Human2AIText:
         self.exchanged_messages = {agent:[] for agent in list(env.robot_key_to_index.keys())}
         
         self.max_message_history = 5
+        
+        self.team_structure = team_structure
+        
+        self.unknown_location = "(99.99,99.99)"
 
 
         self.CNL_MESSAGES = {
@@ -49,9 +54,8 @@ class Human2AIText:
             "Ask about object": "What do you know about object {object_id}. ",
             "No knowledge of object": "I know nothing about object {object_id}. ",
             "Object not found": "Hey {agent_id}, I didn't find object {object_id}. ",
-            "Help sense object": "Hey {agent_id}, can you help me sense object {object_id} in location {location}, last seen at {time}. ",
-            "Help carry object": "I need {agent_count} more robots to help carry object {object_id}. ",
             "Reject help from agent": "Nevermind {agent_id}. ",
+            "Help carry object": "I need {agent_count} more robots to help carry object {object_id}. ",
             "Follow someone": "Thanks, I'll follow you {agent_id}. ",
             "Be followed by someone": "Thanks, follow me {agent_id}. ",
             "Cancel help request": "Nevermind. ",
@@ -68,6 +72,27 @@ class Human2AIText:
             "Not relevant": self.noop
         }
 
+
+        if "hierarchy" in team_structure and (team_structure["hierarchy"][env.robot_id] == "obey" or team_structure["hierarchy"][env.robot_id] == "order"):  
+
+            CNL_MESSAGES_leadership = {
+                "Order to sense": "{agent_id}, sense object {object_id} at location {location}",
+                "Order to carry": "{agent_id}, collect object {object_id}",
+                "Order to explore": "{agent_id}, go to location {location}",
+                "Cannot fulfill order": "I cannot fulfill you order right now {agent_id}", #check
+                "Cancel order": "Order cancelled {agent_id}",
+                "Order completed": "Order completed"
+            }
+            
+            self.CNL_MESSAGES = {**self.CNL_MESSAGES, **CNL_MESSAGES_leadership}
+            
+        if not ("hierarchy" in team_structure and team_structure["hierarchy"][env.robot_id] == "obey"):  
+
+            CNL_MESSAGES_equal = {
+                "Help sense object": "Hey {agent_id}, can you help me sense object {object_id} in location {location}, last seen at {time}. "
+            }
+            
+            self.CNL_MESSAGES = {**self.CNL_MESSAGES, **CNL_MESSAGES_equal}            
 
         '''
         self.CNL_MESSAGES = {
@@ -542,6 +567,7 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
 
     def json_to_message(self, extracted_json, info, robotState):
         action = extracted_json.get('action')
+        
 
         if action:
             message = self.CNL_MESSAGES.get(action)
@@ -567,26 +593,41 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
                     if action == "Help carry object":
                         if "agent_count" not in list(extracted_json.keys()):
                             extracted_json["agent_count"] = 1
-                      
-                    if "agent_id" in arguments_format and "agent_id" not in list(extracted_json.keys()):
-                        if action == "Ask about agent" or action == "Agent information" or action == "No knowledge of agent":# or action == "Follow someone" or action == "Be followed by someone" or action == "Request to move":
-                            missing_arguments.append("Which agent are you referring to? ")
-                        else:
-                            extracted_json["agent_id"] = self.agent_id
                     
-                    no_object_id = False       
-                    if "object_id" in arguments_format and "object_id" not in list(extracted_json.keys()):
-                        if action == "Help carry object":
-                            extracted_json["object_id"] = 9999
-                        elif action == "Help sense object":
-                            no_object_id = True
+                    
+                    agent_id_args = [a for a in arguments_format if re.search("agent_id(_\d+)?", a)]
+
+                      
+                    if agent_id_args:
+                        for aid_arg in agent_id_args:
+                            if aid_arg not in list(extracted_json.keys()):
+                                if action == "Ask about agent" or action == "Agent information" or action == "No knowledge of agent":# or action == "Follow someone" or action == "Be followed by someone" or action == "Request to move":
+                                
+                                    missing_arguments.append("Which agent are you referring to? ")
+                                else:
+                                    extracted_json[aid_arg] = self.agent_id
+                    
+                    no_object_id = False  
+                    unknown_object_id = False     
+                    if "object_id" in arguments_format:
+                        if "object_id" not in list(extracted_json.keys()):
+                            if action == "Help carry object":
+                                extracted_json["object_id"] = 9999
+                            elif action == "Help sense object" or action == "Order to sense":
+                                no_object_id = True
+                            else:
+                                missing_arguments.append("Which object are you referring to? ")
+                            
                         else:
-                            missing_arguments.append("Which object are you referring to? ")
+                            if (action == "Help sense object" or action == "Order to sense") and info and extracted_json["object_id"] not in info["object_key_to_index"].keys():
+                                unknown_object_id = True
                             
                     if "location" in arguments_format and "location" not in list(extracted_json.keys()):
-                        if action == "Help sense object":
+                        if action == "Help sense object" or action == "Order to sense":
                             if no_object_id:
                                 missing_arguments.append("Which object are you referring to? ")
+                            elif unknown_object_id:
+                                missing_arguments.append("I don't know that object. I need the coordinate location. ")
                             else:
                                 if info and extracted_json["object_id"] in info["object_key_to_index"].keys():
                                     ob_idx = info["object_key_to_index"][extracted_json["object_id"]]
@@ -596,13 +637,16 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
                                     if ob_location[0] == -1 and ob_location[1] == -1:
                                         missing_arguments.append("I need the coordinate location. ")
                                     else:
-                                        extracted_json["location"] = "(99.99,99.99)"
+                                        extracted_json["location"] = self.unknown_location
                                 else:
                                     missing_arguments.append("I need the coordinate location. ")
                                 
                         
                         else:
                             missing_arguments.append("I need the coordinate location. ")
+                    else:
+                        if (action == "Help sense object" or action == "Order to sense") and no_object_id:
+                            extracted_json["object_id"] = 9999
                     
                     if "danger" in arguments_format:
                         if "danger" not in list(extracted_json.keys()):
@@ -622,7 +666,7 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
                         
                     #Format check
                     if "location" in extracted_json:
-                        if re.search('\( *-?\d+\.\d+ *, *-?\d+\.\d+ *\)',extracted_json["location"]) or re.search('\( *-?\d+ *, *-?\d+ *\)',extracted_json["location"]):
+                        if re.search('\( *-?\d+(\.(\d+)?)? *, *-?\d+(\.(\d+)?)? *\)',extracted_json["location"]):
                             #location_split = extracted_json["location"].split(',')
                             #extracted_json["location"] = location_split[0] + '.0,' + location_split[1][:-1] + '.0)'
                             
@@ -633,13 +677,18 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
                         elif not re.search('\(-?\d+\.\d+,-?\d+\.\d+\)',extracted_json["location"]) and not re.search('\(-?\d+,-?\d+\)',extracted_json["location"]):
                             missing_arguments.append("I don't understand where is it? ")
                             #return 'Argument location doesn\'t have the correct format',5
-                    if "agent_id" in extracted_json:
+                            
+                    agent_id_extracted = [a for a in extracted_json if re.search("agent_id(_\d+)?", a)]        
+                    
+                    if agent_id_extracted:
+                    
+                        for a in agent_id_extracted:
                         
-                        extracted_json["agent_id"] = extracted_json["agent_id"].upper()
-                        
-                        if not any([True if extracted_json["agent_id"].strip() == agent_name else False for agent_name in self.agent_names]):
-                            extracted_json["agent_id"] = self.agent_id
-                            #return 'Argument agent_id doesn\'t have the correct format',5
+                            extracted_json[a] = extracted_json[a].upper()
+                            
+                            if not any([True if extracted_json[a].strip() == agent_name else False for agent_name in self.agent_names]):
+                                extracted_json[a] = self.agent_id
+                                #return 'Argument agent_id doesn\'t have the correct format',5
                             
                             
                     
@@ -654,6 +703,10 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
                         missing_string += "Please provide such information and ask again. "
                         return missing_string,4
                         
+                        
+                    if action == "Cannot fulfill order": #We change for the real message
+                        message = "I cannot help you right now {agent_id}, I'm following the orders of {agent_id2}. "
+                        extracted_json["agent_id2"] = "Z"
                     
                     return message.format(**extracted_json),0
                 except KeyError as e:
@@ -686,7 +739,12 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
         if "their_collaborative_score_of_me" in response:    
             robotState.set("agents", "collaborative_score_of_me", info["robot_key_to_index"][sender], float(response["their_collaborative_score_of_me"]), 0)
         
-        return 'Agent ' + self.agent_id in response["reply_to"] or self.agent_id in [agent.upper() for agent in response["reply_to"]]  or 'Everyone' in response["reply_to"] or len(list(message_history)[-self.max_message_history:]) == 1
+        if isinstance(response["reply_to"], list):
+            upper_case_agents = [agent.upper() for agent in response["reply_to"]]
+        else:
+            upper_case_agents = response["reply_to"].upper()
+        
+        return 'Agent ' + self.agent_id in response["reply_to"] or self.agent_id in upper_case_agents  or 'Everyone'.upper() in upper_case_agents or len(list(message_history)[-self.max_message_history:]) == 1
         
     def create_message_variants(self, sender, text, info, robotState, message_history, print_debug):
     
@@ -856,6 +914,10 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
             
             sql_query = sql_query.replace("Agent ", "")
             
+            if "INSERT" in sql_query or "UPDATE" in sql_query:
+                print("Not allowing update or insert")
+                return ""
+            
             if "INSERT" in sql_query and not "INSERT OR REPLACE" in sql_query:
                 sql_query = sql_query.replace("INSERT", "INSERT OR REPLACE")
             
@@ -882,7 +944,7 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
             
         except:
             print("Error reply")
-            pdb.set_trace()
+            #pdb.set_trace()
             return ""   
         
         #if result:
@@ -962,14 +1024,21 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
         if not self.openai:
             llm_answer = self.make_query_openai(prompt) #self.make_query(self.pipeline, self.tokenizer, prompt)
         else:
-            try:
-                llm_answer = self.make_query_openai(prompt,bigger_model,response_format)
-            except:
-                self.openai = False
-                print("Groq failed")
-                self.setup_llama()
-                self.openai = False
-                llm_answer = self.make_query_openai(prompt) #self.make_query(self.pipeline, self.tokenizer, prompt)
+            recoverable_error = True
+            while recoverable_error:
+                try:
+                    llm_answer = self.make_query_openai(prompt,bigger_model,response_format)
+                    recoverable_error = False
+                except groq.BadRequestError as e:
+                    time.sleep(2)
+                except:
+                    pdb.set_trace()
+                    self.openai = False
+                    print("Groq failed")
+                    self.setup_llama()
+                    self.openai = False
+                    llm_answer = self.make_query_openai(prompt) #self.make_query(self.pipeline, self.tokenizer, prompt)
+                    recoverable_error = False
 
         if print_debug:
             print(prompt,llm_answer)

@@ -94,7 +94,7 @@ class DecisionControl:
         
         self.human_to_ai_text = []
         if not all(robot[1] for robot in env.neighbors_info): #Check if there are human peers    
-            self.human_to_ai_text = Human2AIText(env, robotState)
+            self.human_to_ai_text = Human2AIText(env, robotState, team_structure)
        
     class Other_Agent:
         
@@ -176,6 +176,7 @@ class DecisionControl:
                     
                     if return_value == 1:
 
+                        
                         object_location = robotState.get("objects", "last_seen_location", self.chosen_object_idx)
                         if not (object_location[0] == -1 and object_location[1] == -1):
                             self.target_location = object_location
@@ -566,23 +567,38 @@ class DecisionControl:
             
                     for rematch in re.finditer(MessagePattern.order_collect_regex(),rm[1]):
                         if rematch.group(1) == self.env.robot_id:
-                            if self.team_structure["hierarchy"][self.env.robot_id] == "obey" and self.team_structure["hierarchy"][rm[0]] == "order":
-                                if self.order_status == self.OrderStatus.finished:
-                                    object_idx = info['object_key_to_index'][rematch.group(2)]
-                                    
-                                    object_location = robotState.get("objects", "last_seen_location", object_idx)
-                                    if (object_location[0] == -1 and object_location[1] == -1):
-                                        pdb.set_trace()
-                                    
-                                    
-                                    self.create_action_function("collect_object('" + rematch.group(2) + "')")
-                                    
-                                    self.order_status = self.OrderStatus.ongoing
-                                    
-                                    self.message_text += MessagePattern.order_response(rm[0], "collect")
-                                    self.leader_id = rm[0]
+                            if self.team_structure["hierarchy"][self.env.robot_id] == "obey":
+                                
+                                if rematch.group(2) in info['object_key_to_index']:
+                                
+                                    if self.order_status == self.OrderStatus.finished:
+                                        object_idx = info['object_key_to_index'][rematch.group(2)]
+                                        
+                                        object_location = robotState.get("objects", "last_seen_location", object_idx)
+                                        if (object_location[0] == -1 and object_location[1] == -1):
+                                            pdb.set_trace()
+                                        
+                                        object_weight = robotState.get("objects", "weight", object_idx)
+                                        
+                                        
+                                        if not object_weight:
+                                            self.message_text += "First give me the weight value of object " + rematch.group(2) + ". "
+                                        else:
+                                            if object_weight > 1 and not (self.movement.help_status == self.movement.HelpState.being_helped and len(self.movement.help_status_info[0]) == object_weight-1):
+                                                self.create_action_function("ask_for_help('" + rematch.group(2) + "','" +  rm[0] + "')")
+                                            else:
+                                                self.create_action_function("collect_object('" + rematch.group(2) + "')")
+                                                #pdb.set_trace()
+                                            
+                                            self.order_status = self.OrderStatus.ongoing
+                                            
+                                            self.message_text += MessagePattern.order_response(rm[0], "collect")
+                                            self.leader_id = rm[0]
+                                    else:
+                                        self.message_text += MessagePattern.order_response_negative(rm[0], self.leader_id)
                                 else:
-                                    self.message_text += MessagePattern.order_response_negative(rm[0], self.leader_id)
+                                    self.message_text += "I don't know where is object " + rematch.group(2) + ". Provide some information first. "
+                                    
                             else:
                                  self.message_text += MessagePattern.order_not_obey(rm[0])
                                 
@@ -600,7 +616,16 @@ class DecisionControl:
                                     self.message_text += MessagePattern.item(robotState,info['object_key_to_index'][object_id],object_id, info, self.env.robot_id, self.env.convert_to_real_coordinates) 
                                 else:
                                     if self.order_status == self.OrderStatus.finished:
-                                        assigned_target_location = self.env.convert_to_grid_coordinates(eval(rematch.group(3)))
+                                        
+                                        location = list(eval(rematch.group(3)))
+                            
+                                        max_real_coords = self.env.convert_to_real_coordinates((robotState.latest_map.shape[0]-1, robotState.latest_map.shape[1]-1))
+                                        
+                                        if location[0] > max_real_coords[0] or location[1] > max_real_coords[1]: #last_seen[0] == 99.99 and last_seen[1] == 99.99:
+                                            assigned_target_location = robotState.get("objects", "last_seen_location", info['object_key_to_index'][object_id])
+                                        else:
+                                            assigned_target_location = self.env.convert_to_grid_coordinates(location)
+                                        
                                         self.create_action_function("sense_object(''," +  str(assigned_target_location) + ")")
                                         
                                         self.order_status = self.OrderStatus.ongoing
@@ -620,6 +645,7 @@ class DecisionControl:
                         if rematch.group(1) == self.env.robot_id:
                             if self.team_structure["hierarchy"][self.env.robot_id] == "obey" and self.team_structure["hierarchy"][rm[0]] == "order":
                                 if self.order_status == self.OrderStatus.finished:
+                                
                                     assigned_target_location = self.env.convert_to_grid_coordinates(eval(rematch.group(2)))
                                     self.create_action_function("go_to_location(" +  str(assigned_target_location) + ")")
                                     
@@ -716,15 +742,20 @@ class DecisionControl:
                             self.top_action_sequence = 0
                             robotState.set("agents", "team", robotState.get_num_robots(), "[]", info["time"])
                             
+                            if self.movement.help_status == self.movement.HelpState.being_helped:
+                                _,self.message_text,_ = self.movement.cancel_cooperation(self.State.decision_state,self.message_text,message=MessagePattern.carry_help_finish())
+                            else:
+                                self.movement.help_status = self.movement.HelpState.no_request
+                                self.movement.help_status_info[0] = []
+                            
                         elif t != robot_idx:
                         
                             robot_id = list(info['robot_key_to_index'].keys())[list(info['robot_key_to_index'].values()).index(t)]
                             self.message_text += MessagePattern.order_cancel(robot_id)
                             
-                    if self.movement.help_status == self.movement.HelpState.being_helped:
-                        _,self.message_text,_ = self.movement.cancel_cooperation(self.State.decision_state,self.message_text,message=MessagePattern.carry_help_finish())
-                    else:
-                        self.movement.help_status = self.movement.HelpState.no_request
+                    
+                        
+                    self.message_text += "Understood " + rm[0] + ". "
                     
             if re.search(MessagePattern.order_cancel_regex(), rm[1]):
                 template_match = True
@@ -739,6 +770,21 @@ class DecisionControl:
                     self.top_action_sequence = 0
                     self.message_text += "Ok " + rm[0] + ". "
                     
+                    if self.movement.help_status == self.movement.HelpState.being_helped:
+                        _,self.message_text,_ = self.movement.cancel_cooperation(self.State.decision_state,self.message_text,message=MessagePattern.carry_help_finish())
+                    else:
+                        self.movement.help_status = self.movement.HelpState.no_request
+                        self.movement.help_status_info[0] = []
+                        
+                    self.action_index = self.State.decision_state
+                    self.action_function = ""
+                    self.top_action_sequence = 0
+                    
+                    if robotState.object_held:
+                        self.create_action_function("drop()")
+                        self.order_status = self.OrderStatus.ongoing
+                        
+                    self.leader_id = rm[0]                    
                         
             if re.search(MessagePattern.surroundings_regex(),rm[1]):
             
@@ -776,7 +822,7 @@ class DecisionControl:
              
                 robotState.latest_map[ego_location[0][0],ego_location[1][0]] = 5
                 
-            if MessagePattern.order_finished() in rm[1]:  
+            if re.search(MessagePattern.order_finished_regex(),rm[1]):  
             
                 template_match = True
             
@@ -788,6 +834,8 @@ class DecisionControl:
                     
                     robotState.set("agents", "team", robot_idx, "[]", info["time"])
                     self.agent_requesting_order = True
+                    
+                    self.message_text += "Thanks " + rm[0] + ". "
                       
             if re.search(MessagePattern.sensing_ask_help_regex(),rm[1]):
             
@@ -795,7 +843,7 @@ class DecisionControl:
             
                 rematch = re.search(MessagePattern.sensing_ask_help_regex(),rm[1])
                 
-                if rematch.group(1) == str(self.env.robot_id) and self.team_structure["role"][self.env.robot_id] != "lifter":
+                if rematch.group(1) == str(self.env.robot_id) and self.team_structure["role"][self.env.robot_id] != "lifter" and not ("hierarchy" in self.team_structure and self.team_structure["hierarchy"][self.env.robot_id] == "obey"):
                 
                     """
                     if re.search(MessagePattern.sensing_ask_help_regex(),self.message_text): #This means the robot is preparing to ask for help and reject the help request, we shouldn't allow this
@@ -994,7 +1042,7 @@ class DecisionControl:
         self.action_function = "self." + function_str[:-1]
                 
         #if not ("drop" in self.action_function or "activate_sensor" in self.action_function or "scan_area" in self.action_function):
-        if not ("explore" in self.action_function or "wait" in self.action_function):
+        if not ("explore" in self.action_function or "wait" in self.action_function or "drop" in self.action_function):
             self.action_function += ","
                         
         self.action_function += "robotState, next_observation, info)"
@@ -2333,6 +2381,43 @@ class DecisionControl:
                 agents_distance = self.calculate_neighbor_distance(robotState, info, next_location, distance_excluded)
                 
         return initial_agents_distance,all_robot_combinations,robot_range,cost_agents
+        
+        
+    def interdependency_constraint(self, robotState, info, ob_location):
+    
+        if "interdependency" in self.team_structure:
+            if self.team_structure["interdependency"][self.env.robot_id] == "follower":
+                followed_id = self.get_closest_robot("interdependency", "followed", robotState, info)
+                
+                if self.other_agents[info['robot_key_to_index'][str(followed_id)]].other_location["goal_location"]:
+                    agent_location = self.other_agents[info['robot_key_to_index'][str(followed_id)]].other_location["goal_location"]
+                else:
+                    agent_location = robotState.get("agents", "last_seen_location", info['robot_key_to_index'][str(followed_id)])
+                
+                if not (agent_location[0] == -1 and agent_location[1] == -1):
+                    distance_agent_object = np.linalg.norm(np.array(self.env.convert_to_real_coordinates(ob_location)) - np.array(self.env.convert_to_real_coordinates(agent_location)))
+                    
+                    if distance_agent_object > 10:
+                        return False
+                
+            elif self.team_structure["interdependency"][self.env.robot_id] == "followed":
+                followed_ids = [tm for tm in self.team_structure["interdependency"].keys() if self.team_structure["interdependency"][tm] == "followed" and tm != self.env.robot_id]
+                
+                for f in followed_ids:
+                
+                    if self.other_agents[info['robot_key_to_index'][str(f)]].other_location["goal_location"]:
+                        agent_location = self.other_agents[info['robot_key_to_index'][str(f)]].other_location["goal_location"]
+                    else:
+                        agent_location = robotState.get("agents", "last_seen_location", info['robot_key_to_index'][str(f)])
+                    if not (agent_location[0] == -1 and agent_location[1] == -1):
+                    
+                        distance_agent_object = np.linalg.norm(np.array(self.env.convert_to_real_coordinates(ob_location)) - np.array(self.env.convert_to_real_coordinates(agent_location)))
+             
+                
+                        if distance_agent_object <= 10:
+                            return False
+                            
+        return True  
     
     def cost_carry(self, ob_idx, number_helping, pickup_excluded, robotState, info):
     
@@ -2341,30 +2426,8 @@ class DecisionControl:
         if (ob_location[0] == -1 and ob_location[1] == -1) or tuple(ob_location) in self.extended_goal_coords: #If the location of this objects is not known, continue
             return 0,-1
         
-        if "interdependency" in self.team_structure:
-            if self.team_structure["interdependency"][self.env.robot_id] == "follower":
-                followed_id = self.get_closest_robot("interdependency", "followed", robotState, info)
-                agent_location = robotState.get("agents", "last_seen_location", info['robot_key_to_index'][str(followed_id)])
-                
-                if not (agent_location[0] == -1 and agent_location[1] == -1):
-                    distance_agent_object = np.linalg.norm(np.array(self.env.convert_to_real_coordinates(ob_location)) - np.array(self.env.convert_to_real_coordinates(agent_location)))
-                    
-                    if distance_agent_object > 10:
-                        return 0,-1
-                
-            elif self.team_structure["interdependency"][self.env.robot_id] == "followed":
-                followed_ids = [tm for tm in self.team_structure["interdependency"].keys() if self.team_structure["interdependency"][tm] == "followed" and tm != self.env.robot_id]
-                
-                for f in followed_ids:
-                
-                    agent_location = robotState.get("agents", "last_seen_location", info['robot_key_to_index'][str(f)])
-                    if not (agent_location[0] == -1 and agent_location[1] == -1):
-                    
-                        distance_agent_object = np.linalg.norm(np.array(self.env.convert_to_real_coordinates(ob_location)) - np.array(self.env.convert_to_real_coordinates(agent_location)))
-             
-                
-                        if distance_agent_object <= 10:
-                            return 0,-1
+        if not self.interdependency_constraint(robotState, info, ob_location):
+            return 0,-1
                     
             
         
@@ -2444,29 +2507,8 @@ class DecisionControl:
         if (ob_location[0] == -1 and ob_location[1] == -1) or tuple(ob_location) in self.extended_goal_coords: #If the location of this objects is not known, continue
             return {}
             
-        if "interdependency" in self.team_structure:
-            if self.team_structure["interdependency"][self.env.robot_id] == "follower":
-                followed_id = self.get_closest_robot("interdependency", "followed", robotState, info)
-                agent_location = robotState.get("agents", "last_seen_location", info['robot_key_to_index'][str(followed_id)])
-                
-                if not (agent_location[0] == -1 and agent_location[1] == -1):
-                    distance_agent_object = np.linalg.norm(np.array(self.env.convert_to_real_coordinates(ob_location)) - np.array(self.env.convert_to_real_coordinates(agent_location)))
-                    
-                    if distance_agent_object > 10:
-                        return {}
-                
-            elif self.team_structure["interdependency"][self.env.robot_id] == "followed":
-                followed_ids = [tm for tm in self.team_structure["interdependency"].keys() if self.team_structure["interdependency"][tm] == "followed" and tm != self.env.robot_id]
-                
-                for f in followed_ids:
-                
-                    agent_location = robotState.get("agents", "last_seen_location", info['robot_key_to_index'][str(f)])
-                    
-                    if not (agent_location[0] == -1 and agent_location[1] == -1):
-                        distance_agent_object = np.linalg.norm(np.array(self.env.convert_to_real_coordinates(ob_location)) - np.array(self.env.convert_to_real_coordinates(agent_location)))
-                    
-                        if distance_agent_object <= 10:
-                            return {}
+        if not self.interdependency_constraint(robotState, info, ob_location):
+            return {}
             
         initial_agents_distance,all_robot_combinations,robot_range,_ = self.get_agents_distance(sensing_excluded, robotState, info)
         
@@ -2967,7 +3009,7 @@ class DecisionControl:
             leader_id = leader_min_distance[0]
             
         else:
-            leader_id = self.leaders[0]
+            leader_id = leaders[0]
             
         
         return leader_id
@@ -2982,6 +3024,18 @@ class DecisionControl:
             self.order_status_info = []
             if output:
                 self.order_status_info = [self.action_function, output]
+            
+
+        if self.order_status == self.OrderStatus.reporting_output and "ask_for_help" in self.action_function:
+            func_arguments_idx = self.action_function.index("(") + 1
+            object_id = eval(self.action_function[func_arguments_idx:].split(",")[0])
+            
+            ob_idx = info['object_key_to_index'][object_id]
+            
+            weight = robotState.get("objects", "weight", ob_idx)
+            
+            if weight > 1 and self.movement.help_status == self.movement.HelpState.being_helped and len(self.movement.help_status_info[0]) == weight-1: #If we can pickup alone the object or we already have enough agents helping
+                return "collect_object('" + object_id + "')"
             
 
         ego_location = np.where(robotState.latest_map == 5)
@@ -3129,7 +3183,11 @@ class DecisionControl:
         
         if leader:
             for r in range(robotState.get_num_robots()+1):
-                if (eval(robotState.get("agents", "team", r)) and not (r == robotState.get_num_robots() and (not self.agent_requesting_order))) or (r not in self.nearby_other_agents and r != robotState.get_num_robots()):
+                if r == robotState.get_num_robots():
+                    robot_id = self.env.robot_id
+                else:
+                    robot_id = list(info['robot_key_to_index'].keys())[list(info['robot_key_to_index'].values()).index(r)]
+                if (eval(robotState.get("agents", "team", r)) and not (r == robotState.get_num_robots() and (not self.agent_requesting_order))) or (r not in self.nearby_other_agents and r != robotState.get_num_robots()) and not ((self.movement.help_status == self.movement.HelpState.being_helped or self.movement.help_status == self.movement.HelpState.helping) and robot_id in self.movement.help_status_info[0]):
                     preexcluded.append(r)
         
             print("Excluded:", preexcluded)

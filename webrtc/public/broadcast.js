@@ -6,11 +6,11 @@ const config = {
   sdpSemantics: 'unified-plan',
 
   iceServers: [
-    //{ 
-    //  urls: ["stun:stun.l.google.com:19302"]
-    //},
     { 
-       "urls": "turn:54.85.22.234:3478?transport=tcp",
+      urls: ["stun:stun.l.google.com:19302"]
+    },
+    { 
+       "urls": "turn:44.203.1.205:3478?transport=tcp",
        "username": config_api.username,
        "credential": config_api.password
     }
