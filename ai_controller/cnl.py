@@ -590,11 +590,11 @@ class MessagePattern:
     def order_explore(robot_id, location, convert_to_real_coordinates):
     
         real_location = convert_to_real_coordinates(location)
-        return str(robot_id) + ", go to location and report anything useful (" + str(real_location[0]) + "," + str(real_location[1]) + "). "
+        return str(robot_id) + ", go to location (" + str(real_location[0]) + "," + str(real_location[1]) + ") and report anything useful. "
     
     @staticmethod    
     def order_explore_regex():
-        return "(\w+), go to location and report anything useful (\(-?\d+\.\d+,-?\d+\.\d+\))"
+        return "(\w+), go to location (\(-?\d+\.\d+,-?\d+\.\d+\)) and report anything useful"
         
     @staticmethod
     def order_finished():

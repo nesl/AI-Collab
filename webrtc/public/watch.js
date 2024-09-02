@@ -7,9 +7,11 @@ var only_cnl = false;
 var completed_survey = false;
 var token;
 var last_pattern_clicked;
+var team_strategy;
 const pattern_regex = {"[agent_id]": "(\\w+)", "[object_id]": "(\\d+)", "[object_location]":"(\\(-?\\d+\\.\\d+,-?\\d+\\.\\d+\\))", "[object_time]":"(\\d+:\\d+)", "[agent]":"Agent (\\w+) \\(type: (\\w+)\\) Last seen in (\\(-?\\d+\\.\\d+,-?\\d+\\.\\d+\\)) at (\\d+:\\d+)", "[object]": "Object (\\d+) \\(weight: (\\d+)\\) Last seen in (\\(-?\\d+\\.\\d+,-?\\d+\\.\\d+\\)) at (\\d+:\\d+).( Status: (\\w+), Prob. Correct: (\\d+\\.\\d+)%)?", "[agent_count]": "(\\d+)"};
 var message_patterns_regex = {"normal":{},"regex":{}};
 var type_of_help = '';
+var wait_for_survey = false;
 
 //Load xml doc with strings
 function loadXMLDoc() {
@@ -371,9 +373,181 @@ function add_dot(reset){
   }
 }
 
+function join_and(agent_source){
+
+    var agent_list = [...agent_source];
+
+    var last = agent_list.pop();
+    
+    var joint_string = "";
+    
+    if(agent_list.length > 0){
+        joint_string = agent_list.join(", ") + " and " + last;
+    } else{
+        joint_string = last;
+    }
+    
+    return joint_string;
+}
+
+function build_team_strategy(){
+
+    var slide_text = "";
+
+    var teammates_type = [[],[]];
+    
+    type_strategy = "";
+    
+    strategy_members = [[],[]];
+    strategy_text = "";
+    
+    if(team_strategy["role"][client_id] != "equal"){
+        type_strategy = "role";
+    } else if(team_strategy["hierarchy"][client_id] != "equal"){
+        type_strategy = "hierarchy";    
+    } else if(team_strategy["interdependency"][client_id] != "equal"){
+        type_strategy = "interdependency";    
+    }
+    
+    if(team_strategy["hierarchy"][client_id] == "order" || team_strategy["role"][client_id] == "sensing" || team_strategy["interdependency"][client_id] == "followed"){
+        strategy_members[0].push("You");
+    } else{
+        strategy_members[1].push("You");
+    }
+    
+    teammates_type[0].push("You");
+    
+    //var "Translation of agents may fail at some times so be patient and try to ask again in a different manner, also make sure to respond to what the agents explicitly ask
+    
+    for(ob_idx = 0; ob_idx < map_config['all_robots'].length; ob_idx++){ //Remove self
+        if(map_config['all_robots'][ob_idx][1] == "human"){
+            teammates_type[0].push("Agent " + map_config['all_robots'][ob_idx][0]);
+        } else{
+            teammates_type[1].push("Agent " + map_config['all_robots'][ob_idx][0]);
+        }
+        
+        if(team_strategy["hierarchy"][map_config['all_robots'][ob_idx][0]] == "order" || team_strategy["role"][map_config['all_robots'][ob_idx][0]] == "sensing" || team_strategy["interdependency"][map_config['all_robots'][ob_idx][0]] == "followed"){
+            strategy_members[0].push("Agent " + map_config['all_robots'][ob_idx][0]);
+        } else{
+            strategy_members[1].push("Agent " + map_config['all_robots'][ob_idx][0]);
+        }
+        
+        
+    }
+    
+    if(type_strategy == "role"){
+        strategy_text = "<ol><li>There is no hierarchical structure for this team strategy so if you want help from other team members please respectfully request such help.</li>";
+        if(strategy_members[1].length > 0){
+            strategy_text += "<li>" + join_and(strategy_members[1]) + " have the skill to carry objects but not to sense objects.</li>";
+        }
+        if(strategy_members[0].length > 0){
+            strategy_text += "<li>" + join_and(strategy_members[0]) + " have the skill to sense objects but not to carry objects (the capability to help still exists)</li>";
+        }
+        
+        if(strategy_members[0].includes("You")){
+        
+            strategy_text += "<li>You should go around sensing objects and reporting back the results of dangerous objects to the agents that can carry objects</li>";
+        
+        } else{
+            strategy_text += "<li>You should seek information from sensing agents so as to choose which objects to carry</li>";
+        }
+        
+        strategy_text += "</ol><img src='/media/roles.gif' style='width:30%;height:auto;'/>";
+        
+        
+        
+    } else if(type_strategy == "hierarchy"){
+        strategy_text = "<ol><li>There is a command hierarchy for this strategy that you will have to follow</li>"
+        if(strategy_members[0].length > 0 && strategy_members[1].length > 0){
+            strategy_text += "<li>" + join_and(strategy_members[0]);
+            
+            if(strategy_members[0].length == 1){
+                strategy_text += " will be the leader"
+            }
+            else{
+                strategy_text += " will be the leaders" 
+            }
+            strategy_text += " and will issue orders to " + join_and(strategy_members[1]) + "</li>";
+        }
+        
+        if(strategy_members[0].includes("You")){
+            strategy_text += "<li>Whenever an order is fulfilled, agents have to tell you or other leaders that the order has been completed so that another order can be issued. Agents have to report back all information about objects found</li><li>Agents should follow you until you issue them an order</li><li>As a leader, you can request/offer help to other leaders if you consider it necessary but you cannot order them</li><li>The type of orders you can give are: to carry an object, to sense an object or to explore an area</li>";
+        } else{
+            strategy_text +="<li>Whenever you finish an order, you have to tell any of the designated leaders (preferably the one that issued the order) that the order has been completed so that another order can be issued. You have to report back all information about any object found</li><li>You should follow leaders around until they issue you an order</li><li>You cannot not order other agents</li><li>The type of orders you can receive are: to carry an object, to sense an object or to explore an area</li>";
+        }    
+        
+        strategy_text += "</ol><img src='/media/hierarchy.gif' style='width:30%;height:auto;'/>"
+        
+    } else if(type_strategy == "interdependency"){
+        strategy_text = "<ol><li>There is no hierarchical structure for this team strategy so if you want help from other team members please respectfully request such help.</li>";
+        
+        image_txt = "";
+        
+        if(strategy_members[1].length == 0){
+            strategy_text += "<li>You should all try going to different locations separately, sense objects and carry those that you can</li><li>Every 5 minutes you should all go back to the goal area and discuss any interesting objects found, as well as try to ask for help. AI agents will wait until everyone is there to resume their tasks</li>"
+            image_txt = "<img src='/media/autonomous.gif' style='width:30%;height:auto;'/>";
+        } else if(strategy_members[0].length == 2){
+            strategy_text += "<li>You should split into two groups and go to different locations</li><li>Every 5 minutes you should all go back to the goal area and discuss any interesting objects found, as well as try to ask for help. AI agents will wait until everyone is there to resume their tasks</li>"
+            image_txt = "<img src='/media/subunits.gif' style='width:30%;height:auto;'/>";
+            if(strategy_members[1].includes("You")){
+                strategy_text += "<li>You should try following " + join_and(strategy_members[0]).replace("and","or") + "</li>";
+            } else{
+                strategy_text += "<li>" + join_and(strategy_members[1]).replace("and","or") + " may follow you</li>";
+            }
+        }else{
+            strategy_text += "<li>You should all try to stay together and go to the same places as a group, and wait until everyone is done to proceed to the next area</li>"
+            image_txt = "<img src='/media/unit.gif' style='width:30%;height:auto;'/>";
+        }
+        
+        strategy_text += "</ol>" + image_txt;  
+          
+    }
+
+
+
+    
+    slide_text = "<p><b>You are Agent " + client_id + ".</b> Your team consists of " + String(map_config['all_robots'].length+1) + " members: ";
+    
+    if(teammates_type[0].length > 0){
+        if(teammates_type[0].length == 1){
+            slide_text += "1 human agent (";
+        } else{
+            slide_text += String(teammates_type[0].length) + " human agents (";
+        }
+        
+        slide_text +=  join_and(teammates_type[0]) +")";
+        
+    } else{
+        slide_text += String(teammates_type[0].length) + " human agents"; 
+    }
+    
+    
+    slide_text += " and " 
+    
+    
+    if(teammates_type[1].length > 0){
+        if(teammates_type[1].length == 1){
+            slide_text += "1 AI agent (";
+        } else{
+            slide_text += String(teammates_type[1].length) + " AI agents (";
+        }
+        
+        slide_text +=  join_and(teammates_type[1]) +")";
+        
+    } else{
+        slide_text += String(teammates_type[1].length) + " AI agents"; 
+    }
+    
+    slide_text += ". The strategy to follow will be the next one:" + strategy_text + "</p>";
+    
+    return slide_text;
+    
+}
+
 function tutorial_popup(state){
 
   var popup_text = document.getElementById("popup_text");
+  popup_text.style.fontSize="0.7vw";
   
   const entries = xmlDoc.getElementsByTagName("entry");
   const child_entries = find_entry(entries, state).childNodes;
@@ -425,6 +599,10 @@ function tutorial_popup(state){
             
             if(child_entries[i].textContent  == "Controlled Natural Language"){
                 cnl_title = true;
+            }
+            
+            if(state == "session" && child_entries[i].textContent == "Team Strategy"){
+                popup_text.innerHTML += build_team_strategy();
             }
             
             break;
@@ -625,6 +803,52 @@ function removeTags(str) {
     return str.replace( /(<([^>]+)>)/ig, '');
 }
 
+const questions = ["I performed well", "AI agents performed well", "The team performed well", "It was easy to communicate with the AI agents", "I was able to trust the AI agents", "AI agents are reliable teammates", "I preferred playing with the AI agents rather than with the other human players (if applicable)"];
+
+function create_survey(){
+
+    var survey = document.getElementById("survey-questions");
+    
+    survey.innerHTML = "";
+    
+    const scale_values = ["Strongly disagree", "Disagree", "Neither agree/disagree", "Agree", "Strongly agree"];
+    
+    for (let i = 0; i < questions.length; i++) {
+        var p_element = document.createElement("p");
+        p_element.style.textAlign = "left";
+        var bold_element = document.createElement("b");
+        bold_element.textContent = questions[i];
+        p_element.appendChild(bold_element);
+        survey.appendChild(p_element);
+        var ul_element = document.createElement("ul");
+        ul_element.className = "likert";
+        
+        
+        for (let j = 0; j < 5; j++){
+        
+            var li_element = document.createElement("li");
+            li_element.textContent = scale_values[j];
+            li_element.style.paddingLeft = "50px";
+            ul_element.appendChild(li_element);
+        
+            var li_element = document.createElement("li");
+            var input_element = document.createElement("input");
+            input_element.type = "radio";
+            input_element.value = String(j+1);
+            input_element.name = "survey" + String(i);
+            li_element.appendChild(input_element);
+            ul_element.appendChild(li_element);
+            
+        }
+        
+
+        survey.appendChild(ul_element);
+        survey.appendChild(document.createElement("br"));
+        
+    }
+
+}
+
 //TODO: use the communication distance limit for something
 var map_config = {};
 var communication_distance_limit, strength_distance_limit, sensing_distance_limit;
@@ -657,6 +881,8 @@ function reset(config_options){
     object_list_store = [];
     neighbors_list_store = [];
     own_neighbors_info_entry = [client_id, 0, 0, 0, -1];
+    
+    create_survey();
     
     document.getElementById("popup-report").classList.remove("active");
     document.getElementById("popup-survey").classList.remove("active");
@@ -818,7 +1044,10 @@ function reset(config_options){
 
 }
 
-socket.on("agent_reset", (config_options) => {
+socket.on("agent_reset", (config_options, yaml_doc) => {
+
+    team_strategy = yaml_doc;
+    
     reset(config_options);
 });
 
@@ -1116,8 +1345,12 @@ socket.on("stats", (stats_dict, final) => {
         popup_content.appendChild(tbl_team);
         
         if(! tutorial_mode){
-            //peerConnection.close(); //Close stream
-            socket.disconnect();
+            if(completed_survey){
+                //peerConnection.close(); //Close stream
+                socket.disconnect();
+            }else{
+                wait_for_survey = true;
+            }
         }
         
         /*
@@ -1137,13 +1370,15 @@ socket.on("stats", (stats_dict, final) => {
 });
 
 
-socket.on("watcher", (robot_id_r, config_options) => {
+socket.on("watcher", (robot_id_r, config_options, yaml_doc) => {
 
     pass_input_text.removeEventListener("keydown", process_input_code);
 
     document.getElementById("popup-pass").classList.toggle("active");
 
     client_id = robot_id_r;
+    
+    team_strategy = yaml_doc;
     
     
     reset(config_options);
@@ -1297,6 +1532,20 @@ play_area.addEventListener("keydown", (evt) => {
     } else{
         kkey = evt.key.toUpperCase();
     }
+    
+    if (team_strategy){
+        if (team_strategy["role"][client_id] == "sensing"){
+            if (kkey == "A" || kkey == "D"){
+                return;
+            }
+        }
+        else if (team_strategy["role"][client_id] == "lifter"){
+            if (kkey == "Q"){
+                return;
+            }
+        }
+    }
+    
     
     /*
     if(kkey == "W"){
@@ -2335,30 +2584,32 @@ function submitReport(){
 function submitSurvey(){
 
     
-    
-    var collab_likert = document.getElementsByName('collab');
-    var comms_likert = document.getElementsByName('comms');
+	var array_values = [];
 	
-	var collab_value;
-	for(i = 0; i < collab_likert.length; i++) {
-	    if(collab_likert[i].checked){
-	        collab_value = collab_likert[i].value;
-	        break;
+	for(i = 0; i < questions.length; i++) {
+	    var survey_question = document.getElementsByName('survey' + String(i));
+	    for(j = 0; j < survey_question.length; j++) {
+	        if(survey_question[j].checked){
+	            array_values.push(survey_question[j].value);
+	            break;
+	        }
+	        
 	    }
+	    if(array_values.length <= i){
+	        array_values.push("");
+        }
 	}
 	
-	var comms_value;
-	for(i = 0; i < comms_likert.length; i++) {
-	    if(comms_likert[i].checked){
-	        comms_value = comms_likert[i].value;
-	        break;
-	    }
-	}
 	
-	socket.emit("survey", simulator_timer, [collab_value, comms_value],token)
+	socket.emit("survey", simulator_timer, questions, array_values,token)
 	
 	document.getElementById("popup-stats").classList.add("active");
 	document.getElementById("popup-survey").classList.remove("active");
+	completed_survey = true;
+	
+	if(wait_for_survey){
+	    socket.disconnect();
+	}
 	
 
 }

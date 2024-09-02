@@ -11,6 +11,7 @@ import time
 from string import Formatter
 from groq import Groq
 import groq
+import numpy as np
 
 class Human2AIText:
 
@@ -19,6 +20,7 @@ class Human2AIText:
         self.openai = True
         
         agent_id = env.robot_id
+        self.env = env
         
         self.sql_tables = robotState.create_tables
         
@@ -78,7 +80,7 @@ class Human2AIText:
             CNL_MESSAGES_leadership = {
                 "Order to sense": "{agent_id}, sense object {object_id} at location {location}",
                 "Order to carry": "{agent_id}, collect object {object_id}",
-                "Order to explore": "{agent_id}, go to location {location}",
+                "Order to explore": "{agent_id}, go to location {location} and report anything useful",
                 "Cannot fulfill order": "I cannot fulfill you order right now {agent_id}", #check
                 "Cancel order": "Order cancelled {agent_id}",
                 "Order completed": "Order completed"
@@ -565,6 +567,30 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
             return {}
 
 
+    def explore_random(self, robotState):
+        still_to_explore = np.where(robotState.latest_map == -2)
+                
+        closest_dist = float('inf')
+        closest_idx = -1
+        ego_location = np.where(robotState.latest_map == 5)
+
+        for se_idx in range(len(still_to_explore[0])):
+            unknown_loc = [still_to_explore[0][se_idx],still_to_explore[1][se_idx]]
+            
+            unknown_dist = self.env.compute_real_distance(unknown_loc,[ego_location[0][0],ego_location[1][0]])
+            
+            if unknown_dist < closest_dist:
+                closest_dist = unknown_dist
+                closest_idx = se_idx
+
+        result = ""
+        if closest_idx > -1:
+            x = still_to_explore[0][closest_idx]
+            y = still_to_explore[1][closest_idx]
+            result = str(tuple(self.env.convert_to_real_coordinates([x,y])))
+        
+        return result
+
     def json_to_message(self, extracted_json, info, robotState):
         action = extracted_json.get('action')
         
@@ -622,7 +648,7 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
                             if (action == "Help sense object" or action == "Order to sense") and info and extracted_json["object_id"] not in info["object_key_to_index"].keys():
                                 unknown_object_id = True
                             
-                    if "location" in arguments_format and "location" not in list(extracted_json.keys()):
+                    if "location" in arguments_format and ("location" not in list(extracted_json.keys()) or not extracted_json["location"]):
                         if action == "Help sense object" or action == "Order to sense":
                             if no_object_id:
                                 missing_arguments.append("Which object are you referring to? ")
@@ -642,6 +668,15 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
                                     missing_arguments.append("I need the coordinate location. ")
                                 
                         
+                        elif action == "Order to explore":
+                        
+                            result_explore = self.explore_random(robotState)
+                            
+                            if result_explore:
+                                extracted_json["location"] = result_explore
+                            else:
+                                missing_arguments.append("I need the coordinate location. ")
+                            
                         else:
                             missing_arguments.append("I need the coordinate location. ")
                     else:
@@ -665,7 +700,7 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
                         extracted_json["time"] = "00:00"
                         
                     #Format check
-                    if "location" in extracted_json:
+                    if "location" in extracted_json and extracted_json["location"]:
                         if re.search('\( *-?\d+(\.(\d+)?)? *, *-?\d+(\.(\d+)?)? *\)',extracted_json["location"]):
                             #location_split = extracted_json["location"].split(',')
                             #extracted_json["location"] = location_split[0] + '.0,' + location_split[1][:-1] + '.0)'
@@ -675,7 +710,17 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
                             extracted_json["location"] = str((float(location[0]), float(location[1]))).replace(" ","")
                             
                         elif not re.search('\(-?\d+\.\d+,-?\d+\.\d+\)',extracted_json["location"]) and not re.search('\(-?\d+,-?\d+\)',extracted_json["location"]):
-                            missing_arguments.append("I don't understand where is it? ")
+                        
+                            if action == "Order to explore":
+                        
+                                result_explore = self.explore_random(robotState)
+                                
+                                if result_explore:
+                                    extracted_json["location"] = result_explore
+                                else:
+                                    missing_arguments.append("I don't understand where is it? ")
+                            else:
+                                missing_arguments.append("I don't understand where is it? ")
                             #return 'Argument location doesn\'t have the correct format',5
                             
                     agent_id_extracted = [a for a in extracted_json if re.search("agent_id(_\d+)?", a)]        
@@ -797,13 +842,15 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
                 llm_answer = self.make_query_openai(prompt) #self.make_query(self.pipeline, self.tokenizer, prompt)
             else:
                 try:
-                    llm_answer = self.make_query_openai(prompt)
-                except:
+                    llm_answer = self.make_query_openai(prompt, bigger_model=True)
+                except groq.RateLimitError as e:
                     self.openai = False
                     print("Groq failed")
                     self.setup_llama()
                     self.openai = False
                     llm_answer = self.make_query_openai(prompt) #self.make_query(self.pipeline, self.tokenizer, prompt)
+                except:
+                    time.sleep(2)
 
             print("Main prompt time:", llm_time - time.time())
             if print_debug:
@@ -1029,9 +1076,7 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
                 try:
                     llm_answer = self.make_query_openai(prompt,bigger_model,response_format)
                     recoverable_error = False
-                except groq.BadRequestError as e:
-                    time.sleep(2)
-                except:
+                except groq.RateLimitError as e:
                     pdb.set_trace()
                     self.openai = False
                     print("Groq failed")
@@ -1039,6 +1084,8 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
                     self.openai = False
                     llm_answer = self.make_query_openai(prompt) #self.make_query(self.pipeline, self.tokenizer, prompt)
                     recoverable_error = False
+                except:
+                    time.sleep(2)
 
         if print_debug:
             print(prompt,llm_answer)

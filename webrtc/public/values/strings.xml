@@ -186,9 +186,9 @@
         <title>Succesful reset, you can start playing now!</title>
         
         <list><![CDATA[Sense objects and bring only the dangerous ones into the goal area.]]></list>
-        <list><![CDATA[When you sense an object you will see whether the object is dangerous or benign according to the color of the object ID, and in your sidebar you will be able to consult the object, as well as the accuracy of the prediction.]]></list>
-        <list><![CDATA[Objects have a weight associated with them, and you will only be able to carry those that match your strength level. Strength level is modified by the amount of robots that are close to you and you may only be able to carry a heavy object when you have a given quantity of robots around you.]]></list>
-        <list><![CDATA[You need to compare estimates of danger levels to get the correct dangerous objects. You can talk with your fellow robots through the sidebar chat. You can send messages by writing the text in the input field and then pressing Enter.]]></list>
+        <list><![CDATA[When you sense an object you will see whether the object is dangerous or benign according to the color of the object ID, and in your sidebar you will be able to consult the object, as well as the accuracy of the prediction<br><img src='/media/object_info.png'><img src='/media/sensor.gif' style='width:30%;height:auto;'/>]]></list>
+        <list><![CDATA[Objects have a weight associated with them, and you will only be able to carry those that match your strength level. Strength level is modified by the amount of robots that are close to you and you may only be able to carry a heavy object when you have a given quantity of robots around you.<br><img src='/media/my_strength_bar.png' style='width:20%;height:auto;'/><img src='/media/strength2.gif' style='width:30%;height:auto;'/>]]></list>
+        <list><![CDATA[You need to compare estimates of danger levels to get the correct dangerous objects. You can talk with your fellow robots through the sidebar chat. You can send messages by writing the text in the input field and then pressing Enter.<br><img src='/media/chat.gif' style='width:20%;height:auto;'/><img src='/media/object_chosen.gif' style='width:30%;height:auto;'/><img src='/media/object_write.gif' style='width:20%;height:auto;'/>]]></list>
         <list><![CDATA[Maximum distance for carrying objects: <b>[strength_distance_limit] m</b>]]></list>
         <list><![CDATA[Maximum distance for communication: <b>[communication_distance_limit] m</b>]]></list>
         <list><![CDATA[Maximum distance for sensing: <b>[sensing_distance_limit] m</b>]]></list>
@@ -196,7 +196,7 @@
         <list><![CDATA[<p style='color: red;'>Dangerous objects are associated with red color</p>]]></list>
         
         <title>Controls</title>
-        <head><![CDATA[<b>Arrow Keys</b> to advance <br><b>A</b> to grab/drop object with left arm<br><b>D</b> to grab/drop object with right arm <br><b>S</b> to rotate camera downwards <br><b>W</b> to rotate camera upwards <br><b>Q</b> to take sensing action <br><b>E</b> to focus on an object (you need this to then grab an object)]]></head>
+        <head><![CDATA[<b>Arrow Keys</b> to advance<img src='/media/arrow_keys.png' style='width:20%;height:auto;'/><br><b>A</b> to grab/drop object with left arm<img src='/media/keyA.png' style='width:5%;height:auto;'/><br><b>D</b> to grab/drop object with right arm<img src='/media/keyD.png' style='width:5%;height:auto;'/> <br><b>S</b> to rotate camera downwards<img src='/media/keyS.png' style='width:5%;height:auto;'/><br><b>W</b> to rotate camera upwards<img src='/media/keyW.png' style='width:5%;height:auto;'/><br><b>Q</b> to take sensing action<img src='/media/keyQ.png' style='width:5%;height:auto;'/><br><b>E</b> to focus on an object (you need this to then grab an object)<img src='/media/keyE.png' style='width:5%;height:auto;'/><br>]]></head>
         
         <!--
         <title>Dialogue to AI teammates</title>
@@ -214,15 +214,40 @@
         <head><![CDATA[In this session you will only be able to communicate with a Controlled Natural Language by using some of the pattern substitution functions present in the righ-hand sidebar. To see such message templates, you can hover over each button to see the actual message that would be set. Some of these message templates reguire arguments, these can be of type [agent*] or [object*]. In each of these cases you have to first select those arguments from the left-hand sidebar, then click on the corresponding pattern substitution button, and finally click send. You cannot type in directly any message into the chat sidebar input. In this section we are going to present all the message templates you can utilize.]]></head>
         -->
         
-        <title>Communication</title>
+        <title>Team Strategy</title>
         
-        <head><![CDATA[AI agents understand your Natural Language messages! Feel free to ask and respond to AI agents however you like through the Chat sidebar. You should always receive an acknowledgement from the AI agents if they understood what you told them, otherwise try again. The next is a list of possible things you can talk about.]]></head>
+        <title>Expectations About AI Agents</title>
         
-        <list><![CDATA[<p><b>Get/offer help carry a heavy object</b>: you first need to ask for help and then ask the agent to follow you</p>]]></list>
-        <list><![CDATA[<p><b>Get/offer help sense an object</b>: you first need to ask for help and then tell the agent you are going to follow them</p>]]></list>
-        <list><![CDATA[<p><b>Ask/give information of an object/agent</b></p>]]></list>
-        <list><![CDATA[<p><b>Make an agent move if it's blocking the way</b></p>]]></list>
-        <list><![CDATA[<p><b>Inform your decision to end participation or not</b></p>]]></list>
+        <head><![CDATA[AI agents have the following capabilities:]]></head>
+        
+        <list><![CDATA[They are designed to seek information about objects until they have enough confidence to carry one they think is dangerous, but keep in mind that they might fail in their reasoning]]></list>
+        <list><![CDATA[They can help you carry objects by following you, just be patient that they may need some time to move. AI agents by default will choose a random location in the goal area and deposit the carried object there]]></list>
+        <list><![CDATA[They can help you sense specific objects, in that case just follow them and they will tell you their results]]></list>
+        <list><![CDATA[Whenever you don't want them to follow you, just tell them you don't need their help anymore]]></list>
+        <list><![CDATA[You can ask them information about any object or agent they know]]></list>
+        <list><![CDATA[If your team strategy has established leaders, you can order them around, otherwise you have to first request their help and then ask them to follow you, or for you to follow them]]></list>
+        <list><![CDATA[They are able to understand your written messages, but they may fail sometimes, so just try again in different ways<br><img src='/media/magnebot.png' style='width:20%;height:auto;margin-top:20px;'/>]]></list>
+        
+        <title>Communication With AI Agents</title>
+        
+        <head><![CDATA[AI agents understand your Natural Language messages! Feel free to ask and respond to AI agents however you like through the Chat sidebar. You should always receive an acknowledgement from the AI agents if they understood what you told them, otherwise be patient and try again. The next is a list of possible things you can talk about.]]></head>
+        
+        <list><![CDATA[<p><b style="font-size:1vw">Get/offer help to carry a heavy object</b><br>You first need to ask for help and then ask the agent to follow you.<br><br><b style="color: red; font-size:0.8vw">Example</b><ul><li><b style="color: red;">Agent A:</b> I need 2 more robots to help carry object 9</li><li><b style="color: blue;">Agent B:</b> I can help you A<br><i>or</i><br><b style="color: blue;">Agent B:</b> I cannot help you A<br><i>Note: if this dialogue is selected there is no need to continue the conversation</i></li><li><b style="color: red;">Agent A:</b> Thanks, follow me B</li></ul></p>]]></list>
+        <list><![CDATA[<p><b style="font-size:1vw">Get/offer to help sense an object</b><br>You first need to ask for help and then tell the agent you are going to follow them<br><br><b style="color: red; font-size:0.8vw">Example</b><ul><li><b style="color: red;">Agent A:</b> Hey B, can you help me sense object 9 in location (-2.3,0.1)<br><i>Note: you don't have to specify both object ID and location, choose only one</i></li><li><b style="color: blue;">Agent B:</b> I can help you A<br><i>or</i><br><b style="color: blue;">Agent B:</b> I cannot help you A<br><i>Note: if this dialogue is selected there is no need to continue the conversation</i></li><li><b style="color: red;">Agent A:</b> Thanks, I'll follow you B</li></ul></p>]]></list>
+        <list><![CDATA[<p><b style="font-size:1vw">Cancel any request/offer for help</b><br><br><b style="color: red; font-size:0.8vw">Example</b><ul><li><b style="color: red;">Agent A:</b> No need for more help<br><i>or</i><br><b style="color: red;">Agent A:</b> Nevermind<br><i>or</i><br><b style="color: red;">Agent A:</b> Nevermind B<br><i>or</i><br><b style="color: red;">Agent A:</b> I didn't offer my help to you B</li></ul></p>]]></list>
+        <list><![CDATA[<p><b style="font-size:1vw">Ask/give information about an object</b><br><br><b style="color: red; font-size:0.8vw">Example</b><ul><li><b style="color: red;">Agent A:</b> What do you know about object 9</li><li><b style="color: blue;">Agent B:</b> Object 9 (weight: 1) Last seen in (4.3,0.1) at 10:23. Status: dangerous, Prob. Correct: 67%<br><i>or</i><br><b style="color: blue;">Agent B:</b> I know nothing about object 9</li></ul></p>]]></list>
+        <list><![CDATA[<p><b style="font-size:1vw">Ask/give information about an agent</b><br><br><b style="color: red; font-size:0.8vw">Example</b><ul><li><b style="color: red;">Agent A:</b> Where is agent C</li><li><b style="color: blue;">Agent B:</b> Agent C (type: human) Last seen in (5.6,8.8) at 01:03<br><i>or</i><br><b style="color: blue;">Agent B:</b> I don't know where is agent C</li></ul></p>]]></list>
+        <list><![CDATA[<p><b style="font-size:1vw">Make an agent move if it's blocking the way</b><br><br><b style="color: red; font-size:0.8vw">Example</b><ul><li><b style="color: red;">Agent A:</b> Hey B, I need you to move</li><li><i>After a while you can tell them to move closer if they are helping you and you just needed them to move temporally</i><br><b style="color: red;">Agent A:</b> Come closer</li></ul></p>]]></list>
+        <list><![CDATA[<p><b style="font-size:1vw">Inform your decision to end participation or not</b><br>Make sure all AI agents know about this decision and inform them of the dangerous objects you have found<br><br><b style="color: red; font-size:0.8vw">Example</b><ul><li><b style="color: red;">Agent A:</b> Let's end participation</li><li><b style="color: blue;">Agent B:</b> Let's end participation<br><i>or</i><br><b style="color: blue;">Agent B:</b> Wait, let's not end participation yet</li></ul></p>]]></list>
+        <list><![CDATA[<p><b style="font-size:1vw">Order to carry an object</b><br>(Exclusive for leaders)<br><br><b style="color: red; font-size:0.8vw">Example</b><ul><li><b style="color: red;">Agent A:</b> B, collect object 9</li><li><b style="color: blue;">Agent B:</b> I cannot fulfill you order right now A<br><i>Note: this dialogue is exclusive for non-leaders, this makes an order ineffective</i></li></ul></p>]]></list>
+        <list><![CDATA[<p><b style="font-size:1vw">Order to sense an object</b><br>(Exclusive for leaders)<br><br><b style="color: red; font-size:0.8vw">Example</b><ul><li><b style="color: red;">Agent A:</b> B, sense object 9 at location (-2.3,0.1)<br><i>Note: you don't have to specify both object ID and location, choose only one</i></li><li><b style="color: blue;">Agent B:</b> I cannot fulfill you order right now A<br><i>Note: this dialogue is exclusive for non-leaders, this makes an order ineffective</i></li></ul></p>]]></list>
+        <list><![CDATA[<p><b style="font-size:1vw">Order to explore an area</b><br>(Exclusive for leaders)<br><br><b style="color: red; font-size:0.8vw">Example</b><ul><li><b style="color: red;">Agent A:</b> B, go to location (-2.3,0.1)<br><i>Note: you don't have to specify both object ID and location, choose only one</i></li><li><b style="color: blue;">Agent B:</b> I cannot fulfill you order right now A<br><i>Note: this dialogue is exclusive for non-leaders, this makes an order ineffective</i></li></ul></p>]]></list>
+        <list><![CDATA[<p><b style="font-size:1vw">Cancel an order</b><br>(Exclusive for leaders)<br><br><b style="color: red; font-size:0.8vw">Example</b><ul><li><b style="color: red;">Agent A:</b> Order cancelled B</li></ul></p>]]></list>
+        <list><![CDATA[<p><b style="font-size:1vw">Inform an order has been completed</b><br>After reporting the status of all objects found/sensed/carried, make sure to do this to obtain another order (exclusive for non-leaders)<br><br><b style="color: red; font-size:0.8vw">Example</b><ul><li><b style="color: red;">Agent A:</b> Order completed</li></ul></p>]]></list>
+        
+        
+        
+        
         
         <title>Scenario Map</title>
         

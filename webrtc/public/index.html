@@ -106,8 +106,8 @@
 	        		
 	    			
 	    			</div>
-	    			<button class="next-btn" onclick="backPopup()">Back</button>
-	    			<button class="next-btn" onclick="nextPopup()">Next</button>
+	    			<button class="next-btn" style="margin-top:20px" onclick="backPopup()">Back</button>
+	    			<button class="next-btn" style="margin-top:20px" onclick="nextPopup()">Next</button>
 	    			<div class="progress-bar-dots" id="tutorial_progress" ></div>
 	        		</div>
 	        		
@@ -168,30 +168,11 @@
 	        	<div class="content">
 	        	<div id="popup-survey-content">
 	        	<h1>Survey</h1>
-	        	<p>Please answer the next questions.</p>
-	        	<p style="text-align:left;">How did you feel when collaborating with your AI teammates?</p>
-	        	<ul class="likert">
-                <li> Very Unsatisfied </li>
-                <li><input type="radio" name="collab" value="1" /></li>
-                <li><input type="radio" name="collab" value="2" /></li>
-                <li><input type="radio" name="collab" value="3" /></li>
-                <li><input type="radio" name="collab" value="4" /></li>
-                <li><input type="radio" name="collab" value="5" /></li>
-                <li> Very Satisfied </li>
-                </ul>
-                <br>
-                <p style="text-align:left;">How did you feel when communicating with your AI teammates?</p>
-                <ul class="likert">
-                <li> Very Unsatisfied </li>
-                <li><input type="radio" name="comms" value="1" /></li>
-                <li><input type="radio" name="comms" value="2" /></li>
-                <li><input type="radio" name="comms" value="3" /></li>
-                <li><input type="radio" name="comms" value="4" /></li>
-                <li><input type="radio" name="comms" value="5" /></li>
-                <li> Very Satisfied </li>
-                </ul>
-                <br>
-	        	<button onclick="submitSurvey()" id="survey-button">Submit</button>
+	        	<p>Please rate how much you agree with each of the next statements</p>
+	        	<div id="survey-questions">
+	        	
+                </div>
+	        	<button onclick="submitSurvey()" style="margin-top:20px" id="survey-button">Submit</button>
 
 	        	</div>
 	        	</div>

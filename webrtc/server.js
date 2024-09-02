@@ -28,7 +28,7 @@ const port = parseInt(command_line_options.port);
 const host = command_line_options.address;//'172.17.15.69'; //'localhost';
 
 const https = require("https");
-
+const yaml = require('js-yaml');
 const fs = require("fs");
 
 const replay_file = command_line_options.replay;
@@ -70,7 +70,7 @@ const server = https.createServer(options, app)
 
 const io = require("socket.io")(server);
 
-
+var yaml_doc = yaml.load(fs.readFileSync('team_structure.yaml', 'utf8'));
 
 const cookieParser = require('cookie-parser');
 app.use(cookieParser());
@@ -114,7 +114,7 @@ var window_name = '';
 
 var char_replacement = [{'Up':'Up','Down':'Down','Left':'Left','Right':'Right'},{'Up':'W','Down':'S','Left':'A','Right':'D'}];
 var clients_ids = [], user_ids_list = [], ai_ids_list = [], ai_ids = [], all_ids = [], all_ids_list = [], stats = {}, saved_events = [], saved_key_strokes = [], saved_tutorial_state = [];
-var wait_ids = [], redirect_ids = [], waiting_room = false, wait_cookies=[], redirect_cookies=[], use_cookies = command_line_options.cookies;
+var wait_ids = [], redirect_ids = [], waiting_room = false, wait_cookies=[], redirect_cookies=[], redirect_questions=[], redirect_answers=[], use_cookies = command_line_options.cookies;
 var init_xdotool = false;
 var video_idx_broadcaster = 0;
 var past_timer2 = 0, last_time = 0;
@@ -232,7 +232,7 @@ io.sockets.on("connection", socket => { //When a client connects
 			all_ids[client_number-1] = socket.id;
 		
 		
-			socket.emit("watcher", user_ids_list[client_number-1], map_config);
+			socket.emit("watcher", user_ids_list[client_number-1], map_config, yaml_doc);
 			
 			if(saved_tutorial_state[client_number-1]){
 			    socket.emit("tutorial", saved_tutorial_state[client_number-1]);
@@ -344,6 +344,7 @@ io.sockets.on("connection", socket => { //When a client connects
   	if(socket.id == broadcaster || reset_count == all_ids.length){
 
     	socket.to(simulator).emit("reset"); //, socket_to_simulator_id(socket.id));
+    	
 	} 
   });
   
@@ -448,7 +449,8 @@ io.sockets.on("connection", socket => { //When a client connects
     }
 
     console.log(magnebot_id, simulator_id_to_socket(magnebot_id))
-    socket.to(simulator_id_to_socket(magnebot_id)).emit("agent_reset", map_config);
+    yaml_doc = yaml.load(fs.readFileSync('team_structure.yaml', 'utf8'));
+    socket.to(simulator_id_to_socket(magnebot_id)).emit("agent_reset", map_config, yaml_doc);
     
     
 
@@ -456,7 +458,7 @@ io.sockets.on("connection", socket => { //When a client connects
     
     
     if(command_line_options.log){
-    	fs.appendFile(dir + dateTime + '.txt', String(timer.toFixed(2)) + ',4,' + magnebot_id + ',' + String(true_time.toFixed(3)) + '\n', err => {});
+    	fs.appendFile(dir + dateTime + '.txt', String(timer.toFixed(2)) + ',4,' + magnebot_id + ',' + String(true_time.toFixed(3)) + ',' + JSON.stringify(yaml_doc) + '\n', err => {});
     }
     
     past_timer2 = 0;
@@ -731,10 +733,10 @@ io.sockets.on("connection", socket => { //When a client connects
     socket.to(simulator).emit("report", object_list, socket_to_simulator_id(socket.id));
   });
   
-  socket.on("survey", (timer, survey_responses, token) => {
+  socket.on("survey", (timer, survey_questions, survey_responses, token) => {
   
     if(command_line_options.log){
-    	fs.appendFile(dir + dateTime + '.txt', String(timer.toFixed(2)) + ',8,' + JSON.stringify(survey_responses) + ',' + String(token) + '\n', err => {});
+    	fs.appendFile(dir + dateTime + '.txt', String(timer.toFixed(2)) + ',8,' + JSON.stringify(survey_questions) + "," + JSON.stringify(survey_responses) + ',' + String(token) + '\n', err => {});
     }
     console.log("Survey:", survey_responses, token)
   });
@@ -779,7 +781,7 @@ io.sockets.on("connection", socket => { //When a client connects
     
   });
   
-  socket.on("redirect_session", () => {
+  socket.on("redirect_session", (demographics_questions, demographics_answers) => {
 
     var cookie = getCookie(socket.request.headers.cookie,'simulator_cookie');
 
@@ -787,6 +789,8 @@ io.sockets.on("connection", socket => { //When a client connects
     
         redirect_ids.push(socket.id);
         redirect_cookies.push(cookie);
+        redirect_questions.push(demographics_questions);
+        redirect_answers.push(demographics_answers);
 
 
         if(redirect_ids.length == user_ids_list.length){
@@ -798,7 +802,7 @@ io.sockets.on("connection", socket => { //When a client connects
                 passcode.push(individual_passcode);
                 
                 if(command_line_options.log){
-    	            fs.appendFile(dir + dateTime + '.txt', '0.00' + ',7,' + String(id_idx+1) + ',' + redirect_cookies[id_idx] + '\n', err => {});
+    	            fs.appendFile(dir + dateTime + '.txt', '0.00' + ',7,' + String(id_idx+1) + ',' + redirect_cookies[id_idx] + ',' + JSON.stringify(redirect_questions[id_idx]) + ',' + JSON.stringify(redirect_answers[id_idx]) + '\n', err => {});
                 }
                 
                 if(redirect_ids[id_idx] == socket.id){
@@ -807,6 +811,9 @@ io.sockets.on("connection", socket => { //When a client connects
                     socket.to(redirect_ids[id_idx]).emit("redirect_session", id_idx+1, individual_passcode);
                 }
             }
+            
+            redirect_questions = [];
+            redirect_answers = [];
             
             for (let id_idx = 0; id_idx < wait_ids.length; id_idx++) {
             

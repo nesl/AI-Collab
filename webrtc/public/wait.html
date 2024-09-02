@@ -12,8 +12,20 @@
     <button class="ready" id="ready-btn" disabled onclick=readyFunction()></button>
     <p class="ready" id="waiting-txt"></p><p class="ready" id="redirect-count"></p>
     <p class="error" id="error-msg"></p>
+    
+    <div style="text-align:center; margin-top:5vw; font-size:1vw">
+        <hr>
+        <p><b>Please fill out the next fields before you enter the session</b></p>
+        <ul style="display: inline-block; list-style: none;">
+            <li>Name<input type="text" id="survey_name" placeholder="Enter your name" /></li>
+            <li>Age<input type="text" id="survey_age" placeholder="Enter your age" /></li>
+            <li style="margin-top:0.8vw"><p id="demographics_question1">Do you have any experience with first-person video games?</p><br><ul style="list-style: none; float: left; margin-top:0.8vw"><li style="display: inline; padding-left:50px">No<input type="radio" value="1" name="demographics1"></li><li style="display: inline; padding-left:50px">More or less<input type="radio" value="2" name="demographics1"></li><li style="display: inline; padding-left:50px">Yes, a lot<input type="radio" value="3" name="demographics1"></li></ul></li>
+        </ul>
+    </div>
+    
     <script src="/socket.io/socket.io.js"></script>
     <script src="/wait.js"></script>	
+    
     
   </body>
 </html>

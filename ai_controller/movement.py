@@ -509,7 +509,7 @@ class Movement:
         
     def cancel_cooperation(self, initial_state, message_text, message=""):
         
-        if message:
+        if message and self.help_status_info[0]:
             message_text += message
         #self.asked_time = time.time()
         self.help_status_info[1] = time.time()

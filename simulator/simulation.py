@@ -1217,7 +1217,7 @@ class Simulation(Controller):
             
             max_coord = int(self.scenario_size/2)-1
             object_models = {'iron_box':5} #, 'duffle_bag':1} #,'4ft_shelf_metal':1,'trunck':1,'lg_table_marble_green':1,'b04_backpack':1,'36_in_wall_cabinet_wood_beach_honey':1}
-
+            #object_models = {'iron_box':1}
 
             #possible_ranges = [np.arange(max_coord-3,max_coord+0.5,0.5),np.arange(max_coord-3,max_coord+0.5,0.5)]
             possible_ranges = [np.arange(self.scenario_size/2-self.wall_length+cell_size*1.5,self.scenario_size/2-cell_size*0.5,cell_size),np.arange(self.scenario_size/2-self.wall_length+cell_size*1.5,self.scenario_size/2-cell_size*0.5,cell_size)]
@@ -1303,7 +1303,7 @@ class Simulation(Controller):
                 
                     objects_remaining = total_num_objects
                     for w in weight_range:
-                        num_objects_to_assign = round(total_num_objects*percentage_weight)
+                        num_objects_to_assign = math.ceil(total_num_objects*percentage_weight)
                         
                         if objects_remaining-num_objects_to_assign < 0 or (not num_objects_to_assign and objects_remaining):
                             num_objects_to_assign = objects_remaining
@@ -1357,7 +1357,10 @@ class Simulation(Controller):
                             danger_level = 2
                         else:
                             danger_level = 1
-                        weight = weight_object_assignment[object_index]
+                        try:
+                            weight = weight_object_assignment[object_index]
+                        except:
+                            pdb.set_trace()
                         
                     else:
                         possible_weights = list(range(1,num_users+num_ais+2)) #Add 1 for objects too heavy to carry [1] #list(range(1,num_users+num_ais+1))

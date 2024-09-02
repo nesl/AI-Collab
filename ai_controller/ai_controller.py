@@ -1010,7 +1010,10 @@ while True:
                 
             for ob_key in range(robot_count):
             
-                location = robotState.get("agents", "last_seen_location", ob_key)
+                try:
+                    location = robotState.get("agents", "last_seen_location", ob_key)
+                except:
+                    pdb.set_trace()
                 neighbor_disabled = robotState.get("agents", "disabled", ob_key)
 
                 

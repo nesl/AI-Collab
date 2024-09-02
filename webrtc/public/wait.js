@@ -88,7 +88,31 @@ socket.on("error_message", (msg) => {
 });
 
 function readyFunction(){
-    socket.emit("redirect_session");
+
+    survey_name = document.getElementById('survey_name').value;
+    survey_age = document.getElementById('survey_age').value;
+    
+    question1 = document.getElementById("demographics_question1").textContent;
+    
+    const questions = [question1];
+    
+    var array_values = [survey_name, survey_age];
+
+    for(i = 0; i < questions.length; i++) {
+	    var survey_question = document.getElementsByName('demographics' + String(i+1));
+	    for(j = 0; j < survey_question.length; j++) {
+	        if(survey_question[j].checked){
+	            array_values.push(survey_question[j].value);
+	            break;
+	        }
+
+	    }
+	    if(array_values.length <= i+2){
+	        array_values.push("");
+	    }
+	}
+
+    socket.emit("redirect_session", ["Name", "Age", question1], array_values);
     document.getElementById('ready-btn').remove();
     
     document.getElementById('waiting-txt').textContent = "Waiting for other players...";

@@ -299,7 +299,7 @@ class AICollabEnv(gym.Env):
         self.agent_reset = False
         # Reset agent
         @self.sio.event
-        def agent_reset(config):
+        def agent_reset(config, yaml_doc):
             self.agent_reset = True
             self.map_config = config
             

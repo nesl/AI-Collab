@@ -73,17 +73,20 @@ class DecisionControl:
         self.team_structure = team_structure
         self.order_status = self.OrderStatus.finished
         self.order_status_info = []
-        self.leaders = []
         self.finished = False
         self.told_to_finish = False
         self.collect_attempts = {}
         self.agent_requesting_order = False
         
+        self.return_times = []
+        
+        if "return" in self.team_structure and bool(self.team_structure["return"][self.env.robot_id]):
+            return_time = 5*60
+            self.return_times = list(range(return_time,int(self.env.map_config["timer_limit"]), return_time))
+        
+        
         self.leader_id = ""
         
-        for tm in self.team_structure["hierarchy"].keys():
-            if self.team_structure["hierarchy"][tm] == "order":
-                self.leaders.append(tm)
         
         self.extended_goal_coords = env.goal_coords.copy()
         self.extended_goal_coords.extend([(g[0]+op[0],g[1]+op[1]) for g in env.goal_coords for op in [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,-1],[1,-1],[-1,1]] if [g[0]+op[0],g[1]+op[1]] not in env.goal_coords])
@@ -205,39 +208,39 @@ class DecisionControl:
                               
                 self.other_agents[agent_idx].observations.append("Asked me to help carry object " + rematch.group(2))
                 
-                if self.team_structure["role"][self.env.robot_id] != "sensing": 
-                    self.message_text,self.action_index,_ = self.movement.message_processing_carry_help(rm, robotState, self.action_index, self.message_text)
+                #if self.team_structure["role"][self.env.robot_id] != "sensing": 
+                self.message_text,self.action_index,_ = self.movement.message_processing_carry_help(rm, robotState, self.action_index, self.message_text)
+                
+                if MessagePattern.carry_help_accept(rm[0]) in self.message_text:
+                    self.helping_type = self.HelpType.carrying
+
+                #Make sure carrying action is robust to failure here
+                """                  
+                if re.search(MessagePattern.carry_help_regex(),message_text): #This means the robot is preparing to ask for help and reject the help request, we shouldn't allow this
+                    message_text = message_text.replace(re.search(MessagePattern.carry_help_regex(),message_text).group(), "")
+                    self.movement.asked_help = False
+                    self.movement.asked_time = time.time()
+                    action_index = self.last_action_index
+                """
+                """
+                if not robotState.object_held and self.movement.help_status == self.movement.HelpState.no_request and self.sense_request == self.State_Sense_Request.no_request: # accept help request
+                    #message_text += MessagePattern.carry_help_accept(rm[0])
+                    #self.movement.accepted_help = rm[0]
+                    self.help_requests.append(rm[0])
+
+                    #self.helping = rm[0]
+                    #self.action_index = self.State.check_neighbors
                     
-                    if MessagePattern.carry_help_accept(rm[0]) in self.message_text:
-                        self.helping_type = self.HelpType.carrying
-
-                    #Make sure carrying action is robust to failure here
-                    """                  
-                    if re.search(MessagePattern.carry_help_regex(),message_text): #This means the robot is preparing to ask for help and reject the help request, we shouldn't allow this
-                        message_text = message_text.replace(re.search(MessagePattern.carry_help_regex(),message_text).group(), "")
-                        self.movement.asked_help = False
-                        self.movement.asked_time = time.time()
-                        action_index = self.last_action_index
-                    """
-                    """
-                    if not robotState.object_held and self.movement.help_status == self.movement.HelpState.no_request and self.sense_request == self.State_Sense_Request.no_request: # accept help request
-                        #message_text += MessagePattern.carry_help_accept(rm[0])
-                        #self.movement.accepted_help = rm[0]
-                        self.help_requests.append(rm[0])
-
-                        #self.helping = rm[0]
-                        #self.action_index = self.State.check_neighbors
-                        
-                    else: #reject help request
-                        self.message_text += MessagePattern.carry_help_participant_reject(rm[0])
-                        #print("Cannot help", not robotState.object_held, not self.movement.helping, not self.movement.being_helped, not self.movement.accepted_help, not self.movement.asked_help, self.sense_request)
-                    """
-                
-                    """
-                    template_match = True
-                
-                    self.message_text,self.action_index,_ = self.movement.message_processing_carry_help(rm, robotState, self.action_index, self.message_text)
-                    """
+                else: #reject help request
+                    self.message_text += MessagePattern.carry_help_participant_reject(rm[0])
+                    #print("Cannot help", not robotState.object_held, not self.movement.helping, not self.movement.being_helped, not self.movement.accepted_help, not self.movement.asked_help, self.sense_request)
+                """
+            
+                """
+                template_match = True
+            
+                self.message_text,self.action_index,_ = self.movement.message_processing_carry_help(rm, robotState, self.action_index, self.message_text)
+                """
                 
             if re.search(MessagePattern.follow_regex(),rm[1]) or re.search(MessagePattern.following_regex(),rm[1]) or MessagePattern.carry_help_cancel() in rm[1] or MessagePattern.carry_help_reject(self.env.robot_id) in rm[1] or MessagePattern.carry_help_finish() in rm[1] or MessagePattern.carry_help_complain() in rm[1] or re.search(MessagePattern.object_not_found_regex(), rm[1]):
             
@@ -592,7 +595,12 @@ class DecisionControl:
                                             
                                             self.order_status = self.OrderStatus.ongoing
                                             
+                                            #But first i NNed to self.movement.help_status
+                                            
                                             self.message_text += MessagePattern.order_response(rm[0], "collect")
+                                            if self.movement.help_status == self.movement.HelpState.helping:
+                                                self.message_text += "I'll do it after I finish helping. "
+                                                
                                             self.leader_id = rm[0]
                                     else:
                                         self.message_text += MessagePattern.order_response_negative(rm[0], self.leader_id)
@@ -768,7 +776,7 @@ class DecisionControl:
                     self.leader_id = ""
                     self.action_function = ""
                     self.top_action_sequence = 0
-                    self.message_text += "Ok " + rm[0] + ". "
+                    self.message_text += "Ok " + rm[0] + ". I will not fulfill your order. "
                     
                     if self.movement.help_status == self.movement.HelpState.being_helped:
                         _,self.message_text,_ = self.movement.cancel_cooperation(self.State.decision_state,self.message_text,message=MessagePattern.carry_help_finish())
@@ -833,7 +841,9 @@ class DecisionControl:
                     self.other_agents[robot_idx].assignment = "" 
                     
                     robotState.set("agents", "team", robot_idx, "[]", info["time"])
-                    self.agent_requesting_order = True
+                    
+                    if all(robotState.get("agents", "type", -1)) or (not robotState.get("agents", "type", robot_idx) and self.team_structure["hierarchy"][rm[0]] == "obey"): #If there is no human or the human is obeying
+                        self.agent_requesting_order = True
                     
                     self.message_text += "Thanks " + rm[0] + ". "
                       
@@ -928,7 +938,11 @@ class DecisionControl:
                 
                 #if not robotState.robots[info['robot_key_to_index'][rm[0]]]["neighbor_type"]:
                 
-                if "hierarchy" in self.team_structure and self.team_structure["hierarchy"][self.env.robot_id] == "obey" and rm[0] in self.leaders:
+                
+                available_robots = [r[0] for r in self.env.map_config['all_robots']]
+                leaders = [tm for tm in self.team_structure["hierarchy"].keys() if self.team_structure["hierarchy"][tm] == "order" and tm in available_robots]
+                
+                if "hierarchy" in self.team_structure and self.team_structure["hierarchy"][self.env.robot_id] == "obey" and rm[0] in leaders:
                     self.finished = True
                         
                     for oa in self.other_agents:
@@ -971,6 +985,7 @@ class DecisionControl:
             
             if not template_match and translated_messages_index >= 0 and translated_messages_index >= rm_idx: #This means the translated message doesn't make sense
                 print("understand here 1")
+
                 self.message_text += "I didn't understand you " + rm[0] + ". "
                 continue
             
@@ -1350,7 +1365,10 @@ class DecisionControl:
             
             if (chosen_location[0] == -1 and chosen_location[1] == -1) or tuple(chosen_location) in self.extended_goal_coords: #or self.occMap[chosen_location[0],chosen_location[1]] != 2 if there is no object in the correct place
                 finished = True
-                action["action"],self.message_text,self.action_index = self.movement.cancel_cooperation(self.State.decision_state,self.message_text,message=MessagePattern.carry_help_complain())
+                action["action"],self.message_text,self.action_index = self.movement.cancel_cooperation(self.State.decision_state,self.message_text,message=MessagePattern.carry_help_finish())
+                self.object_of_interest = ""
+                if tuple(chosen_location) in self.extended_goal_coords:
+                    self.message_text += "The object is already in the goal area. "
             else:
             
                 wait = False
@@ -1372,6 +1390,7 @@ class DecisionControl:
                     if time.time() - self.movement.help_status_info[1] > self.help_time_limit2: #time.time() - self.movement.asked_time > self.help_time_limit2:                           
                         action["action"],self.message_text,self.action_index = self.movement.cancel_cooperation(self.State.decision_state,self.message_text,message=MessagePattern.carry_help_complain())
                         finished = True
+                        self.object_of_interest = ""
                     else:
                         action["action"] = Action.get_occupancy_map.value
                 else:            
@@ -1404,7 +1423,6 @@ class DecisionControl:
                     for g_coord in self.env.goal_coords:
                         if not self.occMap[g_coord[0],g_coord[1]]:
                             self.target_location = g_coord
-                            self.object_of_interest = "goal"
                             break
                     
                     
@@ -1412,9 +1430,11 @@ class DecisionControl:
             elif not combinations_found: #No way of moving                          
                 action["action"],self.message_text,self.action_index = self.movement.cancel_cooperation(self.State.decision_state,self.message_text,message=MessagePattern.carry_help_finish())
                 finished = True
+                self.object_of_interest = ""
             elif time.time() - self.movement.help_status_info[1] > self.help_time_limit2: #time.time() - self.movement.asked_time > self.help_time_limit2:                           
                 action["action"],self.message_text,self.action_index = self.movement.cancel_cooperation(self.State.decision_state,self.message_text,message=MessagePattern.carry_help_complain())
                 finished = True
+                self.object_of_interest = ""
             else:
                 action["action"] = Action.get_occupancy_map.value 
                 
@@ -1513,7 +1533,13 @@ class DecisionControl:
                 self.action_index = self.State.decision_state
             """
         elif self.top_action_sequence == 3:
-            action, finished, output = self.drop(robotState, next_observation, info)
+            
+            
+            if(not robotState.object_held):
+                finished = True
+                self.object_of_interest = ""
+            else:
+                action, _, output = self.drop(robotState, next_observation, info)
             
             self.action_index = self.State.decision_state
         
@@ -1529,7 +1555,6 @@ class DecisionControl:
             self.movement.help_status_info[2] = []
             self.movement.help_status_info[7] = []
             self.movement.help_status_info[3] = []
-            self.object_of_interest = ""
         
     
         return action, finished, output
@@ -1796,13 +1821,15 @@ class DecisionControl:
         
         return action,finished,output
     
-    def closest_distance_explore(self, robotState, exclude):
+    def closest_distance_explore(self, robotState, info, exclude):
     
         ego_location = np.where(robotState.latest_map == 5)
-    
+        
+        
+        agent_view_radius = int(self.env.view_radius)
         if exclude: #If points get excluded
             modified_map = np.copy(robotState.latest_map)
-            agent_view_radius = int(self.env.view_radius)
+            
             for ex in exclude:
             
                 x_inf = ex[0] - agent_view_radius
@@ -1844,6 +1871,31 @@ class DecisionControl:
             
             unknown_dist = self.env.compute_real_distance(unknown_loc,[ego_location[0][0],ego_location[1][0]])
             
+            skip_goal = False
+            if "interdependency" in self.team_structure and self.team_structure["interdependency"][self.env.robot_id] == "followed" and se_idx < len(still_to_explore[0])-1: #for autonomous strategies don't explore nearby locations
+                for other_agent_idx in range(robotState.get_num_robots()):
+                    
+                    robot_id = list(info['robot_key_to_index'].keys())[list(info['robot_key_to_index'].values()).index(other_agent_idx)]
+                
+                    if self.team_structure["interdependency"][robot_id] == "followed":
+                        agent_goal = self.other_agents[other_agent_idx].other_location["goal_location"]
+                        agent_location = robotState.get("agents", "last_seen_location", other_agent_idx)
+                        if agent_goal:
+                            first_condition = self.env.compute_real_distance(agent_goal,[ego_location[0][0],ego_location[1][0]]) < agent_view_radius
+                        else:
+                            first_condition = False
+                        if not (agent_location[0] == -1 and agent_location[1] == -1):
+                            second_condition = self.env.compute_real_distance(agent_location,[ego_location[0][0],ego_location[1][0]]) < agent_view_radius
+                        else:
+                            second_condition = False
+                            
+                        if first_condition or second_condition:
+                            skip_goal = True
+                            break
+            
+            if skip_goal:
+                continue
+            
             if unknown_dist < closest_dist:
                 closest_dist = unknown_dist
                 closest_idx = se_idx
@@ -1878,7 +1930,7 @@ class DecisionControl:
         
             if not self.explore_location:
             
-                x,y = self.closest_distance_explore(robotState, [])
+                x,y = self.closest_distance_explore(robotState, info, [])
                 
                 self.explore_location = [x,y]
             else:
@@ -2173,7 +2225,7 @@ class DecisionControl:
         if self.occMap[target_location[0],target_location[1]] == 3 or self.occMap[target_location[0],target_location[1]] == 2 or self.occMap[target_location[0],target_location[1]] == 1:
             finished = True
             action["action"] = Action.get_occupancy_map.value
-        elif self.occMap[target_location[0],target_location[1]] == 5:
+        elif self.occMap[target_location[0],target_location[1]] == 5 and not (self.return_times and info["time"] > self.return_times[0]):
         
             robot_disabled = robotState.get("agents", "disabled", -1)
         
@@ -2222,7 +2274,20 @@ class DecisionControl:
                 finished = True
             else:
                 action["action"] = low_action
-                
+        
+        if self.return_times and info["time"] > self.return_times[0]:
+            
+            robot_disabled = robotState.get("agents", "disabled", -1)
+            
+            available_robots = [r[0] for r in self.env.map_config['all_robots']]
+            print("Done???", [[a, info['robot_key_to_index'][a],self.nearby_other_agents, self.team_structure["return"].keys(), self.env.robot_id, available_robots, info['robot_key_to_index'].keys(), robot_disabled, bool(self.team_structure["return"][a])] for a in self.team_structure["return"].keys() if a != self.env.robot_id and a in info['robot_key_to_index'].keys()])
+            if all(True if info['robot_key_to_index'][a] in self.nearby_other_agents else False for a in self.team_structure["return"].keys() if a != self.env.robot_id and a in available_robots and a in info['robot_key_to_index'].keys() not in robot_disabled and bool(self.team_structure["return"][a])): #check that all required robots are nearby
+                finished = True
+                self.return_times.pop(0)
+
+                print("DONE WAITING")
+            else:
+                finished = False
              
         return action,finished,output
         
@@ -2823,9 +2888,9 @@ class DecisionControl:
             
                 teammate = list(info['robot_key_to_index'].keys())[list(info['robot_key_to_index'].values()).index(teammate_idx)]
             
-                if self.team_structure["role"][teammate] == "sensing" and teammate_idx not in pickup_excluded: #If you are only sensing, you cannot ask others to pickup objects. 
-                    pickup_excluded.append(teammate_idx)
-                elif self.team_structure["role"][teammate] == "lifter" and teammate_idx not in sensing_excluded: #If you are only lifting, you cannot ask others to sense objects
+                #if self.team_structure["role"][teammate] == "sensing" and teammate_idx not in pickup_excluded: #If you are only sensing, you cannot ask others to pickup objects. 
+                #    pickup_excluded.append(teammate_idx)
+                if self.team_structure["role"][teammate] == "lifter" and teammate_idx not in sensing_excluded: #If you are only lifting, you cannot ask others to sense objects
                     sensing_excluded.append(teammate_idx)
                     
             if teammate_idx in preexcluded:
@@ -2900,7 +2965,7 @@ class DecisionControl:
             
             
             
-            if (ob_location[0] == -1 and ob_location[1] == -1) or tuple(ob_location) in self.extended_goal_coords: #If the location of this objects is not known, continue
+            if (ob_location[0] == -1 and ob_location[1] == -1) or tuple(ob_location) in self.extended_goal_coords or (self.team_structure["hierarchy"][self.env.robot_id] == "order" and self.object_of_interest == str(object_id)): #If the location of this objects is not known, continue
                 continue
             else:
                 
@@ -2952,7 +3017,7 @@ class DecisionControl:
         
         #pdb.set_trace()
         
-        if self.team_structure["role"][self.env.robot_id] != "lifter" and not ("interdependency" in self.team_structure and self.team_structure["interdependency"][self.env.robot_id] == "follower"): #exploration
+        if not ("interdependency" in self.team_structure and self.team_structure["interdependency"][self.env.robot_id] == "follower"): #exploration
             agent_view_radius = int(self.env.view_radius)
             if "hierarchy" in self.team_structure and self.team_structure["hierarchy"][self.env.robot_id] == "order":
                 num_explore = 0
@@ -2986,11 +3051,15 @@ class DecisionControl:
         
     def get_closest_robot(self, team_structure_category, leader_type, robotState, info):
     
-        leaders = [tm for tm in self.team_structure[team_structure_category].keys() if self.team_structure[team_structure_category][tm] == leader_type]
+        available_robots = [r[0] for r in self.env.map_config['all_robots']]
+        leaders = [tm for tm in self.team_structure[team_structure_category].keys() if self.team_structure[team_structure_category][tm] == leader_type and tm in available_robots]
     
         ego_location = np.where(robotState.latest_map == 5)
     
-        leader_min_distance = [leaders[0],float("inf")]
+        try:
+            leader_min_distance = [leaders[0],float("inf")]
+        except:
+            pdb.set_trace()
         leader_id = leader_min_distance[0]
         
         if len(leaders) > 1:
@@ -3187,15 +3256,21 @@ class DecisionControl:
                     robot_id = self.env.robot_id
                 else:
                     robot_id = list(info['robot_key_to_index'].keys())[list(info['robot_key_to_index'].values()).index(r)]
-                if (eval(robotState.get("agents", "team", r)) and not (r == robotState.get_num_robots() and (not self.agent_requesting_order))) or (r not in self.nearby_other_agents and r != robotState.get_num_robots()) and not ((self.movement.help_status == self.movement.HelpState.being_helped or self.movement.help_status == self.movement.HelpState.helping) and robot_id in self.movement.help_status_info[0]):
+                if (r == robotState.get_num_robots() and robotState.object_held) or (eval(robotState.get("agents", "team", r)) and not (r == robotState.get_num_robots() and (not self.agent_requesting_order))) or (r not in self.nearby_other_agents and r != robotState.get_num_robots()) and not ((self.movement.help_status == self.movement.HelpState.being_helped or self.movement.help_status == self.movement.HelpState.helping) and robot_id in self.movement.help_status_info[0]):
                     preexcluded.append(r)
         
             print("Excluded:", preexcluded)
             
+            if robotState.get_num_robots() not in preexcluded and robotState.object_held:
+                pdb.set_trace()
+            
             #if robotState.get_num_robots() in preexcluded:
             #    pdb.set_trace()
+        
+        if self.movement.help_status == self.movement.HelpState.no_request and self.return_times and info["time"] > self.return_times[0]: #return to meeting point
+            utility["return"] = 100
             
-        if self.movement.help_status != self.movement.HelpState.accepted or ("hierarchy" in self.team_structure and self.team_structure["hierarchy"][self.env.robot_id] == "order"):
+        elif self.movement.help_status != self.movement.HelpState.accepted or ("hierarchy" in self.team_structure and self.team_structure["hierarchy"][self.env.robot_id] == "order"):
             possible_actions,utility = self.calculate_overall_utility(preexcluded, robotState, info)
         else: #If there is no possible action to do, just wait
             utility["wait"] = 100
@@ -3373,7 +3448,7 @@ class DecisionControl:
                     except:
                         pdb.set_trace()
                             
-                    location = self.closest_distance_explore(robotState, location_exclude)
+                    location = self.closest_distance_explore(robotState, info, location_exclude)
                     
                     location_exclude.append(location)
                     
@@ -3430,7 +3505,7 @@ class DecisionControl:
             
                 function_output = "wait()"
                 
-            elif "interdependency" in self.team_structure and self.team_structure["interdependency"][self.env.robot_id] == "follower":
+            elif "interdependency" in self.team_structure and self.team_structure["interdependency"][self.env.robot_id] == "follower" and "return" not in max_utility_key:
             
                 followed_id = self.get_closest_robot("interdependency", "followed", robotState, info)
                 
@@ -3438,11 +3513,21 @@ class DecisionControl:
                 
                 
             else: #otherwise let's go to the final meeting place
-                true_ending_locations = [loc for loc in self.ending_locations if self.occMap[loc[0],loc[1]] == 0 or self.occMap[loc[0],loc[1]] == -2]
+            
+                if "return" in max_utility_key:
+                    meeting_locations = self.extended_goal_coords
+                else:
+                    meeting_locations = self.ending_locations
+            
+                true_ending_locations = [loc for loc in meeting_locations if self.occMap[loc[0],loc[1]] == 0 or self.occMap[loc[0],loc[1]] == -2]
+                
+                
                 
                 target_location = random.choice(true_ending_locations)  
-                if [ego_location[0][0],ego_location[1][0]] in self.ending_locations: #If we are already in the ending locations just stay there
+                if [ego_location[0][0],ego_location[1][0]] in meeting_locations: #If we are already in the ending locations just stay there
                     target_location = [ego_location[0][0],ego_location[1][0]]
+                elif "return" in max_utility_key and self.nearby_other_agents:
+                    self.message_text += "Let's go back to the meeting point. "
                     
                 
                 if self.movement.help_status == self.movement.HelpState.being_helped:
