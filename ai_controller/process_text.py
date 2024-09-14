@@ -48,6 +48,12 @@ class Human2AIText:
         self.team_structure = team_structure
         
         self.unknown_location = "(99.99,99.99)"
+        
+        self.time_limit_groq = 60
+        
+        self.time_counted_groq = 0
+        
+        self.already_setup_llm = False
 
 
         self.CNL_MESSAGES = {
@@ -293,7 +299,7 @@ How would you adapt this result to send it to Agent B?<|eot_id|><|start_header_i
 
         self.type_request = """
 <|begin_of_text|><|start_header_id|>system<|end_header_id|>
-You are Agent """ + agent_id + """. You are part of a team whose mission is to dispose of all dangerous objects in a scene. You can move around, detect whether an object is dangerous or not, and carry objects. Objects are all of the same type, they only differ in their location, weight, and whether they are dangerous. Once you find a dangerous object you must check if you have the necessary strength to pick it up and put it in the safe area you already know. Try to engage with your teammates to come up with a strategy. Be brief in your responses.  Analyze the content of each message and try to tell me whether they are requesting information or an action from you. Output a JSON format with the following field for each analyzed message: "request_type", which should be one of the following {"information", "action", "none"}.
+You are Agent """ + agent_id + """. You are part of a team whose mission is to dispose of all dangerous objects in a scene. You can move around, detect whether an object is dangerous or not, and carry objects. Objects are all of the same type, they only differ in their location, weight, and whether they are dangerous. Once you find a dangerous object you must check if you have the necessary strength to pick it up and put it in the safe area you already know. Try to engage with your teammates to come up with a strategy. Be brief in your responses.  Analyze the content of each message and try to tell me whether they are requesting information or an action from you (sensing is an action too). Output a JSON format with the following field for each analyzed message: "request_type", which should be one of the following {"information", "action", "none"}.
 <|eot_id|><|start_header_id|>user<|end_header_id|>
 
 History of messages: [{'Sender': 'Agent D', 'Message': 'Hi everyone'}]
@@ -377,18 +383,21 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
     
         model = "meta-llama/Meta-Llama-3-8B" #"meta-llama/Meta-Llama-3.1-8B-Instruct" #"meta-llama/Meta-Llama-3-8B" #"meta-llama/Llama-2-7b-chat-hf"#"microsoft/phi-2"#"meta-llama/Llama-2-7b-chat-hf"
 
-        self.tokenizer = AutoTokenizer.from_pretrained(model)
-        
-        self.pipeline = transformers.pipeline(
-            "text-generation",
-            model=model,
-            model_kwargs={
-                "torch_dtype": torch.bfloat16,
-                #"quantization_config": {"load_in_8bit": True}
-            },
-            device_map="sequential",
-            #max_memory={0: '20GiB', 1: '12GiB'}
-        )
+        if not self.already_setup_llm:
+            self.tokenizer = AutoTokenizer.from_pretrained(model)
+            
+            self.pipeline = transformers.pipeline(
+                "text-generation",
+                model=model,
+                model_kwargs={
+                    "torch_dtype": torch.bfloat16,
+                    #"quantization_config": {"load_in_8bit": True}
+                },
+                device_map="sequential",
+                #max_memory={0: '20GiB', 1: '12GiB'}
+            )
+            
+            self.already_setup_llm = True
 
     def make_query(self, pipeline, tokenizer, prompt, return_only_new_text=True):
     
@@ -489,13 +498,15 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
         else:
         
             #tokenized_sentence = self.tokenizer.tokenize(prompt)
-            
+            '''
             outputs = self.pipeline(
                 prompt_messages,
                 max_new_tokens=100,
             )
         
             content = outputs[0]["generated_text"][-1]["content"]        
+            '''
+            content = self.make_query(self.pipeline, self.tokenizer, prompt)
         
         return content
 
@@ -729,11 +740,12 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
                     
                         for a in agent_id_extracted:
                         
-                            extracted_json[a] = extracted_json[a].upper()
-                            
-                            if not any([True if extracted_json[a].strip() == agent_name else False for agent_name in self.agent_names]):
-                                extracted_json[a] = self.agent_id
-                                #return 'Argument agent_id doesn\'t have the correct format',5
+                            if isinstance(extracted_json[a],str):
+                                extracted_json[a] = extracted_json[a].upper()
+                                
+                                if not any([True if extracted_json[a].strip() == agent_name else False for agent_name in self.agent_names]):
+                                    extracted_json[a] = self.agent_id
+                                    #return 'Argument agent_id doesn\'t have the correct format',5
                             
                             
                     
@@ -838,19 +850,7 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
         while True: #retries < max_retries: #Iterate until we get a correct answer
         
             llm_time = time.time()
-            if not self.openai:
-                llm_answer = self.make_query_openai(prompt) #self.make_query(self.pipeline, self.tokenizer, prompt)
-            else:
-                try:
-                    llm_answer = self.make_query_openai(prompt, bigger_model=True)
-                except groq.RateLimitError as e:
-                    self.openai = False
-                    print("Groq failed")
-                    self.setup_llama()
-                    self.openai = False
-                    llm_answer = self.make_query_openai(prompt) #self.make_query(self.pipeline, self.tokenizer, prompt)
-                except:
-                    time.sleep(2)
+            llm_answer = self.use_llm(prompt, bigger_model=True)
 
             print("Main prompt time:", llm_time - time.time())
             if print_debug:
@@ -1030,7 +1030,8 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
 
             #self.exchanged_messages[sender].append({"Sender": "Agent " + self.agent_id, "Message": text})
 
-            if robotState.args.sql:
+            type_request = "none"
+            if robotState.args.sql and self.openai:
                 type_request = self.type_of_request(sender, text, info, robotState, message_history, print_debug)
                 
                 if type_request == "information":
@@ -1061,6 +1062,30 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
             message_to_user = False
         
         return result_str,message_to_user
+     
+    def use_llm(self, prompt, bigger_model=False, response_format=None):
+    
+        if not self.openai and time.time() - self.time_counted_groq < self.time_limit_groq:
+            llm_answer = self.make_query_openai(prompt) #self.make_query(self.pipeline, self.tokenizer, prompt)
+        else:
+            self.openai = True
+            recoverable_error = True
+            while recoverable_error:
+                try:
+                    llm_answer = self.make_query_openai(prompt,bigger_model,response_format)
+                    recoverable_error = False
+                except groq.RateLimitError as e:
+                    #pdb.set_trace()
+                    self.openai = False
+                    print("Groq failed")
+                    self.setup_llama()
+                    self.time_counted_groq = time.time()
+                    llm_answer = self.make_query_openai(prompt) #self.make_query(self.pipeline, self.tokenizer, prompt)
+                    recoverable_error = False
+                except:
+                    time.sleep(2)
+                    
+        return llm_answer
         
     def free_response(self, text, print_debug, bigger_model=False, response_format=None):
     
@@ -1068,24 +1093,7 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
         print("Free response")
         
         llm_time = time.time()
-        if not self.openai:
-            llm_answer = self.make_query_openai(prompt) #self.make_query(self.pipeline, self.tokenizer, prompt)
-        else:
-            recoverable_error = True
-            while recoverable_error:
-                try:
-                    llm_answer = self.make_query_openai(prompt,bigger_model,response_format)
-                    recoverable_error = False
-                except groq.RateLimitError as e:
-                    pdb.set_trace()
-                    self.openai = False
-                    print("Groq failed")
-                    self.setup_llama()
-                    self.openai = False
-                    llm_answer = self.make_query_openai(prompt) #self.make_query(self.pipeline, self.tokenizer, prompt)
-                    recoverable_error = False
-                except:
-                    time.sleep(2)
+        llm_answer = self.use_llm(prompt, bigger_model, response_format)
 
         if print_debug:
             print(prompt,llm_answer)
@@ -1121,7 +1129,7 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
         try:
             bracket1_idx = llm_answer.find('{')
             bracket2_idx = llm_answer.find('}')
-            return_string = eval(llm_answer[bracket1_idx:bracket2_idx+1])["Message"]
+            return_string = "[INFORMATION] " + eval(llm_answer[bracket1_idx:bracket2_idx+1])["Message"]
         except:
             print("No personalization of message")
             

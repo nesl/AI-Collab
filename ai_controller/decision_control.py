@@ -45,6 +45,8 @@ class DecisionControl:
 
         self.other_agents = [self.Other_Agent() for r in range(len(self.env.map_config['all_robots']))]
         
+        
+        self.hierarchy_finished = False
         print(self.other_agents)
         
         self.message_text = ""
@@ -77,6 +79,9 @@ class DecisionControl:
         self.told_to_finish = False
         self.collect_attempts = {}
         self.agent_requesting_order = False
+        self.trigger = False
+        self.return_waiting_time = 0
+        
         
         self.return_times = []
         
@@ -460,6 +465,8 @@ class DecisionControl:
             
                 template_match = True
                 
+                self.trigger = True
+                
                 new_rm = list(rm)
                 new_rm[1] += MessagePattern.translate_item_message(new_rm[1],rm[0])
             
@@ -578,30 +585,31 @@ class DecisionControl:
                                         object_idx = info['object_key_to_index'][rematch.group(2)]
                                         
                                         object_location = robotState.get("objects", "last_seen_location", object_idx)
-                                        if (object_location[0] == -1 and object_location[1] == -1):
-                                            pdb.set_trace()
-                                        
-                                        object_weight = robotState.get("objects", "weight", object_idx)
-                                        
-                                        
-                                        if not object_weight:
-                                            self.message_text += "First give me the weight value of object " + rematch.group(2) + ". "
+                                        if (object_location[0] == -1 and object_location[1] == -1): #might be because object is already in goal
+                                            self.message_text += "I don't know where is object " + rematch.group(2) + ". Provide some information first. "
                                         else:
-                                            if object_weight > 1 and not (self.movement.help_status == self.movement.HelpState.being_helped and len(self.movement.help_status_info[0]) == object_weight-1):
-                                                self.create_action_function("ask_for_help('" + rematch.group(2) + "','" +  rm[0] + "')")
+                                        
+                                            object_weight = robotState.get("objects", "weight", object_idx)
+                                            
+                                            
+                                            if not object_weight:
+                                                self.message_text += "First give me the weight value of object " + rematch.group(2) + ". "
                                             else:
-                                                self.create_action_function("collect_object('" + rematch.group(2) + "')")
-                                                #pdb.set_trace()
-                                            
-                                            self.order_status = self.OrderStatus.ongoing
-                                            
-                                            #But first i NNed to self.movement.help_status
-                                            
-                                            self.message_text += MessagePattern.order_response(rm[0], "collect")
-                                            if self.movement.help_status == self.movement.HelpState.helping:
-                                                self.message_text += "I'll do it after I finish helping. "
+                                                if object_weight > 1 and not (self.movement.help_status == self.movement.HelpState.being_helped and len(self.movement.help_status_info[0]) == object_weight-1):
+                                                    self.create_action_function("ask_for_help('" + rematch.group(2) + "','" +  rm[0] + "')")
+                                                else:
+                                                    self.create_action_function("collect_object('" + rematch.group(2) + "')")
+                                                    #pdb.set_trace()
                                                 
-                                            self.leader_id = rm[0]
+                                                self.order_status = self.OrderStatus.ongoing
+                                                
+                                                #But first i NNed to self.movement.help_status
+                                                
+                                                self.message_text += MessagePattern.order_response(rm[0], "collect")
+                                                if self.movement.help_status == self.movement.HelpState.helping:
+                                                    self.message_text += "I'll do it after I finish helping. "
+                                                    
+                                                self.leader_id = rm[0]
                                     else:
                                         self.message_text += MessagePattern.order_response_negative(rm[0], self.leader_id)
                                 else:
@@ -692,16 +700,17 @@ class DecisionControl:
                                         self.movement.help_status_info[0].extend(teammates)
                                     
                                         object_location = robotState.get("objects", "last_seen_location", object_idx)
-                                        if (object_location[0] == -1 and object_location[1] == -1):
-                                            pdb.set_trace()
+                                        if (object_location[0] == -1 and object_location[1] == -1):#might be because object is already in goal
+                                            self.message_text += "I don't know where is object " + rematch.group(2) + ". Provide some information first. "
+                                        else:
                                         
-                                        self.create_action_function("collect_object('" + rematch.group(4) + "')")
-                                        match_pattern = re.search(MessagePattern.location_regex(),self.message_text)
-                                        
-                                        if match_pattern and not match_pattern.group(7):
-                                            self.message_text = self.message_text.replace(match_pattern.group(), match_pattern.group() + " Helping " + self.env.robot_id + ". ")
+                                            self.create_action_function("collect_object('" + rematch.group(4) + "')")
+                                            match_pattern = re.search(MessagePattern.location_regex(),self.message_text)
+                                            
+                                            if match_pattern and not match_pattern.group(7):
+                                                self.message_text = self.message_text.replace(match_pattern.group(), match_pattern.group() + " Helping " + self.env.robot_id + ". ")
 
-                                        self.order_status = self.OrderStatus.ongoing
+                                            self.order_status = self.OrderStatus.ongoing
                                         
                                             
                                     elif self.env.robot_id in teammates:
@@ -945,8 +954,8 @@ class DecisionControl:
                 if "hierarchy" in self.team_structure and self.team_structure["hierarchy"][self.env.robot_id] == "obey" and rm[0] in leaders:
                     self.finished = True
                         
-                    for oa in self.other_agents:
-                        oa.finished = True
+                    self.message_text += "Let's finish, " + rm[0] + ". "
+
                         
                     print("FINISHING BY ORDER")
                 else:
@@ -974,9 +983,11 @@ class DecisionControl:
             
                 rematch = re.search(MessagePattern.come_closer_regex(),rm[1])
                 
-                if rematch.group(1) == str(self.env.robot_id) and self.action_index == self.movement.State.wait_random:
-                    self.action_index = self.movement.last_action_index
-                    self.pending_location = []
+                if rematch.group(1) == str(self.env.robot_id):
+                    if self.action_index == self.movement.State.wait_random:
+                        self.action_index = self.movement.last_action_index
+                        self.pending_location = []
+                    self.message_text += "Ok " + rm[0] + ". "
             
             if re.search(MessagePattern.sensing_ask_help_incorrect_regex(),rm[1]):
                 template_match = True    
@@ -991,7 +1002,12 @@ class DecisionControl:
             
             print(not template_match, not robotState.get("agents", "type", info['robot_key_to_index'][rm[0]]), rm[1])
             if not template_match and not robotState.get("agents", "type", info['robot_key_to_index'][rm[0]]): #Human sent a message, we need to translate it. We put this condition at the end so that humans can also send messages that conform to the templates
-                translated_message,message_to_user = self.human_to_ai_text.convert_to_ai(rm[0], rm[1], info, robotState, self.message_history, True)
+                try:
+                    translated_message,message_to_user = self.human_to_ai_text.convert_to_ai(rm[0], rm[1], info, robotState, self.message_history, True)
+                except:
+                    translated_message = ""
+                    message_to_user = ""
+                    print("Error in translation")
                 
                 if translated_message:
                     if translated_message == self.human_to_ai_text.noop:
@@ -1078,6 +1094,14 @@ class DecisionControl:
         self.nearby_other_agents, self.disabled_agents = self.get_neighboring_agents(robotState, ego_location)
         
         
+        if not self.hierarchy_finished:
+            self.hierarchy_finished = True
+            available_robots = [r[0] for r in self.env.map_config['all_robots']]
+            for tm in self.team_structure["hierarchy"].keys():
+                if self.team_structure["hierarchy"][tm] == "obey" and tm in available_robots:
+                    self.other_agents[info['robot_key_to_index'][tm]].finished = True
+        
+        
         if messages: #Process received messages
             self.message_processing(messages, robotState, info)
             
@@ -1113,6 +1137,9 @@ class DecisionControl:
                 
         
             if self.action_index == self.State.decision_state or self.action_index == self.State.drop_object:
+            
+                robotState.set("agents", "current_state", robotState.get_num_robots(), self.action_function, info["time"])
+            
                 if not self.action_function or self.help_requests:
                     self.action_sequence = 0
                     self.top_action_sequence = 0
@@ -1186,6 +1213,9 @@ class DecisionControl:
 
 
             else:
+            
+                robotState.set("agents", "current_state", robotState.get_num_robots(), self.action_index.name, info["time"])
+                
                 action = self.sample_action_space
                 action["action"] = -1
                 action["num_cells_move"] = 1
@@ -2188,6 +2218,7 @@ class DecisionControl:
                     output = -1
                 else:
                     self.held_objects = str(object_id)
+                    robotState.set("agents", "carrying_object", robotState.get_num_robots(), str(object_id), info["time"])
             else:
                 ob_idx = info["object_key_to_index"][str(object_id)]
                 location = robotState.get("objects", "last_seen_location", ob_idx) #robotState.items[ob_idx]["item_location"]
@@ -2232,6 +2263,7 @@ class DecisionControl:
             print([r == 1 for r in robot_disabled], self.nearby_other_agents)
             if len(self.nearby_other_agents) == robotState.get_num_robots()-sum(r == 1 for r in robot_disabled):
             
+                '''
                 if "hierarchy" in self.team_structure and self.team_structure["hierarchy"][self.env.robot_id] == "order":
                     if self.finished: #not any(eval(robotState.get("agents", "team", r)) for r in range(robotState.get_num_robots()) if r not in robot_disabled):
                         self.report_heavy_dangerous_objects(robotState, info)
@@ -2246,10 +2278,10 @@ class DecisionControl:
                         print("SENDING MESSAGE go_meeting_point", info['time'], self.message_text)
                         self.message_text = ""
                         #pdb.set_trace()
-                        
-                elif "hierarchy" in self.team_structure and self.team_structure["hierarchy"][self.env.robot_id] == "obey":
+                '''        
+                if "hierarchy" in self.team_structure and self.team_structure["hierarchy"][self.env.robot_id] == "obey":
                     pass
-                else:
+                else: #TODO test this, maybe in a hierarchy don't finish when they say
                     if not self.finished or not self.told_to_finish:
                         self.message_text += MessagePattern.finish()
                         
@@ -2276,17 +2308,22 @@ class DecisionControl:
                 action["action"] = low_action
         
         if self.return_times and info["time"] > self.return_times[0]:
+        
+            if self.occMap[target_location[0],target_location[1]] == 5:
             
-            robot_disabled = robotState.get("agents", "disabled", -1)
-            
-            available_robots = [r[0] for r in self.env.map_config['all_robots']]
-            print("Done???", [[a, info['robot_key_to_index'][a],self.nearby_other_agents, self.team_structure["return"].keys(), self.env.robot_id, available_robots, info['robot_key_to_index'].keys(), robot_disabled, bool(self.team_structure["return"][a])] for a in self.team_structure["return"].keys() if a != self.env.robot_id and a in info['robot_key_to_index'].keys()])
-            if all(True if info['robot_key_to_index'][a] in self.nearby_other_agents else False for a in self.team_structure["return"].keys() if a != self.env.robot_id and a in available_robots and a in info['robot_key_to_index'].keys() not in robot_disabled and bool(self.team_structure["return"][a])): #check that all required robots are nearby
-                finished = True
-                self.return_times.pop(0)
+                robot_disabled = robotState.get("agents", "disabled", -1)
+                
+                available_robots = [r[0] for r in self.env.map_config['all_robots']]
+                print("Done???", [[a, info['robot_key_to_index'][a],self.nearby_other_agents, self.team_structure["return"].keys(), self.env.robot_id, available_robots, info['robot_key_to_index'].keys(), robot_disabled, bool(self.team_structure["return"][a])] for a in self.team_structure["return"].keys() if a != self.env.robot_id and a in info['robot_key_to_index'].keys()])
+                if all(True if info['robot_key_to_index'][a] in self.nearby_other_agents else False for a in self.team_structure["return"].keys() if a != self.env.robot_id and a in available_robots and a in info['robot_key_to_index'].keys() not in robot_disabled and bool(self.team_structure["return"][a])) or time.time() - self.return_waiting_time >= 120: #check that all required robots are nearby or wait for 2 minute
+                    finished = True
+                    self.return_times.pop(0)
 
-                print("DONE WAITING")
+                    print("DONE WAITING")
+                else:
+                    finished = False
             else:
+                self.return_waiting_time = time.time()
                 finished = False
              
         return action,finished,output
@@ -2301,6 +2338,9 @@ class DecisionControl:
         output = self.held_objects
         
         action["action"] = Action.drop_object.value
+        
+        robotState.set("agents", "carrying_object", robotState.get_num_robots(), "None", info["time"])
+        
 
         return action,finished,output
         
@@ -2466,7 +2506,9 @@ class DecisionControl:
                         return False
                 
             elif self.team_structure["interdependency"][self.env.robot_id] == "followed":
-                followed_ids = [tm for tm in self.team_structure["interdependency"].keys() if self.team_structure["interdependency"][tm] == "followed" and tm != self.env.robot_id]
+            
+                available_robots = [r[0] for r in self.env.map_config['all_robots']]
+                followed_ids = [tm for tm in self.team_structure["interdependency"].keys() if self.team_structure["interdependency"][tm] == "followed" and tm != self.env.robot_id and tm in available_robots]
                 
                 for f in followed_ids:
                 
@@ -2608,6 +2650,12 @@ class DecisionControl:
         
         actual_combinations = []
         
+        '''
+        for i in range(robotState.get_num_robots()):
+            if robotState.get("agents", "disabled", i) == 1: #Only take into account those robots that are not disabled
+                pdb.set_trace()
+                break
+        '''
         #print("Not available", not_available)
         for comb in all_robot_combinations: #For all possible sequences where we move sequentially to a subset of the agents
             comb_cost = 0
@@ -2948,12 +2996,16 @@ class DecisionControl:
         
         for ob_idx in range(robotState.get_num_objects()): #For all possible objects
         
+            
         
             collab_score = 10
             try:
                 object_id = list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(ob_idx)]
             except:
                 pdb.set_trace()
+        
+            for robo_idx in range(robotState.get_num_estimates(ob_idx)): 
+                print(object_id, ob_idx, robo_idx, robotState.get("object_estimates", "danger_status", [ob_idx,robo_idx]))
         
             if object_id in self.carried_objects.values(): #If this object is being carried by someone else continue with the others
                 continue
@@ -3300,6 +3352,7 @@ class DecisionControl:
         
             available = [r for r in range(robotState.get_num_robots()+1) if r not in preexcluded]
             
+            tmp_finish = False
             location_exclude = []
 
             for u in sorted_utility:
@@ -3464,9 +3517,12 @@ class DecisionControl:
                 
             if not function_output and robotState.get_num_robots() in available:
             
-                if not preexcluded:
-                    self.finished = True
-                    print("Preparing to finish!")
+                
+                #self.finished = True
+                tmp_finish = True
+                if self.movement.help_status == self.movement.HelpState.being_helped:
+                    _,self.message_text,self.action_index = self.movement.cancel_cooperation(self.State.decision_state,self.message_text, message=MessagePattern.carry_help_finish())
+                print("Preparing to finish!")
             
                 true_ending_locations = [loc for loc in self.ending_locations if self.occMap[loc[0],loc[1]] == 0 or self.occMap[loc[0],loc[1]] == -2]
                 
@@ -3475,8 +3531,16 @@ class DecisionControl:
                     target_location = [ego_location[0][0],ego_location[1][0]]
                     
                 robotState.set("agents", "team", robotState.get_num_robots(), "[]", info["time"])
+                
+                
                       
-                function_output = "go_to_meeting_point(" + str(target_location) + ")"            
+                function_output = "go_to_meeting_point(" + str(target_location) + ")"    
+                
+                  
+                
+            if not tmp_finish and self.finished: #If we haven't finished yet, say so
+                self.finished = False
+                self.message_text += MessagePattern.finish_reject()      
                         
         else:
         

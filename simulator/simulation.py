@@ -166,7 +166,7 @@ class Enhanced_Magnebot(Magnebot):
     
         if self.difficulty_level:
             if self.difficulty_level == 1:
-                low_threshold = 0.8
+                low_threshold = 0.7
             elif self.difficulty_level == 2:
                 low_threshold = 0.7
             elif self.difficulty_level == 3:
@@ -1231,6 +1231,7 @@ class Simulation(Controller):
             
             total_num_objects = sum(np.array(list(object_models.values()))*len(modifications))
             
+            weight_assignment = {}
             if self.options.level:
                 if self.options.level == 1:
                     num_dangerous = round(float(random.uniform(0.2, 0.3))*total_num_objects)
@@ -1242,7 +1243,7 @@ class Simulation(Controller):
                 dangerous_candidates = random.sample(list(range(total_num_objects)),num_dangerous)
             
                 percentage_weight = 0.5
-                weight_assignment = {}
+                
                 objects_remaining = total_num_objects
             
                 
@@ -1266,27 +1267,35 @@ class Simulation(Controller):
                         
                     for wi in range(len(weight_range)):
                         
-                        num_objects_to_assign = math.ceil(total_num_objects*percentage_weight)
+                        num_objects_to_assign = math.ceil(objects_remaining/2)+1 #math.ceil(total_num_objects*percentage_weight)
                     
                         if objects_remaining-num_objects_to_assign < 0 or (not num_objects_to_assign and objects_remaining):
                             num_objects_to_assign = objects_remaining
                         
-                        half_assign = math.ceil(num_objects_to_assign/2)
+                        if wi < len(weight_range)-1:
+                            half_assign = math.ceil(num_objects_to_assign/2)
+                        else:
+                            half_assign = math.ceil(num_objects_to_assign)
                         
                         #if num_objects_to_assign/2 == 0.5:
                         #    half_assign = 1
                         
                         weight_assignment[weight_range[wi]] = half_assign
+                        objects_remaining -= half_assign
                         
                         if wi < len(other_weight_range):
-                            weight_assignment[other_weight_range[wi]] = num_objects_to_assign-half_assign
-                        else:
+                            weight_assignment[other_weight_range[wi]] = half_assign
+                            objects_remaining -= half_assign
+                        elif wi-1 < len(other_weight_range):
                             weight_assignment[other_weight_range[wi-1]] += num_objects_to_assign-half_assign
+                            objects_remaining -= num_objects_to_assign-half_assign
                         
-                        objects_remaining -= num_objects_to_assign
+                        #objects_remaining -= num_objects_to_assign
                         
                         if not objects_remaining:
                             break
+                        elif wi == len(weight_range)-1:
+                            weight_assignment[weight_range[0]] += objects_remaining
                         
                         percentage_weight /= 2
                         
@@ -1332,7 +1341,8 @@ class Simulation(Controller):
             danger_prob = self.cfg['danger_prob']*100 #0.3 #1.0 #0.3
 
             final_coords = {objm: [] for objm in object_models.keys()}
-
+            
+            print(weight_assignment)
             
             if not self.options.single_object:
                 for m in modifications:

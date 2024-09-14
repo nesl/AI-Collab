@@ -805,6 +805,7 @@ io.sockets.on("connection", socket => { //When a client connects
     	            fs.appendFile(dir + dateTime + '.txt', '0.00' + ',7,' + String(id_idx+1) + ',' + redirect_cookies[id_idx] + ',' + JSON.stringify(redirect_questions[id_idx]) + ',' + JSON.stringify(redirect_answers[id_idx]) + '\n', err => {});
                 }
                 
+                console.log(id_idx, individual_passcode)
                 if(redirect_ids[id_idx] == socket.id){
                     socket.emit("redirect_session", id_idx+1, individual_passcode);
                 } else{

@@ -212,9 +212,9 @@ const saving_events = setInterval(save, 5 * 1000);
 
 const config = {
   iceServers: [
-    { 
-      urls: ["stun:stun.l.google.com:19302"]
-    },
+    //{ 
+    //  urls: ["stun:stun.l.google.com:19302"]
+    //},
     { 
        "urls": "turn:44.203.1.205:3478?transport=tcp",
        "username": config_api.username,
@@ -486,7 +486,7 @@ function build_team_strategy(){
         if(strategy_members[1].length == 0){
             strategy_text += "<li>You should all try going to different locations separately, sense objects and carry those that you can</li><li>Every 5 minutes you should all go back to the goal area and discuss any interesting objects found, as well as try to ask for help. AI agents will wait until everyone is there to resume their tasks</li>"
             image_txt = "<img src='/media/autonomous.gif' style='width:30%;height:auto;'/>";
-        } else if(strategy_members[0].length == 2){
+        } else if(strategy_members[0].length == 2 && team_strategy["return"][client_id]){
             strategy_text += "<li>You should split into two groups and go to different locations</li><li>Every 5 minutes you should all go back to the goal area and discuss any interesting objects found, as well as try to ask for help. AI agents will wait until everyone is there to resume their tasks</li>"
             image_txt = "<img src='/media/subunits.gif' style='width:30%;height:auto;'/>";
             if(strategy_members[1].includes("You")){

@@ -233,8 +233,9 @@ class RobotState:
                     collaborative_score REAL,
                     collaborative_score_of_me REAL,
                     team TEXT,
-                    carrying_object INTEGER,
+                    carrying_object TEXT,
                     disabled INTEGER,
+                    current_state TEXT,
                     sensor_benign REAL,
                     sensor_dangerous REAL
                 );""",
@@ -275,7 +276,7 @@ class RobotState:
                     sensor_parameters = env.neighbors_sensor_parameters[n]
                     robot_type = env.neighbors_info[n][1]
                     
-                self.cursor.execute('''INSERT INTO agents (agent_id, idx, last_seen_location, last_seen_time, type, carrying_object, disabled, sensor_benign, sensor_dangerous,collaborative_score,collaborative_score_of_me, team) VALUES (?, ?, "[]", 0, ?, 0, -1, ?, ?, 10, 10, "[]")''', (robot_id2, n, robot_type, sensor_parameters[0],sensor_parameters[1]))  
+                self.cursor.execute('''INSERT INTO agents (agent_id, idx, last_seen_location, last_seen_time, type, carrying_object, disabled, sensor_benign, sensor_dangerous,collaborative_score,collaborative_score_of_me, team, current_state) VALUES (?, ?, "[]", 0, ?, "None", -1, ?, ?, 10, 10, "[]", '')''', (robot_id2, n, robot_type, sensor_parameters[0],sensor_parameters[1]))  
         else:
             self.robots = [{"neighbor_type": env.neighbors_info[n][1], "neighbor_location": [-1,-1], "neighbor_time": [0.0], "neighbor_disabled": -1, "collaborative_score":10, "collaborative_score_of_me":10} for n in range(len(env.neighbors_info))] # 0 if human, 1 if ai
             

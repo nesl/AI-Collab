@@ -6,9 +6,9 @@ const config = {
   sdpSemantics: 'unified-plan',
 
   iceServers: [
-    { 
-      urls: ["stun:stun.l.google.com:19302"]
-    },
+    //{ 
+    //  urls: ["stun:stun.l.google.com:19302"]
+    //},
     { 
        "urls": "turn:44.203.1.205:3478?transport=tcp",
        "username": config_api.username,
