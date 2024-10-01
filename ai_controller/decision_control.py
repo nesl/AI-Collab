@@ -330,6 +330,9 @@ class DecisionControl:
                     
                     self.message_text += "Ok " + rm[0] + ". Don't help me then. " 
                     
+                    if self.helping_type == self.HelpType.sensing and self.movement.help_status == self.movement.HelpState.asking and self.movement.help_status_info and rm[0] in self.movement.help_status_info[0]: #HERE
+                        self.movement.help_status = self.movement.HelpState.no_request
+                    
             if re.search(MessagePattern.location_regex(),rm[1]):
             
                 template_match = True
