@@ -51,7 +51,7 @@ parser.add_argument("--use-occupancy", action='store_true', help="Use occupancy 
 parser.add_argument("--address", default='https://172.17.15.69:4000', help="Address where our simulation is running")
 parser.add_argument("--robot-number", default=1, help="Robot number to control")
 parser.add_argument("--view-radius", default=0, help="When using occupancy maps, the view radius")
-parser.add_argument("--control", default="heuristic", type=str, help="Type of control to apply: heuristic,llm,openai,deepq,q,manual,decision")
+parser.add_argument("--control", default="decision", type=str, help="Type of control to apply: heuristic,llm,openai,deepq,q,manual,decision")
 parser.add_argument("--message-loop", action="store_true", help="Use to allow messages to be sent back to sender")
 parser.add_argument("--role", default="general", help="Choose a role for the agent: general, scout, lifter")
 parser.add_argument("--planning", default="equal", help="Choose a planning role for the agent: equal, coordinator, coordinated")
@@ -222,13 +222,16 @@ class RobotState:
                 """CREATE TABLE objects (
                     object_id INTEGER PRIMARY KEY,
                     idx INTEGER NOT NULL UNIQUE,
-                    weight INTEGER
+                    weight INTEGER,
+                    already_sensed TEXT,
+                    carried_by TEXT
                 );""",
                 """CREATE TABLE agents (
                     agent_id TEXT PRIMARY KEY,
                     idx INTEGER NOT NULL UNIQUE,
                     type INTEGER,
                     last_seen_location TEXT,
+                    last_seen_room TEXT,
                     last_seen_time REAL,
                     collaborative_score REAL,
                     collaborative_score_of_me REAL,
@@ -241,6 +244,7 @@ class RobotState:
                 );""",
                 """CREATE TABLE agent_object_estimates (
                     last_seen_location TEXT,
+                    last_seen_room TEXT,
                     last_seen_time REAL,
                     danger_status TEXT,
                     estimate_correct_percentage REAL,
@@ -276,7 +280,7 @@ class RobotState:
                     sensor_parameters = env.neighbors_sensor_parameters[n]
                     robot_type = env.neighbors_info[n][1]
                     
-                self.cursor.execute('''INSERT INTO agents (agent_id, idx, last_seen_location, last_seen_time, type, carrying_object, disabled, sensor_benign, sensor_dangerous,collaborative_score,collaborative_score_of_me, team, current_state) VALUES (?, ?, "[]", 0, ?, "None", -1, ?, ?, 10, 10, "[]", '')''', (robot_id2, n, robot_type, sensor_parameters[0],sensor_parameters[1]))  
+                self.cursor.execute('''INSERT INTO agents (agent_id, idx, last_seen_location, last_seen_time, type, carrying_object, disabled, sensor_benign, sensor_dangerous,collaborative_score,collaborative_score_of_me, team, current_state,last_seen_room) VALUES (?, ?, "[]", 0, ?, "None", -1, ?, ?, 10, 10, "[]", '', '')''', (robot_id2, n, robot_type, sensor_parameters[0],sensor_parameters[1]))  
         else:
             self.robots = [{"neighbor_type": env.neighbors_info[n][1], "neighbor_location": [-1,-1], "neighbor_time": [0.0], "neighbor_disabled": -1, "collaborative_score":10, "collaborative_score_of_me":10} for n in range(len(env.neighbors_info))] # 0 if human, 1 if ai
             
@@ -483,7 +487,7 @@ class RobotState:
                     row = [(self.Danger_Status[row[0][0]].value,)]
             elif database == "objects":
             
-                if propert == "weight":
+                if propert == "weight" or propert == "already_sensed":
                     row = self.cursor.execute("SELECT " + propert + " FROM " + database + " WHERE idx = ?;", (idx,)).fetchall()
                 elif propert in ["danger_status", "estimate_correct_percentage"]:
                     legacy_to_sql = {"danger_status": "item_danger_level", "estimate_correct_percentage": "item_danger_confidence"}
@@ -552,7 +556,9 @@ class RobotState:
         if self.args.sql:
         
             if propert == "last_seen_location":
-                value = str(self.env.convert_to_real_coordinates(value))
+                value = self.env.convert_to_real_coordinates(value)
+                room = self.env.get_room(value,False)
+                value = str(value)
         
             if database == "objects":
                 #print("object myself", time, self.cursor.execute("SELECT * FROM agent_object_estimates aoe INNER JOIN objects o ON o.object_id = aoe.object_id ;""", ).fetchall())
@@ -561,12 +567,19 @@ class RobotState:
                     pdb.set_trace()
                 
                 try:
-                    self.cursor.execute("UPDATE agent_object_estimates SET " + propert + " = ?, last_seen_time = ? WHERE agent_id = ? AND object_id IN (SELECT object_id FROM objects WHERE idx = ?);", (value, float(time), self.env.robot_id, idx,)).fetchall()
+                    if propert == "last_seen_location":
+                        self.cursor.execute("UPDATE agent_object_estimates SET " + propert + " = ?, last_seen_time = ?, last_seen_room = ? WHERE agent_id = ? AND object_id IN (SELECT object_id FROM objects WHERE idx = ?);", (value, float(time), room, self.env.robot_id, idx,)).fetchall()
+                    else:
+                        self.cursor.execute("UPDATE agent_object_estimates SET " + propert + " = ?, last_seen_time = ? WHERE agent_id = ? AND object_id IN (SELECT object_id FROM objects WHERE idx = ?);", (value, float(time), self.env.robot_id, idx,)).fetchall()
+                    
                 except:
                     pdb.set_trace()
             elif database == "agents":
                 try:
-                    self.cursor.execute("UPDATE " + database + " SET " + propert + " = ? WHERE idx = ?;", (value, idx,)).fetchall()
+                    if propert == "last_seen_location":
+                        self.cursor.execute("UPDATE " + database + " SET " + propert + " = ?, last_seen_room = ? WHERE idx = ?;", (value, room, idx,)).fetchall()
+                    else:
+                        self.cursor.execute("UPDATE " + database + " SET " + propert + " = ? WHERE idx = ?;", (value, idx,)).fetchall()
                 except:
                     pdb.set_trace()
                 
@@ -605,9 +618,10 @@ class RobotState:
             
                 grid_location = [int(neighbor_output["neighbor_location"][0]),int(neighbor_output["neighbor_location"][1])]
                 robot_location = self.env.convert_to_real_coordinates(grid_location)
+                room = self.env.get_room(robot_location,False)
                 #print("neighbor", neighbor_output["neighbor_time"][0], self.cursor.execute("SELECT * FROM agent_object_estimates aoe INNER JOIN objects o ON o.object_id = aoe.object_id ;""", ).fetchall())
                 
-                self.cursor.execute("""UPDATE agents SET last_seen_location = ?, last_seen_time = ? WHERE idx = ?;""", (str(robot_location), float(neighbor_output["neighbor_time"][0]), robot_idx,))
+                self.cursor.execute("""UPDATE agents SET last_seen_location = ?, last_seen_time = ?, last_seen_room = ? WHERE idx = ?;""", (str(robot_location), float(neighbor_output["neighbor_time"][0]), room, robot_idx,))
                 
                 
                 if self.latest_map[grid_location[0], grid_location[1]] != 5:
@@ -630,7 +644,7 @@ class RobotState:
     
     def initialize_object(self, item_id, item_idx):
     
-        self.cursor.execute('''INSERT INTO objects (object_id, idx, weight) VALUES (?, ?, 0)''', (item_id, item_idx,))
+        self.cursor.execute('''INSERT INTO objects (object_id, idx, weight, already_sensed, carried_by) VALUES (?, ?, 0, "No", "")''', (item_id, item_idx,))
                 
         num_robots = self.get_num_robots()
         for n in range(num_robots+1):
@@ -640,7 +654,7 @@ class RobotState:
             else:
                 robot_id2 = list(self.env.robot_key_to_index.keys())[list(self.env.robot_key_to_index.values()).index(n)]
                 
-            self.cursor.execute('''INSERT INTO agent_object_estimates (object_id, last_seen_location, last_seen_time, danger_status, estimate_correct_percentage, agent_id) VALUES (?,"[]", 0, ?, 0, ?)''', (item_id, self.Danger_Status(0).name, robot_id2,))  
+            self.cursor.execute('''INSERT INTO agent_object_estimates (object_id, last_seen_location, last_seen_time, danger_status, estimate_correct_percentage, last_seen_room, agent_id) VALUES (?,"[]", 0, ?, 0, "", ?)''', (item_id, self.Danger_Status(0).name, robot_id2,))  
     
     def update_items(self,item_output, item_id, item_idx, robot_idx): #Updates items
 
@@ -678,14 +692,20 @@ class RobotState:
                 
             #print("myself", item_output["item_time"][0], self.cursor.execute("SELECT * FROM agent_object_estimates aoe INNER JOIN objects o ON o.object_id = aoe.object_id ;""", ).fetchall())
 
-            item_loc = str(self.env.convert_to_real_coordinates([int(item_output["item_location"][0]),int(item_output["item_location"][1])]))
-            self.cursor.execute("""UPDATE agent_object_estimates SET last_seen_location = ?, last_seen_time = ? WHERE object_id = ? AND agent_id = ?;""", (item_loc, float(item_output["item_time"][0]),item_id, robot_id2,))
+            item_loc = self.env.convert_to_real_coordinates([int(item_output["item_location"][0]),int(item_output["item_location"][1])])
+            room = self.env.get_room(item_loc,False)
+            item_loc = str(item_loc)
+            
+            self.cursor.execute("""UPDATE agent_object_estimates SET last_seen_location = ?, last_seen_time = ?, last_seen_room = ? WHERE object_id = ? AND agent_id = ?;""", (item_loc, float(item_output["item_time"][0]), room, item_id, robot_id2,))
             
             
             if item_output["item_danger_level"]:
                 danger_level_translate = self.Danger_Status(item_output["item_danger_level"]).name
                 self.cursor.execute("""UPDATE agent_object_estimates SET danger_status = ?, estimate_correct_percentage = ? WHERE object_id = ? AND agent_id = ?;""", (danger_level_translate, float(item_output["item_danger_confidence"][0]), item_id, robot_id2,))    
                 information_change = True
+                
+                if robot_idx == -1:
+                    self.cursor.execute("""UPDATE objects SET already_sensed = ? WHERE object_id = ?;""", ("Yes", item_id,))
                 
         else:     
 
@@ -732,6 +752,8 @@ class RobotState:
                 self.cursor.execute("""UPDATE objects SET weight = ? WHERE object_id = ?;""", (item_output["item_weight"], item_id,))    
         
         
+        if "carried_by" in item_output:
+            self.cursor.execute("""UPDATE objects SET carried_by = ? WHERE object_id = ?;""", (item_output["carried_by"], item_id,)) 
         
         if information_change:
             #print(item_output)
@@ -1048,7 +1070,7 @@ while True:
 
                                 ob_key = info["object_key_to_index"][map_object[1]]
                              
-                                template_item_info = {'item_weight': 0, 'item_danger_level': 0, 'item_danger_confidence': np.array([0.]), 'item_location': np.array([int(m_key_xy[0]), int(m_key_xy[1])], dtype=np.int16), 'item_time': np.array([info["time"]], dtype=np.int16)}
+                                template_item_info = {'item_weight': 0, 'item_danger_level': 0, 'item_danger_confidence': np.array([0.]), 'item_location': np.array([int(m_key_xy[0]), int(m_key_xy[1])], dtype=np.int16), 'item_time': np.array([info["time"]], dtype=np.int16), "carried_by": map_object[4]}
                                 robotState.update_items(template_item_info, map_object[1], ob_key, -1)
                                 #robotState.items[ob_key]["item_location"] = [int(m_key_xy[0]), int(m_key_xy[1])]
                     

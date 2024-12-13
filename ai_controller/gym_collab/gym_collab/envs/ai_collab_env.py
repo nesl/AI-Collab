@@ -1567,6 +1567,108 @@ class AICollabEnv(gym.Env):
     
         return pos_new
     
+    def get_coords_room(self, robo_map, room, objects=False):
+        walls_coords = [[-3.5,-3.5], [4.5,-3.5],[-3.5,4.5],[4.5,4.5]]
+        
+
+        if room == "1":
+            coord = self.convert_to_grid_coordinates(walls_coords[0])
+            new_array = robo_map[:coord[0]+1,:coord[1]+1]
+            
+            if objects:
+                free_coords = np.argwhere((new_array == 0) | (new_array == -2) | (new_array == 5) | (new_array == 2))
+            else:
+                free_coords = np.argwhere((new_array == 0) | (new_array == -2) | (new_array == 5))
+
+        elif room == "2":
+            coord = self.convert_to_grid_coordinates(walls_coords[1])
+            new_array = robo_map[coord[0]:,:coord[1]+1]
+            
+            if objects:
+                free_coords = np.argwhere((new_array == 0) | (new_array == -2) | (new_array == 5) | (new_array == 2))
+            else:
+                free_coords = np.argwhere((new_array == 0) | (new_array == -2) | (new_array == 5))
+            
+            free_coords += np.array([coord[0],0])
+        elif room == "3":
+            coord = self.convert_to_grid_coordinates(walls_coords[2])
+            new_array = robo_map[:coord[0]+1,coord[1]:]
+            
+            if objects:
+                free_coords = np.argwhere((new_array == 0) | (new_array == -2) | (new_array == 5) | (new_array == 2))
+            else:
+                free_coords = np.argwhere((new_array == 0) | (new_array == -2) | (new_array == 5))
+            
+            free_coords += np.array([0,coord[1]])
+        elif room == "4":
+            
+            coord = self.convert_to_grid_coordinates(walls_coords[3])
+            new_array = robo_map[coord[0]:,coord[1]:]
+            
+            if objects:
+                free_coords = np.argwhere((new_array == 0) | (new_array == -2) | (new_array == 5) | (new_array == 2))
+            else:
+                free_coords = np.argwhere((new_array == 0) | (new_array == -2) | (new_array == 5))
+            
+            free_coords += np.array([coord[0],coord[1]])
+        elif room == "goal":
+            new_array = robo_map[np.array(self.goal_coords)[:,0],np.array(self.goal_coords)[:,1]]
+            coords = np.argwhere((new_array == 0) | (new_array == -2) | (new_array == 5))
+            free_coords = np.array(self.goal_coords)[coords].squeeze()
+        else:
+            coord1 = self.convert_to_grid_coordinates(walls_coords[0])
+            coord2 = self.convert_to_grid_coordinates(walls_coords[1])
+            coord3 = self.convert_to_grid_coordinates(walls_coords[2])
+            coord4 = self.convert_to_grid_coordinates(walls_coords[3])
+
+            area_coords = np.array(list(np.ndindex((coord2[0]-(coord1[0]+1),coord1[1]+1)))) + np.array([coord1[0]+1,0])
+            new_array = robo_map[area_coords[:,0],area_coords[:,1]]
+            coords = np.argwhere((new_array == 0) | (new_array == -2) | (new_array == 5))
+            free_coords1 = area_coords[coords]
+            
+            area_coords = np.array(list(np.ndindex((robo_map.shape[0],coord3[1] - (coord1[1]+1))))) + np.array([0,coord1[1]+1])
+            new_array = robo_map[area_coords[:,0],area_coords[:,1]]
+            coords = np.argwhere((new_array == 0) | (new_array == -2) | (new_array == 5))
+            free_coords2 = area_coords[coords]
+            
+            area_coords = np.array(list(np.ndindex((coord4[0] - (coord3[0]+1),robo_map.shape[1] - coord3[1])))) + np.array([coord3[0]+1,coord3[1]])
+            new_array = robo_map[area_coords[:,0],area_coords[:,1]]
+            coords = np.argwhere((new_array == 0) | (new_array == -2) | (new_array == 5))
+            free_coords3 = area_coords[coords]
+            
+            free_coords = np.concatenate((free_coords1, free_coords2, free_coords3)).squeeze()
+            
+            
+        return free_coords
+
+
+            
+            
+    
+    def get_room(self, location, convert_coordinates):
+    
+        walls_coords = [[-3.5,-3.5], [4.5,-3.5],[-3.5,4.5],[4.5,4.5]]
+        
+        if convert_coordinates:
+            location = self.convert_to_real_coordinates(location)
+            
+        if not location:
+            return ""
+        
+        if np.linalg.norm(location) <= self.map_config['goal_radius'][0][0]:
+            room = "goal area"
+        elif location[0] <= walls_coords[0][0] and location[1] <= walls_coords[0][1]:
+            room = "room 1"
+        elif location[0] >= walls_coords[1][0] and location[1] <= walls_coords[1][1]:
+            room = "room 2"
+        elif location[0] <= walls_coords[2][0] and location[1] >= walls_coords[2][1]:
+            room = "room 3"
+        elif location[0] >= walls_coords[3][0] and location[1] >= walls_coords[3][1]:
+            room = "room 4"
+        else:
+            room = "main area"
+        
+        return room
     
     # Check movement limits
 

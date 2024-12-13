@@ -295,7 +295,7 @@ socket.on("simulator", (video_idx, config_options) => {
 //  .then(gotDevices);
 
 function getDevices() {
-  return navigator.mediaDevices.enumerateDevices();
+  return navigator.mediaDevices.getUserMedia({audio: false, video: true}).then(function(result){return navigator.mediaDevices.enumerateDevices()});
 }
 
 //Get simulated webcams and their video streams

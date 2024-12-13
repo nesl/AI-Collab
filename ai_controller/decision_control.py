@@ -15,7 +15,7 @@ import math
 import random
 from process_text import Human2AIText
 
-#TODO respond with object location when order is carrying? Make sure task is not ordered again, check cost for carrying. Agree to end between leaders. Distance 0 allow
+#TODO when agents order the same thing at the same time, an error occurs
 
 class DecisionControl:
 
@@ -81,6 +81,8 @@ class DecisionControl:
         self.agent_requesting_order = False
         self.trigger = False
         self.return_waiting_time = 0
+        self.functions_to_execute = []
+        self.room_object_ids = []
         
         
         self.return_times = []
@@ -1005,13 +1007,24 @@ class DecisionControl:
             
             print(not template_match, not robotState.get("agents", "type", info['robot_key_to_index'][rm[0]]), rm[1])
             if not template_match and not robotState.get("agents", "type", info['robot_key_to_index'][rm[0]]): #Human sent a message, we need to translate it. We put this condition at the end so that humans can also send messages that conform to the templates
+            
+                translated_message,message_to_user,functions = self.human_to_ai_text.convert_to_ai(rm[0], rm[1], info, robotState, self.message_history, True)
+                '''
                 try:
                     translated_message,message_to_user = self.human_to_ai_text.convert_to_ai(rm[0], rm[1], info, robotState, self.message_history, True)
                 except:
                     translated_message = ""
                     message_to_user = ""
                     print("Error in translation")
+                '''
                 
+                if functions:
+                    #cancel eveything, make sure to drop all objects maybe?
+                    print("GOT FUNCTIONS",functions)
+                    self.movement.cancel_cooperation(self.State.decision_state,self.message_text)
+                    self.functions_to_execute = functions
+                    self.action_function = ""
+                    
                 if translated_message:
                     if translated_message == self.human_to_ai_text.noop:
                         pass
@@ -1141,23 +1154,28 @@ class DecisionControl:
         
             if self.action_index == self.State.decision_state or self.action_index == self.State.drop_object:
             
+                
+            
                 robotState.set("agents", "current_state", robotState.get_num_robots(), self.action_function, info["time"])
             
                 if not self.action_function or self.help_requests:
                     self.action_sequence = 0
                     self.top_action_sequence = 0
                     
+                    if self.functions_to_execute:
+                        function_str = self.functions_to_execute.pop(0)
+                    else:
                     
-                    if "hierarchy" in self.team_structure:
-                        if self.team_structure["hierarchy"][self.env.robot_id] == "obey":
-                            function_str = self.decision_obey(messages, robotState, info, [], self.nearby_other_agents, next_observation)
-                        #elif self.team_structure["hierarchy"][self.env.robot_id] == "order":
-                        #    function_str = self.decision_order(messages, robotState, info, [], self.nearby_other_agents)
+                        if "hierarchy" in self.team_structure:
+                            if self.team_structure["hierarchy"][self.env.robot_id] == "obey":
+                                function_str = self.decision_obey(messages, robotState, info, [], self.nearby_other_agents, next_observation)
+                            #elif self.team_structure["hierarchy"][self.env.robot_id] == "order":
+                            #    function_str = self.decision_order(messages, robotState, info, [], self.nearby_other_agents)
+                            else:
+                                function_str = self.decision(messages, robotState, info, [], self.nearby_other_agents, self.help_requests)
+                                message_order = self.message_text
                         else:
                             function_str = self.decision(messages, robotState, info, [], self.nearby_other_agents, self.help_requests)
-                            message_order = self.message_text
-                    else:
-                        function_str = self.decision(messages, robotState, info, [], self.nearby_other_agents, self.help_requests)
                     
                     if function_str:
                     
@@ -1166,13 +1184,16 @@ class DecisionControl:
                         self.create_action_function(function_str)
                         
                     else:
-                        self.action_function = ""
+                        #self.action_function = self.create_action_function("wait")
                         print("action_function 0", self.agent_requesting_order)
-                        
-                try:
-                    action, action_finished,function_output = eval(self.action_function)
-                except:
-                    pdb.set_trace()
+
+                
+                print(self.action_function)   
+                #pdb.set_trace()                     
+                #try:
+                action, action_finished,function_output = eval(self.action_function)
+                #except:
+                #    pdb.set_trace()
                 
                 if message_order not in self.message_text:
                     self.message_text = message_order + self.message_text
@@ -1185,17 +1206,19 @@ class DecisionControl:
                     self.action_sequence = 0
                     self.top_action_sequence = 0
                     
-                    
-                    if "hierarchy" in self.team_structure:
-                        if self.team_structure["hierarchy"][self.env.robot_id] == "obey":
-                            function_str = self.decision_obey(messages, robotState, info, function_output, self.nearby_other_agents, next_observation)
-                        #elif self.team_structure["hierarchy"][self.env.robot_id] == "order":
-                        #    function_str = self.decision_order(messages, robotState, info, function_output, self.nearby_other_agents)
-                        else:
-                            robotState.set("agents", "team", robotState.get_num_robots(), "[]", info["time"])
-                            function_str = self.decision(messages, robotState, info, function_output, self.nearby_other_agents, self.help_requests)
+                    if self.functions_to_execute:
+                        function_str = self.functions_to_execute.pop(0)
                     else:
-                        function_str = self.decision(messages, robotState, info, function_output, self.nearby_other_agents, self.help_requests)
+                        if "hierarchy" in self.team_structure:
+                            if self.team_structure["hierarchy"][self.env.robot_id] == "obey":
+                                function_str = self.decision_obey(messages, robotState, info, function_output, self.nearby_other_agents, next_observation)
+                            #elif self.team_structure["hierarchy"][self.env.robot_id] == "order":
+                            #    function_str = self.decision_order(messages, robotState, info, function_output, self.nearby_other_agents)
+                            else:
+                                robotState.set("agents", "team", robotState.get_num_robots(), "[]", info["time"])
+                                function_str = self.decision(messages, robotState, info, function_output, self.nearby_other_agents, self.help_requests)
+                        else:
+                            function_str = self.decision(messages, robotState, info, function_output, self.nearby_other_agents, self.help_requests)
                     
                     if function_str:
                         self.create_action_function(function_str)
@@ -1289,6 +1312,24 @@ class DecisionControl:
 
         return action,terminated
         
+    def follow(self, agent_id, robotState, next_observation, info):
+    
+        finished = False
+        action = self.sample_action_space
+        action["robot"] = 0
+        action["action"] = Action.get_occupancy_map.value
+        output = []
+        
+        self.helping_type = self.HelpType.carrying
+        rm = [agent_id,MessagePattern.carry_help("0", 1)]
+        self.movement.message_processing_carry_help(rm, robotState, self.action_index, self.message_text)
+        
+        rm = [agent_id,MessagePattern.follow(self.env.robot_id)]
+        self.action_index,_,_ = self.movement.message_processing_help(rm, self.action_index, self.helping_type == self.HelpType.sensing, self.State.decision_state)
+        
+        return action, finished, output           
+    
+    
     def sense_by_request(self, object_id, agent_id, grid_location, robotState, next_observation, info):
     
         finished = False
@@ -1378,6 +1419,78 @@ class DecisionControl:
     
         return action, finished, output
         
+    def sense_room(self, room, robotState, next_observation, info):
+    
+        finished = False
+        action = self.sample_action_space
+        action["robot"] = 0
+        action["action"] = Action.get_occupancy_map.value
+        output = []
+        ego_location = np.where(robotState.latest_map == 5)
+        
+        if self.top_action_sequence == 0:
+            current_room = self.env.get_room([ego_location[0][0],ego_location[1][0]], True)
+            #print(current_room, "room " + room, current_room == "room " + room)
+            if current_room == "room " + room:
+                self.top_action_sequence += 1
+                '''
+                room_coords = self.env.get_coords_room(self, robotState.latest_map, room, objects=True)
+                cells = robotState.latest_map[room_coords[:,0],room_coords[:,1]]
+                
+                object_cells = np.argwhere(cells == 2)
+                
+                self.room_object_coords = room_coords[object_cells].squeeze().tolist()
+                '''
+                
+                self.room_object_ids = []
+                for ob_idx in range(robotState.get_num_objects()): #For all possible objects
+                    ob_location = robotState.get("objects", "last_seen_location", ob_idx)
+                    if self.env.get_room(ob_location, True) == current_room:
+                        object_id = list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(ob_idx)]
+                        self.room_object_ids.append(object_id)
+                
+                if not self.room_object_ids:
+                    finished = True
+                
+            else:
+                action, temp_finished, output = self.go_to_location("room " + room, robotState, next_observation, info)
+                
+        elif self.top_action_sequence == 1:
+        
+            while self.room_object_ids and robotState.get("object_estimates", "danger_status", [info['object_key_to_index'][self.room_object_ids[0]],robotState.get_num_robots()]):
+                self.room_object_ids.pop(0)
+        
+            if not self.room_object_ids:
+                finished = True
+            else:
+                
+                object_id = self.room_object_ids[0]
+                action, temp_finished, output = self.go_to_location(object_id, robotState, next_observation, info)
+                
+                if not temp_finished:
+                    self.top_action_sequence += 1
+                else:
+                    self.room_object_ids.pop(0)
+                    self.action_sequence = 0
+                    action, _, output = self.activate_sensor(robotState, next_observation, info)
+                    self.top_action_sequence = 3
+          
+        elif self.top_action_sequence == 2:
+            object_id = self.room_object_ids[0]
+            action, temp_finished, output = self.go_to_location(object_id, robotState, next_observation, info)
+            
+            if temp_finished:
+                self.room_object_ids.pop(0)
+                self.action_sequence = 0
+                action, _, output = self.activate_sensor(robotState, next_observation, info)
+                self.top_action_sequence = 3
+                
+        elif self.top_action_sequence == 3: 
+            action, temp_finished, output = self.activate_sensor(robotState, next_observation, info)
+            if temp_finished:
+                self.top_action_sequence = 1
+            
+        return action, finished, output     
         
     def collect_object(self, object_id, robotState, next_observation, info):
     
@@ -1971,17 +2084,40 @@ class DecisionControl:
                 y = self.explore_location[1]
             
   
-        elif str(object_id).isalpha(): #Agent
+        elif str(object_id)[0].isalpha(): #Agent
             
-            robot_idx = info['robot_key_to_index'][str(object_id)]
+            if "room" in object_id:
             
-            robo_location = robotState.get("agents", "last_seen_location", robot_idx)
+                current_room = self.env.get_room([ego_location[0][0],ego_location[1][0]], True)
+                
+                room_match = re.search("(\d+)",object_id)
+                if room_match:
+                    room_number = room_match.group(1)
+                    room = "room " + room_number
+                elif "goal" in current_room:
+                    room = "goal area"
+                else:
+                    room = "main area"
             
-            if (robo_location[0] == -1 and robo_location[1] == -1):
-                action["action"] = Action.get_occupancy_map.value
-                return action,True,output
+                if current_room == room:
+                    action["action"] = Action.get_occupancy_map.value
+                    output = [ego_location[0][0],ego_location[1][0]]
+                    finished = True
+                    return action,finished,output
+                    
+                location_list = self.env.get_coords_room(robotState.latest_map, object_id.replace("room ", "").strip())
+                x,y = random.choice(location_list)
+            else:
             
-            x,y = robo_location
+                robot_idx = info['robot_key_to_index'][str(object_id)]
+                
+                robo_location = robotState.get("agents", "last_seen_location", robot_idx)
+                
+                if (robo_location[0] == -1 and robo_location[1] == -1):
+                    action["action"] = Action.get_occupancy_map.value
+                    return action,True,output
+                
+                x,y = robo_location
             
         elif isinstance(object_id, list):    
         

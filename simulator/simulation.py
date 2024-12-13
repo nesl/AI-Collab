@@ -21,6 +21,7 @@ from magnebot.util import get_default_post_processing_commands
 
 from tdw.add_ons.occupancy_map import OccupancyMap
 from tdw.add_ons.logger import Logger
+from base64 import b64encode
 
 from PIL import Image, ImageOps
 
@@ -132,7 +133,7 @@ class Stats():
         self.grabbed_objects = 0
         self.grab_attempts = 0
         self.dropped_outside_goal = []
-        self.objects_sensed = 0
+        self.objects_sensed = [] #Maybe []
         self.sensor_activation = 0
         self.objects_in_goal = []
         self.dangerous_objects_in_goal = []
@@ -484,6 +485,7 @@ class Simulation(Controller):
                                 
                                 else:
                                     if all(object_id not in um.dynamic.held[arm] for um in [*self.user_magnebots,*self.ai_magnebots] for arm in [Arm.left,Arm.right]):
+                                        print("grasping object 3", object_id)
                                         extra_commands.append({"$type": "set_mass", "mass": 1, "id": object_id})
                                         duration.append(1)
                                         ai_agent.grasp(object_id, Arm(int(actions[2])))
@@ -1028,6 +1030,37 @@ class Simulation(Controller):
                                          "scale": 0.2,
                                          "shape":"circle"})
             self.wall_edges = [[wall['x']+wall_width-self.scenario_size/2,wall['y']+wall_width-self.scenario_size/2] for wall in [wall1_1[-1],wall1_2[-1],wall2_1[-1],wall2_2[-1], wall3_1[-1],wall3_2[-1], wall4_1[-1],wall4_2[-1]]]
+            
+            
+            number_angles = 100
+            
+            vertex = np.array([[self.wall_edges[w_idx][0],self.wall_edges[w_idx+1][1]] for w_idx in range(0,len(self.wall_edges),2)])
+
+            distance = [[] for v in range(vertex.shape[0])]
+            angle_number = [[] for v in range(vertex.shape[0])]
+            for n in range(number_angles):
+                angle_side = 2*n*np.pi/number_angles
+                xn = float(self.cfg["goal_radius"]+4)*np.cos(angle_side)
+                zn = float(self.cfg["goal_radius"]+4)*np.sin(angle_side)
+            
+                res = np.linalg.norm(vertex-np.array([xn,zn]),axis=1)
+                chosen_room = np.argmin(res)
+                distance[chosen_room].append(res[chosen_room])
+                angle_number[chosen_room].append([xn,zn])
+                
+            
+            for w_number in range(vertex.shape[0]):
+                room_number = w_number+1
+                #pdb.set_trace()
+                ind = np.argpartition(distance[w_number], room_number)[:room_number]
+                for r in range(room_number):
+                    xn,zn = angle_number[w_number][ind[r]]
+                    commands.append({"$type": "add_position_marker",
+                                             "position": {"x": xn, "y": 2, "z": zn},
+                                             "scale": 0.2,
+                                             "shape":"sphere",
+                                             "color": {"r": 0, "g": 0, "b": 1, "a": 1}})
+            
                                          
         elif self.scenario == 2: #Tutorial
             
@@ -2017,6 +2050,7 @@ class Simulation(Controller):
                                 del self.object_dropping[od_idx]
                             else:
                                 try:
+                                    print("grasping object 2")
                                     extra_commands.append({"$type": "set_mass", "mass": 1, "id": grasp_object})
                                     duration.append(1)
                                 except:
@@ -2783,10 +2817,12 @@ class Simulation(Controller):
             
             
             held_objects = []
+            held_objects_agent = {}
             for um in all_magnebots:
                 for arm in [Arm.left,Arm.right]:
                     if um.dynamic.held[arm].size > 0:
                         held_objects.append(um.dynamic.held[arm][0])
+                        held_objects_agent[um.dynamic.held[arm][0]] = self.robot_names_translate[str(um.robot_id)]
                 
             
             #Prepare occupancy maps and associated metadata
@@ -2826,7 +2862,13 @@ class Simulation(Controller):
 
                 if str(pos_new[0])+'_'+str(pos_new[1]) not in self.object_attributes_id:
                     self.object_attributes_id[str(pos_new[0])+'_'+str(pos_new[1])] = []
-                self.object_attributes_id[str(pos_new[0])+'_'+str(pos_new[1])].append((0,self.object_names_translate[o],self.required_strength[o],int(self.danger_level[o])))
+                    
+                if o in held_objects_agent.keys():
+                    carried_by = held_objects_agent[o]
+                else:
+                    carried_by = ""
+                
+                self.object_attributes_id[str(pos_new[0])+'_'+str(pos_new[1])].append((0,self.object_names_translate[o],self.required_strength[o],int(self.danger_level[o]), carried_by))
             
             if self.options.save_map and not self.timer:
                 map_f = open("maps/map"+ str(self.reset_number) + ".json", "w")
@@ -2975,7 +3017,9 @@ class Simulation(Controller):
                   
                     for object_id_translated in all_magnebots[idx].item_info.keys():
                         if "sensor" in all_magnebots[idx].item_info[object_id_translated] and robot_id_translated in all_magnebots[idx].item_info[object_id_translated]["sensor"]:
-                            all_magnebots[idx].stats.objects_sensed += 1
+                            #all_magnebots[idx].stats.objects_sensed += 1
+                            if object_id_translated not in all_magnebots[idx].stats.objects_sensed:
+                                all_magnebots[idx].stats.objects_sensed.append(object_id_translated)
                             
                             #len(list(all_magnebots[idx].item_info[object_id_translated]["sensor"].keys()))
                             
@@ -3612,6 +3656,7 @@ class Simulation(Controller):
                         if time.time() - od[1] > 1:
                         
                             try:
+                                print("grasping object 1")
                                 commands.append({"$type": "set_mass", "mass": 1000, "id": od[0]})
                                 to_remove.append(o_idx)
                             except:

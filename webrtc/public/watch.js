@@ -1111,7 +1111,7 @@ socket.on("stats", (stats_dict, final) => {
     
     Object.keys(stats_dict).forEach(function(key) {
         
-        if(key == "objects_in_goal" || key == "dropped_outside_goal"){
+        if(key == "objects_in_goal" || key == "dropped_outside_goal" || key == "objects_sensed"){
         
             const tr1 = tbl.insertRow();
             var td1 = tr1.insertCell();
@@ -1120,6 +1120,7 @@ socket.on("stats", (stats_dict, final) => {
             var td1 = tr1.insertCell();
             
             td1.appendChild(document.createTextNode(String(stats_dict[key].length)));
+            
         } else if(key == "dangerous_objects_in_goal") {
         
             const tr1 = tbl.insertRow();
