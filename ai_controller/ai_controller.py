@@ -1069,6 +1069,8 @@ while True:
 
 
                                 ob_key = info["object_key_to_index"][map_object[1]]
+                                
+                                #strength = map_object[2] #ELIMINATE
                              
                                 template_item_info = {'item_weight': 0, 'item_danger_level': 0, 'item_danger_confidence': np.array([0.]), 'item_location': np.array([int(m_key_xy[0]), int(m_key_xy[1])], dtype=np.int16), 'item_time': np.array([info["time"]], dtype=np.int16), "carried_by": map_object[4]}
                                 robotState.update_items(template_item_info, map_object[1], ob_key, -1)

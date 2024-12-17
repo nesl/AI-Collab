@@ -378,7 +378,9 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
 """
 
         
-        self.base_prompt = "Current Context: A team of agents has been assembled to dispose of all dangerous objects in an area. Objects are all of the same type, they only differ in their location, weight, and whether they are dangerous or not. To know if these objects are dangerous, agents have to sense them, but they will only obtain an estimate with certain confidence, therefore they may want to ask other agents to share their estimates. Heavy objects require multiple agents to carry them. There are 4 rooms in the area where objects have been placed, a main area, and a goal area where dangerous objects have to be carried into."""
+        self.base_prompt = "Current Context: A team of agents has been assembled to dispose of all dangerous objects in an area. Objects are all of the same type, they only differ in their location, weight, and whether they are dangerous or not. To know if these objects are dangerous, agents have to sense them, but they will only obtain an estimate with certain confidence, therefore they may want to ask other agents to share their estimates. Heavy objects require multiple agents to carry them. There are 4 rooms in the area where objects have been placed and agents have to explore, a main area, and a goal area where dangerous objects have to be carried into."""
+        
+        self.conversation_summaries = []
         
         if not self.openai:
             
@@ -618,10 +620,9 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
         
         return result
 
-    def chat_query(self, current_message, message_history_original, robotState):
-        prompt = self.start_header_str + "system" + self.end_header_str + self.base_prompt + " Benign objects should not be carried into the goal area.\nHere is the agents' conversation so far: "
+    def help_confirmation_query(self, current_message, message_history_original, robotState, info):
+        prompt = self.start_header_str + "system" + self.end_header_str + self.base_prompt + "\nHere is the agents' conversation so far: "
         
-        self.env.get_coords_room(robotState.latest_map, "main")
         
         message_history = message_history_original.copy()
         ego_location = np.where(robotState.latest_map == 5)
@@ -632,6 +633,69 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
         
         prompt += str(list_message_history)
         
+        #prompt += "\nAgent " + self.env.robot_id + "'s current knowledge: " + sql_result
+        
+        #current_state_robot = robotState.get("agents", "current_state", robotState.get_num_robots()).replace("self.", "").replace("robotState, next_observation, info","")
+        
+        #prompt += "\nCurrent action being executed by Agent " + self.env.robot_id + ": " + current_state_robot
+        
+        prompt += self.end_token_str + self.start_header_str + "user" + self.end_header_str
+        
+        prompt += "\nTask: Agent " + self.env.robot_id + " is currently asking for help to carry a heavy object. Given the context, is Agent " + message_history[-1]["Sender"] + " offering their help to Agent " + self.env.robot_id + "?\nOutput format: Output a json of the following format: \n{\nAgent " + message_history[-1]["Sender"] + "is offering help to Agent" + self.env.robot_id + "\": <True or False>,\n\"Response\": \"<response to Agent" + message_history[-1]["Sender"] + ">\"}\n"
+        
+        """
+        input_ids = self.tokenizer2(prompt, return_tensors="pt").to("cuda")
+        outputs = self.model2.generate(**input_ids, max_new_tokens=200)
+        output = self.tokenizer2.decode(outputs[0])
+        """
+        
+        
+        output = self.use_llm(prompt, bigger_model=True, response_format={"type": "json_object"})
+        print(prompt)
+        print(output)
+        
+        self.log_file.write(prompt)
+        self.log_file.write(output)
+        
+        real_output = output
+        #pdb.set_trace()
+        #real_output = output[len(prompt)+5:]
+        #pdb.set_trace()
+        dict_txt = real_output[real_output.find("{"): real_output.find("}")+1]
+        dict_txt = eval(dict_txt.replace("true", "True").replace("false","False"))
+
+        
+        list_response = list(dict_txt.values())
+        
+        message = ""
+        confirmation = False
+        for l in list_response:
+            if isinstance(l, bool):
+                confirmation = l
+            else:
+                message = l
+        
+        functions = []
+        if confirmation:
+            functions.append("accept_help(\"" + message_history[-1]["Sender"] + "\")")
+            
+        return message, functions
+
+    def chat_query(self, current_message, message_history_original, robotState, info):
+        prompt = self.start_header_str + "system" + self.end_header_str + self.base_prompt + " Benign objects should not be carried into the goal area.\nHere is the agents' conversation so far: "
+        
+        message_history = message_history_original.copy()
+        ego_location = np.where(robotState.latest_map == 5)
+        
+        message_history.append({"Sender":current_message[0], "Message":current_message[1]})
+        #Add context, current action
+        list_message_history = [[m["Sender"],m["Message"]] for m in message_history]
+        
+        prompt += str(list_message_history)
+        
+        if self.conversation_summaries:
+            prompt += "\nSummary of previous conversations: " + str(self.conversation_summaries)
+        
         prompt += "\nAgent " + self.env.robot_id + " is currently in " + self.env.get_room(ego_location,True)
         
         if robotState.object_held:
@@ -639,13 +703,15 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
         else:
             prompt += "\nAgent " + self.env.robot_id + " is not carrying any object"
         
-        sql_result = self.sql_request2(message_history,robotState)
+        sql_result = self.sql_request2(message_history,robotState,"")
         
         prompt += "\nAgent " + self.env.robot_id + "'s current knowledge: " + sql_result
         
-        current_state_robot = robotState.get("agents", "current_state", robotState.get_num_robots()).replace("self.", "").replace("robotState, next_observation, info","")
+        #current_state_robot = robotState.get("agents", "current_state", robotState.get_num_robots()).replace("self.", "").replace("robotState, next_observation, info","")
         
         #prompt += "\nCurrent action being executed by Agent " + self.env.robot_id + ": " + current_state_robot
+        
+        prompt += "\nAgent " + message_history[-1]["Sender"] + " is your commander. It expects you to follow each order it gives and reduce questions to a minimum."
         
         prompt += self.end_token_str + self.start_header_str + "user" + self.end_header_str
         
@@ -681,11 +747,11 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
                 if l == "action":
                     
                     message_history.append({"Sender":self.env.robot_id, "Message":dict_txt["Agent B"]})
-                    functions = self.summary_query(message_history, robotState)
+                    functions,description = self.summary_query(message_history, robotState, info)
                     self.conversation_times = 0
                     
                     if functions:
-                        dict_txt["Agent B"] += " [ACTION ACTIVATED]"
+                        dict_txt["Agent B"] += " [ACTION ACTIVATED]: " + description
                 '''
                 else:
                     self.conversation_times += 1
@@ -702,7 +768,7 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
         
         return dict_txt["Agent B"], functions
         
-    def summary_query(self, message_history, robotState):
+    def summary_query(self, message_history, robotState, info):
         prompt = self.start_header_str + "system" + self.end_header_str + self.base_prompt + "\nHere is the agents' conversation so far: "
         list_message_history = [[m["Sender"],m["Message"]] for m in message_history]
         
@@ -741,17 +807,17 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
         
         #output_txt = real_output[real_output.find("Action: ") + 8:].split("\n")[0]
         
-        functions = self.action_query(output_txt)
+        functions,description = self.action_query(output_txt,robotState, info)
         
-        return functions
+        return functions,description
         
         
-    def action_query(self, summary_text):
+    def action_query(self, summary_text, robotState, info):
         prompt = self.start_header_str + "system" + self.end_header_str + self.base_prompt + "\n Here is the action that Agent " + self.env.robot_id + " is planning to take: " + summary_text
         
         prompt += self.end_token_str + self.start_header_str + "user" + self.end_header_str
         
-        prompt += "\nTask: Given the above description, choose one or a sequence of functions from the next list for Agent B to execute and populate them with the correct arguments:\nFunctions:\nfollow(<agent>)\npick_up(<object>)\nsense(<object>)\nsense(<location>)\nmove(<location>)\nwait()\ntell_agent(<agent>,<text>)\nArguments:\n<agent> -> agent ID\n<object> -> object number\n<location> -> room\nOutput format: Output a json of the following format: \n{\n\"Actions\": \"<List of functions to call in order by Agent " + self.env.robot_id + " with required arguments>\"\n}\n"
+        prompt += "\nTask: Given the above description, choose one or a sequence of functions from the next list for Agent B to execute and populate them with the correct arguments:\nFunctions:\nfollow(<agent>)\npick_up(<object>)\nsense(<object>)\nsense(<location>)\nmove(<location>)\nwait()\ntell_agent(<agent>,<text>)\nArguments:\n<agent> -> agent ID\n<object> -> object number\n<location> -> room\nOutput format: Output a json of the following format: \n{\n\"Actions\": \"<List of functions to call in order by Agent " + self.env.robot_id + " with required arguments>\",\n\"Plan Description\": \"<Agent " + self.env.robot_id + "'s succint first-person description of actions>\"\n}\n"
         
         """
         input_ids = self.tokenizer2(prompt, return_tensors="pt").to("cuda")
@@ -768,7 +834,7 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
         real_output = output
         #pdb.set_trace()
         #real_output = output[len(prompt)+5:]
-        dict_txt = real_output[real_output.find("{"): real_output.find("}")+1]
+        dict_txt = real_output[real_output.find("{"): real_output.rfind("}")+1]
         dict_txt = eval(dict_txt)
         action_list = dict_txt["Actions"]
     
@@ -777,25 +843,38 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
             try:
                 if "pick_up" in a:
                     object_num = re.search("(\d+)",a).group(1)
+                    
+                    object_idx = info['object_key_to_index'][object_num]
+                    
+                    object_weight = robotState.get("objects", "weight", object_idx)
+                    
+                    if object_weight > 1:
+                        functions.append("ask_for_help_to_carry(" + object_num + ")")
+
                     functions.append("collect_object(" + object_num + ")")
                 elif "tell_agent" in a:
                     ta = a.split(",")
                     agent_id = re.search("(\w) *$",ta[0]).group(1).upper()
                     functions.append("go_to_location(\"" + agent_id + "\")")
                     message = ta[1][:ta[1].find(")")]
-                    functions.append("send_message(\"" + message + "\")")
+                    functions.append("tell_agent(\"" + message + "\")")
                 elif "move" in a:
-                    room_match = re.search("(\d+)",a)
-                    if room_match:
-                        room = room_match.group(1)
-                    elif "goal" in a:
-                        room = "goal"
+                
+                    if re.search(' *-?\d+(\.(\d+)?)? *, *-?\d+(\.(\d+)?)? *',a):
+                        coords = "[" + re.search(' *-?\d+(\.(\d+)?)? *, *-?\d+(\.(\d+)?)? *',a).group() + "]"
+                        functions.append("go_to_location(" + coords + ")")
                     else:
-                        room = "main"
-                    
-                    #location_list = self.env.get_coords_room(robotState.latest_map, room)
-                    #coord = random.choice(location_list).tolist()
-                    functions.append("go_to_location(\"room " + room + "\")")
+                        room_match = re.search("(\d+)",a)
+                        if room_match:
+                            room = room_match.group(1)
+                        elif "goal" in a:
+                            room = "goal"
+                        else:
+                            room = "main"
+                        
+                        #location_list = self.env.get_coords_room(robotState.latest_map, room)
+                        #coord = random.choice(location_list).tolist()
+                        functions.append("go_to_location(\"room " + room + "\")")
                 elif "sense" in a:
                     if "room" in a:
                         room_match = re.search("(\d+)",a)
@@ -806,7 +885,7 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
                         functions.append("sense_room(\"" + room + "\")")
                     else:
                         object_num = re.search("(\d+)",a).group(1)
-                        functions.append("sense_object(" + object_num + ")")
+                        functions.append("sense_object(" + object_num + ",[])")
                 elif "follow" in a:
                     agent_id = re.search("(\w) *\)",a).group(1).upper()
                     functions.append("follow(\"" + agent_id + "\")")
@@ -815,14 +894,14 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
                     continue
             except:
                 print("Error processing all functions")
-                pdb.set_trace()
+                #pdb.set_trace()
                 break
                 
         self.log_file.write('\n' + str(functions))
         
-        return functions
+        return functions,dict_txt["Plan Description"]
     
-    def sql_request2(self, message_history,robotState):
+    def sql_request2(self, message_history,robotState,alt):
     
         prompt = self.start_header_str + "system" + self.end_header_str + self.base_prompt + "\nHere is the agents' conversation so far: "
         
@@ -832,7 +911,12 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
         
         prompt += "\nHere is the structure of an SQL database containing all knowledge that Agent " + self.env.robot_id + " has of its environment:\n" + '\n'.join(robotState.create_tables)
     
-        prompt += "\nThe last message was sent by Agent " + list_message_history[-1][0] + ": \"" + list_message_history[-1][1] + "\". Task: What information is necessary for Agent " + self.env.robot_id + " to obtain from its database in order to answer to such a message? Don't use idx.\nOutput format: Output a json of the following format: \n{\n\"SQL Query\": \"<SQL Query of Agent " + self.env.robot_id + "'s database>\"\n}\n"
+        if not alt:
+            prompt += "\nThe last message was sent by Agent " + list_message_history[-1][0] + ": \"" + list_message_history[-1][1] + "\". Task: What information is necessary for Agent " + self.env.robot_id + " to obtain from its database in order to answer to such a message? "
+        else:
+            prompt += "\nAgent " + self.env.robot_id + " needs to send a message related to " + alt + ". Task: What information is necessary for Agent " + self.env.robot_id + " to obtain from its database in order to construct such a message? "
+        
+        prompt += "Don't use idx.\nOutput format: Output a json of the following format: \n{\n\"SQL Query\": \"<SQL Query of Agent " + self.env.robot_id + "'s database>\"\n}\n"
     
         output = self.use_llm(prompt, bigger_model=True, response_format={"type": "json_object"})
         print(prompt)
@@ -884,11 +968,11 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
         #if result:
         #    pdb.set_trace()
         
-        result = self.interpret_sql_query(sql_query_result,message_history,robotState)
+        result = self.interpret_sql_query(sql_query_result,message_history,robotState,alt)
         
         return result    
         
-    def interpret_sql_query(self,sql_result,message_history,robotState):
+    def interpret_sql_query(self,sql_result,message_history,robotState,alt):
     
         prompt = self.start_header_str + "system" + self.end_header_str + self.base_prompt + "\nHere is the agents' conversation so far: "
         
@@ -898,7 +982,18 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
         
         prompt += "\nHere is the structure of an SQL database containing all knowledge that Agent " + self.env.robot_id + " has of its environment:\n" + '\n'.join(robotState.create_tables)
     
-        prompt += "\nThe last message was sent by Agent " + list_message_history[-1][0] + ": \"" + list_message_history[-1][1] + "\".\nHere is the resulting SQL query and the result of executing such query from Agent " + self.env.robot_id + "'s database: " + sql_result + "\nTask: Interpret the results of the SQL query and summarize the information in one sentence.\nOutput format: Output a json of the following format: \n{\n\"SQL Query Result\": \"<Interpretation of SQL Query result from Agent " + self.env.robot_id + "'s database>\"\n}\n"
+        if not alt:
+            prompt += "\nThe last message was sent by Agent " + list_message_history[-1][0] + ": \"" + list_message_history[-1][1] + "\"."
+            
+        else:
+            prompt += "\nAgent " + self.env.robot_id + " needs to send a message related to " + alt + "."
+            
+        prompt += "\nHere is the resulting SQL query and the result of executing such query from Agent " + self.env.robot_id + "'s database: " + sql_result 
+        
+        if not alt:
+            prompt += "\nTask: Interpret the results of the SQL query and summarize the information in one sentence.\nOutput format: Output a json of the following format: \n{\n\"SQL Query Result\": \"<Interpretation of SQL Query result from Agent " + self.env.robot_id + "'s database>\"\n}\n"
+        else:
+            prompt += "\nTask: Interpret the results of the SQL query and create a brief message for Agent " + self.env.robot_id + " to send.\nOutput format: Output a json of the following format: \n{\n\"SQL Query Result\": \"<Message for Agent " + self.env.robot_id + " to send based on interpretation of SQL Query result>\"\n}\n"
         
         output = self.use_llm(prompt, bigger_model=True, response_format={"type": "json_object"})
         
@@ -1337,11 +1432,15 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
         
         return sql_query_result
 
-    def convert_to_ai(self, sender, text, info, robotState, message_history, print_debug):
+    def convert_to_ai(self, sender, text, info, robotState, message_history, print_debug, asking_for_help):
         
         result_err = 0
         
-        message, functions = self.chat_query((sender, text), message_history,robotState)
+        functions = []
+        if asking_for_help:
+            message, functions = self.help_confirmation_query((sender, text), message_history,robotState, info)
+        else:
+            message, functions = self.chat_query((sender, text), message_history,robotState, info)
         
         message_to_user = True
         
@@ -1461,7 +1560,35 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
             
             
         
+    def summarize_messages(self, message_history):
         
+        prompt = self.start_header_str + "system" + self.end_header_str + self.base_prompt + "\nHere is the agents' conversation so far: "
+        
+        #Add context, current action
+        list_message_history = [[m["Sender"],m["Message"]] for m in message_history]
+        
+        prompt += str(list_message_history)
+        
+        prompt += self.end_token_str + self.start_header_str + "user" + self.end_header_str
+        
+        prompt += "\nTask: Summarize the current conversation in one sentence.\n\nOutput format: Output a json of the following format: \n{\n\"Conversation Summary\": \"<One sentence summary>\"\n}\n"
+        
+        output = self.use_llm(prompt, bigger_model=True, response_format={"type": "json_object"})
+        print(prompt)
+        print(output)
+        
+        self.log_file.write(prompt)
+        self.log_file.write(output)
+        
+        real_output = output
+        #pdb.set_trace()
+        #real_output = output[len(prompt)+5:]
+        #pdb.set_trace()
+        dict_txt = real_output[real_output.find("{"): real_output.find("}")+1]
+        dict_txt = eval(dict_txt)
+
+        
+        self.conversation_summaries.append(dict_txt["Conversation Summary"])
         
 
 if __name__ == '__main__':
