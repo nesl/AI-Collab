@@ -348,6 +348,12 @@ io.sockets.on("connection", socket => { //When a client connects
 	} 
   });
   
+  socket.on("reset_partial", () => {
+  
+    socket.to(simulator).emit("reset_partial");
+  
+  });
+  
   
   socket.on("reset_tutorial", () =>{
     socket.to(simulator).emit("reset_tutorial");
@@ -434,6 +440,11 @@ io.sockets.on("connection", socket => { //When a client connects
 		message_sent = false;
   		fs.appendFile(dir + dateTime + '.txt', String(timer.toFixed(2)) +',' + '0' + ',' + JSON.stringify(location_map) + '\n', err => {});
 	}
+  });
+  
+  socket.on("get_config", () => {
+    yaml_doc = yaml.load(fs.readFileSync('team_structure.yaml', 'utf8'));
+    socket.emit("agent_reset", map_config, yaml_doc);
   });
   
   socket.on("agent_reset", (magnebot_id, timer, true_time, config) => {
@@ -620,6 +631,14 @@ io.sockets.on("connection", socket => { //When a client connects
   	socket.to(simulator).emit("disable", socket_to_simulator_id(socket.id));
   	
 
+  });
+  
+  socket.on("text_processing", (state) => {
+  
+    for (let id_idx = 0; id_idx < clients_ids.length; id_idx++) {
+        socket.to(clients_ids[id_idx]).emit("text_processing", state, socket_to_simulator_id(socket.id));
+    }
+  	
   });
   
   socket.on("stats", (magnebot_id, stats_dict, timer, final) => {

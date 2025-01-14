@@ -216,6 +216,17 @@
         
         <title>Team Strategy</title>
         
+        <title>Communication With AI Agents</title>
+        
+        <head><![CDATA[AI agents understand your Natural Language messages! Feel free to ask and respond to AI agents however you like through the Chat sidebar. You can tell them to act in complex ways, understanding that they can make compositions of the following actions:]]></head>
+        
+        <list><![CDATA[<b>Move to any location:</b> You can tell them to go to particular coordinates or rooms.]]></list>
+        <list><![CDATA[<b>Collect an object:</b> You can tell them to collect a particular object.]]></list>
+        <list><![CDATA[<b>Sense objects:</b> You can tell them to go sense a particular object or sense all objects in a particular room.]]></list>
+        <list><![CDATA[<b>Follow you:</b> You can tell them to follow you wherever you go so as to pick up heavy objects.]]></list>
+        <list><![CDATA[<b>Drop an object:</b> Drop an object they are carrying.]]></list>
+        <list><![CDATA[<b>Tell an agent something:</b> You can tell them to go tell something to another agent.]]></list>
+        <!--
         <title>Expectations About AI Agents</title>
         
         <head><![CDATA[AI agents have the following capabilities:]]></head>
@@ -227,6 +238,7 @@
         <list><![CDATA[You can ask them information about any object or agent they know]]></list>
         <list><![CDATA[If your team strategy has established leaders, you can order them around, otherwise you have to first request their help and then ask them to follow you, or for you to follow them]]></list>
         <list><![CDATA[They are able to understand your written messages, but they may fail sometimes, so just try again in different ways<br><img src='/media/magnebot.png' style='width:20%;height:auto;margin-top:20px;'/>]]></list>
+        
         
         <title>Communication With AI Agents</title>
         
@@ -244,7 +256,7 @@
         <list><![CDATA[<p><b style="font-size:1vw">Order to explore an area</b><br>(Exclusive for leaders)<br><br><b style="color: red; font-size:0.8vw">Example</b><ul><li><b style="color: red;">Agent A:</b> B, go to location (-2.3,0.1)<br><i>Note: you don't have to specify both object ID and location, choose only one</i></li><li><b style="color: blue;">Agent B:</b> I cannot fulfill you order right now A<br><i>Note: this dialogue is exclusive for non-leaders, this makes an order ineffective</i></li></ul></p>]]></list>
         <list><![CDATA[<p><b style="font-size:1vw">Cancel an order</b><br>(Exclusive for leaders)<br><br><b style="color: red; font-size:0.8vw">Example</b><ul><li><b style="color: red;">Agent A:</b> Order cancelled B</li></ul></p>]]></list>
         <list><![CDATA[<p><b style="font-size:1vw">Inform an order has been completed</b><br>After reporting the status of all objects found/sensed/carried, make sure to do this to obtain another order (exclusive for non-leaders)<br><br><b style="color: red; font-size:0.8vw">Example</b><ul><li><b style="color: red;">Agent A:</b> Order completed</li></ul></p>]]></list>
-        
+        -->
         
         
         

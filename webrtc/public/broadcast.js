@@ -390,6 +390,10 @@ function manualReset(){
   socket.emit("reset");
 }
 
+function manualPartialReset(){
+    socket.emit("reset_partial");
+}
+
 function manualResetTutorial(){
   socket.emit("reset_tutorial");
 }

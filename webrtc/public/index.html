@@ -35,6 +35,7 @@
 		  
 			<input type="text" id="command_text">
 			<button class="send" id="send_command_button"  onclick="sendCommand()">Send</button>
+			<p id="text_processing" style="color:white;line-height:0;"></p>
 		  
 		</div>
 		<h1 class="collapsible">Pattern Substitution</h1>
@@ -168,8 +169,8 @@
 	        	<div class="content">
 	        	<div id="popup-survey-content">
 	        	<h1>Survey</h1>
-	        	<p>Please rate how much you agree with each of the next statements</p>
-	        	<div id="survey-questions">
+	        	<p>Please use the slider to evaluate your perceptions with respect to the next statements or indicate if there is no applicability:</p>
+	        	<div id="survey-questions" style="width:100%">
 	        	
                 </div>
 	        	<button onclick="submitSurvey()" style="margin-top:20px" id="survey-button">Submit</button>

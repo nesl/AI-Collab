@@ -59,6 +59,7 @@ parser.add_argument('--webcam', action="store_true", help="Use images from virtu
 parser.add_argument('--video-index', type=int, default=0, help='index of the first /dev/video device to capture frames from')
 parser.add_argument('--config', type=str, default='team_structure.yaml', help='Path to team structure configuration file')
 parser.add_argument('--sql', default=True, action="store_true", help='Use SQL for message parsing')
+parser.add_argument('--no-reset', default=False, action="store_true", help='Continue without waiting for reset')
 #parser.add_argument("--openai", action='store_true', help="Use openai.")
 #parser.add_argument("--llm", action='store_true', help="Use LLM.")
 
@@ -209,78 +210,90 @@ class RobotState:
         self.create_tables = ''
     
         if args.sql:
-            database_name = "agent_db_" + str(args.robot_number) + ".db"
-            if os.path.exists(database_name):
-                os.remove(database_name)
-                
-            sqliteConnection = sqlite3.connect(database_name)
-            
-            self.cursor = sqliteConnection.cursor()
-            
-            #CHECK(collaborative_score >= 0 AND collaborative_score <= 10)
-            self.create_tables = [
-                """CREATE TABLE objects (
-                    object_id INTEGER PRIMARY KEY,
-                    idx INTEGER NOT NULL UNIQUE,
-                    weight INTEGER,
-                    already_sensed TEXT,
-                    carried_by TEXT
-                );""",
-                """CREATE TABLE agents (
-                    agent_id TEXT PRIMARY KEY,
-                    idx INTEGER NOT NULL UNIQUE,
-                    type INTEGER,
-                    last_seen_location TEXT,
-                    last_seen_room TEXT,
-                    last_seen_time REAL,
-                    collaborative_score REAL,
-                    collaborative_score_of_me REAL,
-                    team TEXT,
-                    carrying_object TEXT,
-                    disabled INTEGER,
-                    current_state TEXT,
-                    sensor_benign REAL,
-                    sensor_dangerous REAL
-                );""",
-                """CREATE TABLE agent_object_estimates (
-                    last_seen_location TEXT,
-                    last_seen_room TEXT,
-                    last_seen_time REAL,
-                    danger_status TEXT,
-                    estimate_correct_percentage REAL,
-                    agent_id TEXT,
-                    object_id INTEGER,
-                    FOREIGN KEY (agent_id) REFERENCES agents (agent_id),
-                    FOREIGN KEY (object_id) REFERENCES objects (object_id),
-                    PRIMARY KEY (agent_id,object_id)
-                );"""]
-              
-            for statement in self.create_tables:
-                self.cursor.execute(statement)
-            
-
         
+            database_name = "agent_db_" + str(args.robot_number) + ".db"
+            if not self.args.no_reset:
+                
+                if os.path.exists(database_name):
+                    os.remove(database_name)
+                    
+                sqliteConnection = sqlite3.connect(database_name)
+                
+                self.cursor = sqliteConnection.cursor()
+                
+                #CHECK(collaborative_score >= 0 AND collaborative_score <= 10)
+                self.create_tables = [
+                    """CREATE TABLE objects (
+                        object_id INTEGER PRIMARY KEY,
+                        idx INTEGER NOT NULL UNIQUE,
+                        weight INTEGER,
+                        already_sensed TEXT,
+                        carried_by TEXT
+                    );""",
+                    """CREATE TABLE agents (
+                        agent_id TEXT PRIMARY KEY,
+                        idx INTEGER NOT NULL UNIQUE,
+                        type INTEGER,
+                        last_seen_location TEXT,
+                        last_seen_room TEXT,
+                        last_seen_time REAL,
+                        collaborative_score REAL,
+                        collaborative_score_of_me REAL,
+                        team TEXT,
+                        carrying_object TEXT,
+                        disabled INTEGER,
+                        current_state TEXT,
+                        sensor_benign REAL,
+                        sensor_dangerous REAL,
+                        attitude TEXT
+                    );""",
+                    """CREATE TABLE agent_object_estimates (
+                        last_seen_location TEXT,
+                        last_seen_room TEXT,
+                        last_seen_time REAL,
+                        danger_status TEXT,
+                        estimate_correct_percentage REAL,
+                        agent_id TEXT,
+                        object_id INTEGER,
+                        FOREIGN KEY (agent_id) REFERENCES agents (agent_id),
+                        FOREIGN KEY (object_id) REFERENCES objects (object_id),
+                        PRIMARY KEY (agent_id,object_id)
+                    );"""]
+                  
+                for statement in self.create_tables:
+                    self.cursor.execute(statement)
+            else:
+                sqliteConnection = sqlite3.connect(database_name)
+                self.cursor = sqliteConnection.cursor()
+            
+        if self.args.no_reset:
+            file_name="agent_map_" + str(args.robot_number) + ".txt"
+            with open(file_name, 'rb') as filetoread:
+                latest_map = np.load(filetoread)
+                
         self.latest_map = latest_map
         self.object_held = object_held
         self.items = []
         self.item_estimates = {}
         self.env = env
+        self.current_action_description = ""
         
         
         if self.args.sql:
-            for n in range(len(env.neighbors_info)+1):
-            
-                if n == len(env.neighbors_info): #myself
-                    robot_id2 = self.env.robot_id
-                    sensor_parameters = env.sensor_parameters
-                    robot_type = 1
-                    
-                else:
-                    robot_id2 = list(self.env.robot_key_to_index.keys())[list(self.env.robot_key_to_index.values()).index(n)]
-                    sensor_parameters = env.neighbors_sensor_parameters[n]
-                    robot_type = env.neighbors_info[n][1]
-                    
-                self.cursor.execute('''INSERT INTO agents (agent_id, idx, last_seen_location, last_seen_time, type, carrying_object, disabled, sensor_benign, sensor_dangerous,collaborative_score,collaborative_score_of_me, team, current_state,last_seen_room) VALUES (?, ?, "[]", 0, ?, "None", -1, ?, ?, 10, 10, "[]", '', '')''', (robot_id2, n, robot_type, sensor_parameters[0],sensor_parameters[1]))  
+            if not self.args.no_reset:
+                for n in range(len(env.neighbors_info)+1):
+                
+                    if n == len(env.neighbors_info): #myself
+                        robot_id2 = self.env.robot_id
+                        sensor_parameters = env.sensor_parameters
+                        robot_type = 1
+                        
+                    else:
+                        robot_id2 = list(self.env.robot_key_to_index.keys())[list(self.env.robot_key_to_index.values()).index(n)]
+                        sensor_parameters = env.neighbors_sensor_parameters[n]
+                        robot_type = env.neighbors_info[n][1]
+                        
+                    self.cursor.execute('''INSERT INTO agents (agent_id, idx, last_seen_location, last_seen_time, type, carrying_object, disabled, sensor_benign, sensor_dangerous,collaborative_score,collaborative_score_of_me, team, current_state,last_seen_room,attitude) VALUES (?, ?, "[]", 0, ?, "None", -1, ?, ?, 10, 10, "[]", '', '','')''', (robot_id2, n, robot_type, sensor_parameters[0],sensor_parameters[1]))  
         else:
             self.robots = [{"neighbor_type": env.neighbors_info[n][1], "neighbor_location": [-1,-1], "neighbor_time": [0.0], "neighbor_disabled": -1, "collaborative_score":10, "collaborative_score_of_me":10} for n in range(len(env.neighbors_info))] # 0 if human, 1 if ai
             
@@ -789,7 +802,7 @@ just_starting = True
 
 while True:
 
-    observation, info = env.reset()
+    observation, info = env.reset(options=args)
     
     if just_starting: #Initialized only once
         if args.control == 'heuristic':
@@ -876,7 +889,7 @@ while True:
         
         #print(info["real_location"])
 
-        # GUANHUA Ji --------------------------------------------------------------------
+        # Computer Vision --------------------------------------------------------------------
         if args.webcam:
             x_loc = info['real_location'][0][0]
             y_loc = info['real_location'][0][2]
@@ -985,7 +998,7 @@ while True:
             '''
             cv2.waitKey(100) 
             '''
-        # GUANHUA Ji --------------------------------------------------------------------
+        # Computer Vision --------------------------------------------------------------------
 
 
         if args.message_loop:
@@ -1057,7 +1070,14 @@ while True:
                     max_y = ego_location[1][0] + view_radius
                     min_x = max(ego_location[0][0] - view_radius, 0)
                     min_y = max(ego_location[1][0] - view_radius, 0)
+                    
+                    previous_robo_map = np.copy(robotState.latest_map)
                     robotState.latest_map[min_x:max_x+1,min_y:max_y+1]= next_observation["frame"][min_x:max_x+1,min_y:max_y+1]
+                    
+                    if not np.array_equal(robotState.latest_map,previous_robo_map):
+                        file_name="agent_map_" + str(args.robot_number) + ".txt"
+                        with open(file_name, 'wb') as filetowrite:
+                            np.save(filetowrite,robotState.latest_map)
                     
                     robotState.map_metadata = info['map_metadata']
 

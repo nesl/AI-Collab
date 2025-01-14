@@ -315,6 +315,49 @@ socket.on("reset_announcement", () => {
     document.getElementById("popup-reset").classList.add("active");
 });
 
+var waiting_text_from_ai = [];
+socket.on("text_processing", (state,client_id) => {
+    
+    //check here
+    
+    if(! state){
+        if(waiting_text_from_ai.includes(client_id)){
+            waiting_text_from_ai.splice(waiting_text_from_ai.indexOf(client_id), 1);
+            
+            var txt;
+            
+            if(waiting_text_from_ai.length){
+                txt = waiting_text_from_ai.join(", ") + " processing response...";
+            }else{
+                txt = "";
+            }
+            document.getElementById("text_processing").textContent = txt;
+        }
+        
+        
+    } else{
+        var nearby = false;
+        for(ob_idx = 0; ob_idx < neighbors_list_store.length; ob_idx++){
+            if(neighbors_list_store[ob_idx][0] == client_id){
+                nearby = neighbors_list_store[ob_idx][5];
+                break;
+            }
+        }
+        
+        if(nearby){
+            var txt;
+            if(! waiting_text_from_ai.includes(client_id)){
+                waiting_text_from_ai.push(client_id);
+                txt = waiting_text_from_ai.join(", ") + " processing response...";
+                document.getElementById("text_processing").textContent = txt;
+            }
+            
+        }
+    }
+    
+    
+});
+
 var tutorial_client_side = "wait";
 var tutorial_object = "";
 var tutorial_mode;
@@ -803,7 +846,9 @@ function removeTags(str) {
     return str.replace( /(<([^>]+)>)/ig, '');
 }
 
-const questions = ["I performed well", "AI agents performed well", "The team performed well", "It was easy to communicate with the AI agents", "I was able to trust the AI agents", "AI agents are reliable teammates", "I preferred playing with the AI agents rather than with the other human players (if applicable)"];
+//const questions = ["I performed well", "AI agents performed well", "The team performed well", "It was easy to communicate with the AI agents", "I was able to trust the AI agents", "AI agents are reliable teammates", "I preferred playing with the AI agents rather than with the other human players (if applicable)"];
+
+const questions = ["Dependable","Reliable","Unresponsive","Predictable","Act consistently","Function successfully","Malfunction","Have errors","Provide feedback","Meet the needs of the mission/task","Provide appropriate information", "Communicate with people","Perform exactly as instructed", "Follow directions"];
 
 function create_survey(){
 
@@ -811,9 +856,25 @@ function create_survey(){
     
     survey.innerHTML = "";
     
-    const scale_values = ["Strongly disagree", "Disagree", "Neither agree/disagree", "Agree", "Strongly agree"];
+    //const scale_values = ["Strongly disagree", "Disagree", "Neither agree/disagree", "Agree", "Strongly agree","Not applicable to this robot","Not applicable to robots in general","Not enough information"];
+    
+    const scale_values = ["Not applicable to these AI agents","Not applicable to AI agents in general","Not enough information"];
+    
+    
     
     for (let i = 0; i < questions.length; i++) {
+    
+        if(i == 0 || i == 4){
+            var p_element = document.createElement("h3");
+            if(i == 0){
+                p_element.textContent = "What % of the time will these AI agents be:";
+            } else{
+                survey.appendChild(document.createElement("br"));
+                p_element.textContent = "What % of the time will these AI agents:";
+            }
+            survey.appendChild(p_element);
+        }
+    
         var p_element = document.createElement("p");
         p_element.style.textAlign = "left";
         var bold_element = document.createElement("b");
@@ -823,8 +884,40 @@ function create_survey(){
         var ul_element = document.createElement("ul");
         ul_element.className = "likert";
         
+        var li_element = document.createElement("li");
+        var input_element = document.createElement("input");
+        input_element.type = "range";
+        input_element.id = "survey" + String(i);
+        input_element.min = "0";
+        input_element.max = "100";
+        input_element.value = "50";
+        input_element.step = "10";
+        input_element.style = "width: 20vw;";
+        input_element.oninput = new Function("value","document.getElementById(\"psurvey" + String(i) + "\").textContent = value.target.value + \"%\"");
+        li_element.appendChild(input_element);
+        ul_element.appendChild(li_element);
+        var li_element = document.createElement("li");
+        var p_element = document.createElement("p");
+        p_element.id = "psurvey" + String(i);
+        p_element.textContent = "50%";
+        li_element.appendChild(p_element);
+        ul_element.appendChild(li_element);
+        //ul_element.appendChild(document.createElement("br"));
+        survey.appendChild(ul_element);
+        survey.appendChild(document.createElement("br"));
+        survey.appendChild(document.createElement("br"));
         
-        for (let j = 0; j < 5; j++){
+        var ul_element = document.createElement("ul");
+        ul_element.className = "likert";
+        
+        var li_element = document.createElement("li");
+        var bold_element = document.createElement("b");
+        bold_element.textContent = "Or:";
+        li_element.appendChild(bold_element);
+        ul_element.appendChild(li_element);
+        
+        
+        for (let j = 0; j < scale_values.length; j++){
         
             var li_element = document.createElement("li");
             li_element.textContent = scale_values[j];
@@ -834,8 +927,8 @@ function create_survey(){
             var li_element = document.createElement("li");
             var input_element = document.createElement("input");
             input_element.type = "radio";
-            input_element.value = String(j+1);
-            input_element.name = "survey" + String(i);
+            input_element.value = String((j+1)*10 + 100);
+            input_element.name = "rsurvey" + String(i);
             li_element.appendChild(input_element);
             ul_element.appendChild(li_element);
             
@@ -885,7 +978,7 @@ function reset(config_options){
     create_survey();
     
     document.getElementById("popup-report").classList.remove("active");
-    document.getElementById("popup-survey").classList.remove("active");
+    document.getElementById("popup-survey").classList.remove("active"); //change
     document.getElementById("popup-reset").classList.remove("active");
     document.getElementById("popup-stats").classList.remove("active");
     document.getElementById("popup-stats-content").innerHTML = ""; //"<h1>Stats</h1><br>";
@@ -2588,16 +2681,19 @@ function submitSurvey(){
 	var array_values = [];
 	
 	for(i = 0; i < questions.length; i++) {
-	    var survey_question = document.getElementsByName('survey' + String(i));
+	    var survey_question = document.getElementsByName('rsurvey' + String(i));
+	    var not_applicable = false;
 	    for(j = 0; j < survey_question.length; j++) {
 	        if(survey_question[j].checked){
 	            array_values.push(survey_question[j].value);
+	            not_applicable = true;
 	            break;
 	        }
 	        
 	    }
-	    if(array_values.length <= i){
-	        array_values.push("");
+	    if(! not_applicable){
+	        var survey_range = document.getElementById('survey' + String(i));
+	        array_values.push(survey_range.value);
         }
 	}
 	

@@ -686,38 +686,14 @@ class AICollabEnv(gym.Env):
 
         super().reset(seed=seed)
         
-        
-        if self.delete:
-            print("Delete")
-            while not self.agent_reset:
-                time.sleep(0.2)
-                continue
-            print("Reset delete")
-            self.sio.emit(
-                    "watcher_ai",
-                    (self.client_number,
-                     self.use_occupancy,
-                     "",
-                     self.view_radius,
-                     self.centered_view,
-                     self.skip_frames))
-        
-            while self.delete:
-                time.sleep(0.2)
-                continue
-        
-        print("Starting to reset agent")
-        if not self.truncated and not self.agent_reset:
-            self.sio.emit("disable")
-            print("Disabling agent")
-        if not self.agent_reset:
-            self.sio.emit("reset") #self.sio.emit("reset_ai")
-            print("Reseting agent")
-            while not self.agent_reset:
-                continue
-                
+
+        if not (options and options.no_reset):
+            
             if self.delete:
                 print("Delete")
+                while not self.agent_reset:
+                    time.sleep(0.2)
+                    continue
                 print("Reset delete")
                 self.sio.emit(
                         "watcher_ai",
@@ -731,7 +707,38 @@ class AICollabEnv(gym.Env):
                 while self.delete:
                     time.sleep(0.2)
                     continue
-
+            
+            print("Starting to reset agent")
+            if not self.truncated and not self.agent_reset:
+                self.sio.emit("disable")
+                print("Disabling agent")
+            if not self.agent_reset:
+                self.sio.emit("reset") #self.sio.emit("reset_ai")
+                print("Reseting agent")
+                while not self.agent_reset:
+                    continue
+                    
+                if self.delete:
+                    print("Delete")
+                    print("Reset delete")
+                    self.sio.emit(
+                            "watcher_ai",
+                            (self.client_number,
+                             self.use_occupancy,
+                             "",
+                             self.view_radius,
+                             self.centered_view,
+                             self.skip_frames))
+                
+                    while self.delete:
+                        time.sleep(0.2)
+                        continue
+        else:
+            self.sio.emit("get_config")
+            while not self.agent_reset:
+                continue
+            
+            
         self.agent_reset = False
         
         
@@ -1365,14 +1372,14 @@ class AICollabEnv(gym.Env):
                                     '''
 
                         # Update robots locations
-                        robots_locations = np.where(occupancy_map == 3)
+                        robots_locations = np.where((occupancy_map == 3) | (occupancy_map == 5))
                         robots_found = []
                         for ol_idx in range(len(robots_locations[0])):
                             key = str(
                                 robots_locations[0][ol_idx]) + '_' + str(robots_locations[1][ol_idx])
                             
                             for object_info in objects_metadata[key]:
-                                if object_info[0]:
+                                if object_info[0] and object_info[1] != self.robot_id:
                                     robots_found.append(str(object_info[1]))
                                     
                                     self.update_neighbors_info(
