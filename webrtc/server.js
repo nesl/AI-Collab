@@ -278,7 +278,7 @@ io.sockets.on("connection", socket => { //When a client connects
         ai_ids[client_number-1] = socket.id;
         all_ids[client_number-1+user_ids_list.length] = socket.id;
 
-        socket.emit("watcher_ai", ai_ids_list[client_number-1], map_config);
+        socket.emit("watcher_ai", ai_ids_list[client_number-1], map_config, dateTime);
         /*
         if (ai_ids.includes(socket.id) == false){
             ai_ids.push(socket.id);

@@ -82,6 +82,7 @@ class DecisionControl:
         self.trigger = False
         self.return_waiting_time = 0
         self.functions_to_execute = []
+        self.functions_executed = False
         self.room_object_ids = []
         self.help_agent_ids = set()
         
@@ -144,107 +145,114 @@ class DecisionControl:
     
         function_description = ""
     
-        if "go_to_location" in function_str:
-        
-            if re.search('\[ *-?\d+(\.(\d+)?)? *, *-?\d+(\.(\d+)?)? *\]',function_str):
-                location = re.search('\[ *-?\d+(\.(\d+)?)? *, *-?\d+(\.(\d+)?)? *\]',function_str).group()
-                function_description = "I'm going to location " + location + ". "
-            else:
-                arguments = function_str.split(",")
-                object_id = eval(arguments[0][arguments[0].find("(") + 1:])
+        try:
+            if "go_to_location" in function_str:
             
-                if str(object_id)[0].isalpha():
-                    if "room" in object_id:
-                        room_match = re.search("(\d+)",object_id)
-                        if room_match:
-                            room_number = room_match.group(1)
-                            room = "room " + room_number
-                        elif "goal" in object_id:
-                            room = "the goal area"
-                        else:
-                            room = "the main area"
-                        
-                        function_description = "I'm going to " + room + ". "    
-                         
-                    else:
-                    
-                        function_description = "I'm going with agent " + object_id + ". "
-                    
-                elif isinstance(object_id, list):
-                
-                    function_description = "I'm going to location " + str(object_id) + ". "
-                
-                elif object_id == -1:
-                    function_description = "I'm going to the goal location. "
-                elif object_id == -2:
-                    function_description = "I'm going to explore. "
+                if re.search('\[ *-?\d+(\.(\d+)?)? *, *-?\d+(\.(\d+)?)? *\]',function_str):
+                    location = re.search('\[ *-?\d+(\.(\d+)?)? *, *-?\d+(\.(\d+)?)? *\]',function_str).group()
+                    xy_grid = eval(location)
+                    xy_world = self.env.convert_to_real_coordinates(xy_grid)
+                    if xy_world:
+                        function_description = "I'm going to location [" + str(xy_world[0]) + "," + str(xy_world[1]) + "]. "
                 else:
-                    function_description = "I'm going towards object " + str(object_id) + ". "
+                    arguments = function_str.split(",")
+                    object_id = eval(arguments[0][arguments[0].find("(") + 1:])
                 
-        elif "sense_room" in function_str:
-            arguments = function_str.split(",")
-            argument = eval(arguments[0][arguments[0].find("(") + 1:])
+                    if str(object_id)[0].isalpha():
+                        if "room" in object_id:
+                            room_match = re.search("(\d+)",object_id)
+                            if room_match:
+                                room_number = room_match.group(1)
+                                room = "room " + room_number
+                            elif "goal" in object_id:
+                                room = "the goal area"
+                            else:
+                                room = "the main area"
+                            
+                            function_description = "I'm going to " + room + ". "    
+                             
+                        else:
+                        
+                            function_description = "I'm going with agent " + object_id + ". "
+                        
+                    elif isinstance(object_id, list):
+                    
+                        function_description = "I'm going to location " + str(object_id) + ". "
+                    
+                    elif object_id == -1:
+                        function_description = "I'm going to the goal location. "
+                    elif object_id == -2:
+                        function_description = "I'm going to explore. "
+                    else:
+                        function_description = "I'm going towards object " + str(object_id) + ". "
+                    
+            elif "sense_room" in function_str:
+                arguments = function_str.split(",")
+                argument = eval(arguments[0][arguments[0].find("(") + 1:])
+                
+                function_description = "I'm going to sense all objects in room " + str(argument) + ". "
             
-            function_description = "I'm going to sense all objects in room " + str(argument) + ". "
+            elif "sense_object" in function_str:
+                arguments = function_str.split(",")
+                argument = eval(arguments[0][arguments[0].find("(") + 1:])
+                
+                function_description = "I'm going to sense object " + str(argument) + ". "     
+                
+            elif "follow" in function_str:
+                arguments = function_str.split(",")
+                argument = eval(arguments[0][arguments[0].find("(") + 1:])
+                
+                function_description = "I'm going to follow agent " + str(argument) + ". "
+                
+            elif "collect_object" in function_str:
+                arguments = function_str.split(",")
+                argument = eval(arguments[0][arguments[0].find("(") + 1:])
+                
+                function_description = "I'm going to collect object " + str(argument) + ". "
+                
+            elif "approach" in function_str:
+                arguments = function_str.split(",")
+                argument = eval(arguments[0][arguments[0].find("(") + 1:])
+                
+                function_description = "I'm going to approach agent " + str(argument) + ". "
+            
+            elif "explore" in function_str:
+                function_description = "I'm going to explore the area. "
+                
+            elif "wait" in function_str:
+                function_description = "I'm going to wait. "
+                
+            elif "go_to_meeting_point" in function_str:
+                function_description = "I'm going to the meeting point. "
+                
+            elif "ask_for_help" in function_str:
+                arguments = function_str.split(",")
+                argument = eval(arguments[0][arguments[0].find("(") + 1:])
+                argument2 = eval(arguments[1])
+                
+                function_description = "I'm going to ask agent " + str(argument2) + " for help to carry object " + str(argument) + ". "
+                
+            elif "ask_for_help_to_carry" in function_str:
+                arguments = function_str.split(",")
+                argument = eval(arguments[0][arguments[0].find("(") + 1:])
+                
+                function_description = "I'm going to ask for help to carry object " + str(argument) + ". "
+             
+            elif "ask_for_sensing" in function_str:   
+
+                arguments = function_str.split(",")
+                argument = eval(arguments[0][arguments[0].find("(") + 1:])
+                argument2 = eval(arguments[1])
+
+                function_description = "I'm going to ask agent " + str(argument2) + " for help to sense object " + str(argument) + ". "
+
+
+            elif "drop" in function_str:
+                function_description = "I'm going to drop an object. "   
         
-        elif "sense_object" in function_str:
-            arguments = function_str.split(",")
-            argument = eval(arguments[0][arguments[0].find("(") + 1:])
-            
-            function_description = "I'm going to sense object " + str(argument) + ". "     
-            
-        elif "follow" in function_str:
-            arguments = function_str.split(",")
-            argument = eval(arguments[0][arguments[0].find("(") + 1:])
-            
-            function_description = "I'm going to follow agent " + str(argument) + ". "
-            
-        elif "collect_object" in function_str:
-            arguments = function_str.split(",")
-            argument = eval(arguments[0][arguments[0].find("(") + 1:])
-            
-            function_description = "I'm going to collect object " + str(argument) + ". "
-            
-        elif "approach" in function_str:
-            arguments = function_str.split(",")
-            argument = eval(arguments[0][arguments[0].find("(") + 1:])
-            
-            function_description = "I'm going to approach agent " + str(argument) + ". "
-        
-        elif "explore" in function_str:
-            function_description = "I'm going to explore the area. "
-            
-        elif "wait" in function_str:
-            function_description = "I'm going to wait. "
-            
-        elif "go_to_meeting_point" in function_str:
-            function_description = "I'm going to the meeting point. "
-            
-        elif "ask_for_help" in function_str:
-            arguments = function_str.split(",")
-            argument = eval(arguments[0][arguments[0].find("(") + 1:])
-            argument2 = eval(arguments[1])
-            
-            function_description = "I'm going to ask agent " + str(argument2) + " for help to carry object " + str(argument) + ". "
-            
-        elif "ask_for_help_to_carry" in function_str:
-            arguments = function_str.split(",")
-            argument = eval(arguments[0][arguments[0].find("(") + 1:])
-            
-            function_description = "I'm going to ask for help to carry object " + str(argument) + ". "
-         
-        elif "ask_for_sensing" in function_str:   
-
-            arguments = function_str.split(",")
-            argument = eval(arguments[0][arguments[0].find("(") + 1:])
-            argument2 = eval(arguments[1])
-
-            function_description = "I'm going to ask agent " + str(argument2) + " for help to sense object " + str(argument) + ". "
-
-
-        elif "drop" in function_str:
-            function_description = "I'm going to drop an object. "   
-            
+        except:
+            print("Error description")
+            #pdb.set_trace()
             
             
         return function_description
@@ -1120,11 +1128,18 @@ class DecisionControl:
             #print(not template_match, not robotState.get("agents", "type", info['robot_key_to_index'][rm[0]]), rm[1])
             if not template_match and not robotState.get("agents", "type", info['robot_key_to_index'][rm[0]]): #Human sent a message, we need to translate it. We put this condition at the end so that humans can also send messages that conform to the templates
             
+                if 'RESET' in rm[1]:
+                    self.message_history = []
+                    continue
+                elif 'DEBUG' in rm[1]:
+                    pdb.set_trace()
+                    
+            
                 self.env.sio.emit("text_processing", (True))
                 asking_for_help = False
                 if "ask_for_help" in self.action_function:
                     asking_for_help = True
-                elif "ask_for_sensing" and self.movement.help_status != self.movement.HelpState.being_helped:
+                elif "ask_for_sensing" in self.action_function and self.movement.help_status != self.movement.HelpState.being_helped:
                     asking_for_help = True
                 else:
                     if self.message_history and info["time"] - self.message_history[-1]["Time"] > 30 and len(self.message_history) > 5:
@@ -1197,6 +1212,7 @@ class DecisionControl:
                             self.functions_to_execute = functions
                             self.action_function = ""
                             self.action_index = self.State.decision_state
+                            self.functions_executed = True
                             
                 self.env.sio.emit("text_processing", (False))
                     
@@ -1385,7 +1401,7 @@ class DecisionControl:
                         robotState.current_action_description = self.action_description(self.action_function)
                         
                         if external_function:
-                            self.message_text += "[ACTION] " + robotState.current_action_description
+                            self.message_text += robotState.current_action_description
                         
                     else:
                         #self.action_function = self.create_action_function("wait")
@@ -1430,7 +1446,7 @@ class DecisionControl:
                         self.create_action_function(function_str)
                         robotState.current_action_description = self.action_description(self.action_function)
                         if external_function:
-                            self.message_text += "[ACTION] " + robotState.current_action_description
+                            self.message_text += robotState.current_action_description
                     else: #No function selected
                         self.action_function = ""
                         print("action_function 1", self.agent_requesting_order)
@@ -1468,7 +1484,7 @@ class DecisionControl:
                 action["action"] = low_action
                 
                 if self.action_index == self.movement.State.follow or self.action_index == self.movement.State.obey:
-                    robotState.current_action_description = self.action_description("follow(" + self.help_status_info[0][0] + ", robotState, next_observation, info)")
+                    robotState.current_action_description = self.action_description("follow(\"" + self.movement.help_status_info[0][0] + "\", robotState, next_observation, info)")
                 
             #print("Locationss", self.next_loc, self.target_location, ego_location)  
             if self.nearby_other_agents: #If there are nearby robots, announce next location and goal
@@ -1627,8 +1643,11 @@ class DecisionControl:
         action["action"] = Action.get_occupancy_map.value
         output = []
         
-        if robotState.get("objects", "already_sensed", info['object_key_to_index'][str(object_id)]) == "Yes":
-            return action, True, [] 
+        try:
+            if str(object_id) in info['object_key_to_index'] and robotState.get("objects", "already_sensed", info['object_key_to_index'][str(object_id)]) == "Yes":
+                return action, True, [] 
+        except:
+            print("Don't know object sense_object")
         
         if self.top_action_sequence == 0:
         
@@ -1689,14 +1708,16 @@ class DecisionControl:
                 
                 if not self.room_object_ids:
                     finished = True
-                
+                print("Objects", self.room_object_ids)
             else:
                 action, temp_finished, output = self.go_to_location("room " + room, robotState, next_observation, info)
                 
         elif self.top_action_sequence == 1:
         
             while self.room_object_ids and robotState.get("object_estimates", "danger_status", [info['object_key_to_index'][self.room_object_ids[0]],robotState.get_num_robots()]):
+                print("Objects1", self.room_object_ids)
                 self.room_object_ids.pop(0)
+                
         
             if not self.room_object_ids:
                 finished = True
@@ -1708,6 +1729,7 @@ class DecisionControl:
                 if not temp_finished:
                     self.top_action_sequence += 1
                 else:
+                    print("Objects2", self.room_object_ids)
                     self.room_object_ids.pop(0)
                     self.action_sequence = 0
                     action, _, output = self.activate_sensor(robotState, next_observation, info)
@@ -1718,6 +1740,7 @@ class DecisionControl:
             action, temp_finished, output = self.go_to_location(object_id, robotState, next_observation, info)
             
             if temp_finished:
+                print("Objects3", self.room_object_ids)
                 self.room_object_ids.pop(0)
                 self.action_sequence = 0
                 action, _, output = self.activate_sensor(robotState, next_observation, info)
@@ -2444,6 +2467,7 @@ class DecisionControl:
         action["num_cells_move"] = 1
         
         output = []
+        place = ""
         
         """
         if action_sequence == 0:
@@ -2454,6 +2478,7 @@ class DecisionControl:
         if object_id == -1: #Return to middle of the room
             x = 10
             y = 10
+            place = "to the middle of the room"
         elif object_id == -2: #Explore
         
             if not self.explore_location:
@@ -2465,7 +2490,10 @@ class DecisionControl:
                 x = self.explore_location[0]
                 y = self.explore_location[1]
             
-  
+            xy_world = self.env.convert_to_real_coordinates([x,y])
+            if xy_world:
+                place = "towards [" + str(xy_world[0]) + "," + str(xy_world[1]) + "]"
+            
         elif str(object_id)[0].isalpha(): #Agent
             
             if "room" in object_id:
@@ -2489,6 +2517,10 @@ class DecisionControl:
                     
                 location_list = self.env.get_coords_room(robotState.latest_map, object_id.replace("room ", "").strip())
                 x,y = random.choice(location_list)
+                
+                xy_world = self.env.convert_to_real_coordinates([x,y])
+                if xy_world:
+                    place = "towards [" + str(xy_world[0]) + "," + str(xy_world[1]) + "] in " + room
             else:
             
                 robot_idx = info['robot_key_to_index'][str(object_id)]
@@ -2499,12 +2531,17 @@ class DecisionControl:
                     action["action"] = Action.get_occupancy_map.value
                     return action,True,output
                 
+                place = "with " + str(object_id)
                 x,y = robo_location
             
         elif isinstance(object_id, list):    
         
             x = object_id[0]
             y = object_id[1]
+            
+            xy_world = self.env.convert_to_real_coordinates([x,y])
+            if xy_world:
+                place = "towards [" + str(xy_world[0]) + "," + str(xy_world[1]) + "]"
         else:
             try:
             
@@ -2517,7 +2554,7 @@ class DecisionControl:
             
                 x,y = object_location
                 
-                
+                place = "towards object " + str(object_id)
             except:
                 pdb.set_trace()
         
@@ -2558,6 +2595,7 @@ class DecisionControl:
             if not possible_path:
                 finished = True
                 print("TRAPPED")
+                self.message_text += "Something is blocking the way, I cannot go " + place + ". "
                 #pdb.set_trace()
         else:
             action["action"] = low_action
@@ -2864,6 +2902,20 @@ class DecisionControl:
         
 
         return action,finished,output
+        
+    def move_away_from(self, agent_id, robotState, next_observation, info):
+    
+        action = self.sample_action_space
+        action["robot"] = 0
+        action["action"] = Action.get_occupancy_map.value
+        finished = True
+        output = []
+        
+        rm = [agent_id,MessagePattern.move_request(self.env.robot_id)]
+        self.message_text,self.action_index,_ = self.movement.message_processing_move_request(rm, robotState, info, self.action_index, self.message_text, self.other_agents, self.helping_type == self.HelpType.sensing)
+        
+        return action,finished,output
+        
         
     def end_participation(self,robotState, next_observation, info):
 
@@ -3658,7 +3710,9 @@ class DecisionControl:
             
     def decision_obey(self,messages, robotState, info, output, nearby_other_agents, next_observation):
     
-        
+        if self.functions_executed:
+            self.functions_executed = False
+            self.order_status = self.OrderStatus.reporting_availability
     
         if self.order_status == self.OrderStatus.ongoing:
             self.order_status = self.OrderStatus.reporting_output

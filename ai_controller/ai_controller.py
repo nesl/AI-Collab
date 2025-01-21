@@ -208,6 +208,7 @@ class RobotState:
     
         self.args = args
         self.create_tables = ''
+        self.sqliteConnection = None
     
         if args.sql:
         
@@ -217,9 +218,9 @@ class RobotState:
                 if os.path.exists(database_name):
                     os.remove(database_name)
                     
-                sqliteConnection = sqlite3.connect(database_name)
+                self.sqliteConnection = sqlite3.connect(database_name)
                 
-                self.cursor = sqliteConnection.cursor()
+                self.cursor = self.sqliteConnection.cursor()
                 
                 #CHECK(collaborative_score >= 0 AND collaborative_score <= 10)
                 self.create_tables = [
@@ -263,8 +264,10 @@ class RobotState:
                 for statement in self.create_tables:
                     self.cursor.execute(statement)
             else:
-                sqliteConnection = sqlite3.connect(database_name)
-                self.cursor = sqliteConnection.cursor()
+                self.sqliteConnection = sqlite3.connect(database_name)
+                self.cursor = self.sqliteConnection.cursor()
+                #"SELECT o.object_id, o.weight, aoe.danger_status, aoe.estimate_correct_percentage FROM objects o INNER JOIN agent_object_estimates aoe ON o.object_id = aoe.object_id WHERE o.weight = 1 AND aoe.danger_status = 'dangerous' AND aoe.last_seen_room = '3' AND o.already_sensed = 'Yes';"
+
             
         if self.args.no_reset:
             file_name="agent_map_" + str(args.robot_number) + ".txt"
@@ -595,7 +598,9 @@ class RobotState:
                         self.cursor.execute("UPDATE " + database + " SET " + propert + " = ? WHERE idx = ?;", (value, idx,)).fetchall()
                 except:
                     pdb.set_trace()
-                
+
+            self.sqliteConnection.commit()
+            
         else:
             if database == "objects":
                 legacy_to_sql = {"weight":"item_weight", "danger_status": "item_danger_level", "estimate_correct_percentage": "item_danger_confidence", "last_seen_location": "item_location", "last_seen_time": "item_time"}
@@ -639,6 +644,8 @@ class RobotState:
                 
                 if self.latest_map[grid_location[0], grid_location[1]] != 5:
                     self.latest_map[grid_location[0], grid_location[1]] = 3
+                    
+            self.sqliteConnection.commit()
         else:
             if neighbor_output["neighbor_type"] >= 0:
                 self.robots[robot_idx]["neighbor_type"] = neighbor_output["neighbor_type"]
@@ -657,7 +664,7 @@ class RobotState:
     
     def initialize_object(self, item_id, item_idx):
     
-        self.cursor.execute('''INSERT INTO objects (object_id, idx, weight, already_sensed, carried_by) VALUES (?, ?, 0, "No", "")''', (item_id, item_idx,))
+        self.cursor.execute('''INSERT INTO objects (object_id, idx, weight, already_sensed, carried_by) VALUES (?, ?, 0, "No", NULL)''', (item_id, item_idx,))
                 
         num_robots = self.get_num_robots()
         for n in range(num_robots+1):
@@ -719,7 +726,8 @@ class RobotState:
                 
                 if robot_idx == -1:
                     self.cursor.execute("""UPDATE objects SET already_sensed = ? WHERE object_id = ?;""", ("Yes", item_id,))
-                
+
+              
         else:     
 
             if item_idx not in self.item_estimates:
@@ -766,13 +774,21 @@ class RobotState:
         
         
         if "carried_by" in item_output:
-            self.cursor.execute("""UPDATE objects SET carried_by = ? WHERE object_id = ?;""", (item_output["carried_by"], item_id,)) 
+        
+            if not item_output["carried_by"]:
+                value = None
+            else:
+                value = item_output["carried_by"]
+                
+            self.cursor.execute("""UPDATE objects SET carried_by = ? WHERE object_id = ?;""", (value, item_id,)) 
         
         if information_change:
             #print(item_output)
             #self.average_fusion(item_idx)
             self.bayesian_fusion(item_idx)
         
+        if self.args.sql:
+            self.sqliteConnection.commit()  
         
 '''
 reward_machine_state = 0

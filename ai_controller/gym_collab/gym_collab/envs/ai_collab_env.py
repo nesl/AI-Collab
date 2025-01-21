@@ -70,6 +70,7 @@ class AICollabEnv(gym.Env):
         self.disabled = False
         self.delete = False
         self.truncated = False
+        self.log_name = ""
         
         if webcam:
             self.cap = cv2.VideoCapture(video_index) 
@@ -116,7 +117,7 @@ class AICollabEnv(gym.Env):
 
         # Receiving simulator's robot id
         @self.sio.event
-        def watcher_ai(robot_id_r, occupancy_map_config):
+        def watcher_ai(robot_id_r, occupancy_map_config, log_name):
 
             print("Received id", robot_id_r)
             self.robot_id = robot_id_r
@@ -137,10 +138,13 @@ class AICollabEnv(gym.Env):
                 self.setup_ready = True
                 
             self.delete = False
+            
+            self.log_name = log_name
         # Receiving occupancy map
         self.maps = []
         self.map_ready = False
         self.map_config = {}
+        
 
         @self.sio.event
         def occupancy_map(object_type_coords_map,
