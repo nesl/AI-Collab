@@ -683,7 +683,7 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
         
         prompt += self.end_token_str + self.start_header_str + "user" + self.end_header_str
         
-        prompt += "\nTask: Agent " + self.env.robot_id + " is currently asking for help to carry a heavy object. Given the context, is Agent " + message_history[-1]["Sender"] + " offering their help to Agent " + self.env.robot_id + "?\nOutput format: Output a json of the following format: \n{\nAgent " + message_history[-1]["Sender"] + "is offering help to Agent" + self.env.robot_id + "\": <True or False>,\n\"Agent " + self.env.robot_id + "'s Response\": \"<response to Agent" + message_history[-1]["Sender"] + ">\"}\n"
+        prompt += "\nTask: Agent " + self.env.robot_id + " is currently asking for help to carry a heavy object. Given the context, is Agent " + message_history[-1]["Sender"] + " offering their help to Agent " + self.env.robot_id + "?\nOutput format: Output a json of the following format: \n{\nAgent " + message_history[-1]["Sender"] + "is offering help to Agent" + self.env.robot_id + "\": <True or False>,\n\"Agent " + self.env.robot_id + "'s Response\": \"<Agent " + self.env.robot_id + "'s first-person response to Agent" + message_history[-1]["Sender"] + ">\"}\n"
         
         """
         input_ids = self.tokenizer2(prompt, return_tensors="pt").to("cuda")
@@ -906,9 +906,10 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
         
         prompt += str(list_message_history)
         
+        '''
         if robotState.current_action_description:
             prompt += "\n" + robotState.current_action_description.replace("I'm", "Agent " + self.env.robot_id + " is")
-        
+        '''
         current_state_robot = robotState.get("agents", "current_state", robotState.get_num_robots()).replace("self.", "").replace("robotState, next_observation, info","")
         
         #prompt += "\nCurrent action being executed by Agent " + self.env.robot_id + ": " + current_state_robot
@@ -947,12 +948,12 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
         
         #output_txt = real_output[real_output.find("Action: ") + 8:].split("\n")[0]
         
-        functions,description = self.action_query(output_txt,robotState, info)
+        functions,description = self.action_query(output_txt,message_history,robotState, info)
         
         return functions,description
         
         
-    def action_query(self, summary_text, robotState, info):
+    def action_query(self, summary_text, message_history, robotState, info):
         prompt = self.start_header_str + "system" + self.end_header_str + self.base_prompt + "\n Here is the action that Agent " + self.env.robot_id + " is planning to take: " + summary_text
         
         profiles = self.get_profiles(robotState, info)
@@ -962,7 +963,7 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
         
         prompt += self.end_token_str + self.start_header_str + "user" + self.end_header_str
         
-        prompt += "\nTask: Given the above description, choose one or a sequence of functions from the next list for Agent B to execute and populate them with the correct arguments:\n" + self.functions_and_arguments + "\nOutput format: Output a json of the following format: \n{\n\"Actions\": \"<List of functions to call in order by Agent " + self.env.robot_id + " with required arguments>\"\n}\n" #,\n\"Plan Description\": \"<Agent " + self.env.robot_id + "'s brief first-person description of actions>\"\n}\n"
+        prompt += "\nTask: Given the above description, choose one or a sequence of functions from the next list for Agent " + self.env.robot_id + " to execute and populate them with the correct arguments:\n" + self.functions_and_arguments + "\nOutput format: Output a json of the following format: \n{\n\"Actions\": <List of functions to call in order by Agent " + self.env.robot_id + " with required arguments>\n}\n\nExample output format: \n{\n\"Actions\": [\"move_to('room 1')\",\"go_and_sense_object(3)\"]\n}\n" #,\n\"Plan Description\": \"<Agent " + self.env.robot_id + "'s brief first-person description of actions>\"\n}\n"
         
         """
         input_ids = self.tokenizer2(prompt, return_tensors="pt").to("cuda")
@@ -982,6 +983,12 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
         dict_txt = real_output[real_output.find("{"): real_output.rfind("}")+1]
         dict_txt = eval(dict_txt)
         action_list = dict_txt["Actions"]
+    
+        if isinstance(action_list,str):
+            try:
+                action_list = eval(action_list)
+            except:
+                action_list = [action_list]
     
         functions = []
         functions_for_query = []
@@ -1016,7 +1023,7 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
                     except:
                         print("tell_agent ERROR")
                         continue
-                elif "move" in a:
+                elif "move_to" in a:
                 
                     if re.search(' *-?\d+(\.(\d+)?)? *, *-?\d+(\.(\d+)?)? *',a):
                         coords = "[" + re.search(' *-?\d+(\.(\d+)?)? *, *-?\d+(\.(\d+)?)? *',a).group() + "]"
@@ -1086,7 +1093,7 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
         if functions:
             description = self.action_plan_description_query(functions_for_query, robotState, info)
         else:# error:
-            description = "I couldn't understand you, please tell me again. I'll continue doing what I was doing. "
+            description = "I couldn't understand you " + message_history[-2]["Sender"] + ", please tell me again. I'll continue doing what I was doing. "
         
         return functions,description
         
@@ -1135,7 +1142,7 @@ Output a list of actions to take.<|eot_id|><|start_header_id|>assistant<|end_hea
         else:
             prompt += "\nAgent " + self.env.robot_id + " needs to send a message related to " + alt + ". Task: What information is necessary for Agent " + self.env.robot_id + " to obtain from its database in order to construct such a message? "
         
-        prompt += "Don't use idx. already_sensed can either be 'Yes' or 'No'. danger_status can only be 'dangerous', 'benign', or 'unknown'.\nOutput format: Output a json of the following format: \n{\n\"SQL Query\": \"<SQL Query of Agent " + self.env.robot_id + "'s database>\"\n}\n"
+        prompt += "Don't use idx. last_seen_room can be 'room 1', 'room 2', 'room 3', 'room 4', 'main area', 'goal area'. already_sensed can either be 'Yes' or 'No'. danger_status can only be 'dangerous', 'benign', or 'unknown'.\nOutput format: Output a json of the following format: \n{\n\"SQL Query\": \"<SQL Query of Agent " + self.env.robot_id + "'s database>\"\n}\n"
     
         #if 'DEBUG' in list_message_history[-1][1]:
         #    pdb.set_trace()

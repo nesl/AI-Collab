@@ -591,7 +591,7 @@ class Movement:
         
             carrying_object = ""
             if robotState.object_held:
-                carrying_object = object_held
+                carrying_object = object_held[0]
                 if not carrying_object: #Sometimes the agent doesn't know what it is carrying
                     carrying_object = "9999"
         

@@ -556,6 +556,19 @@ class MessagePattern:
     @staticmethod    
     def order_sense_regex():
         return "(\w+), sense object (\d+) at location (\(-?\d+\.\d+,-?\d+\.\d+\))"
+       
+    @staticmethod 
+    def order_sense_multiple(robot_id, object_ids, locations, convert_to_real_coordinates):
+        
+        real_locations = []
+        for l in locations:
+            real_locations.append(tuple(convert_to_real_coordinates(l)))
+            
+        return str(robot_id) + ", sense objects " + ','.join(object_ids) + " at locations " + ','.join(real_locations) + ". "
+        
+    @staticmethod    
+    def order_sense_multiple_regex():
+        return "(\w+), sense objects (\[(,?\d+)+\]) at locations (\[(,?(\(-?\d+\.\d+,-?\d+\.\d+\)))+\])"
         
     @staticmethod
     def order_collect(robot_id, object_id):

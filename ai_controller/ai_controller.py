@@ -22,6 +22,7 @@ from deepq_control import DeepQControl
 from heuristic_control import HeuristicControl
 from tutorial_control import TutorialControl
 from decision_control import DecisionControl
+from optimized_control import OptimizedControl
 
 # GUANHUA Ji -------------------------------------------------------------------
 #from ultralytics import YOLO
@@ -51,7 +52,7 @@ parser.add_argument("--use-occupancy", action='store_true', help="Use occupancy 
 parser.add_argument("--address", default='https://172.17.15.69:4000', help="Address where our simulation is running")
 parser.add_argument("--robot-number", default=1, help="Robot number to control")
 parser.add_argument("--view-radius", default=0, help="When using occupancy maps, the view radius")
-parser.add_argument("--control", default="decision", type=str, help="Type of control to apply: heuristic,llm,openai,deepq,q,manual,decision")
+parser.add_argument("--control", default="optimized", type=str, help="Type of control to apply: heuristic,llm,openai,deepq,q,manual,decision,optimized")
 parser.add_argument("--message-loop", action="store_true", help="Use to allow messages to be sent back to sender")
 parser.add_argument("--role", default="general", help="Choose a role for the agent: general, scout, lifter")
 parser.add_argument("--planning", default="equal", help="Choose a planning role for the agent: equal, coordinator, coordinated")
@@ -213,17 +214,8 @@ class RobotState:
         if args.sql:
         
             database_name = "agent_db_" + str(args.robot_number) + ".db"
-            if not self.args.no_reset:
-                
-                if os.path.exists(database_name):
-                    os.remove(database_name)
-                    
-                self.sqliteConnection = sqlite3.connect(database_name)
-                
-                self.cursor = self.sqliteConnection.cursor()
-                
-                #CHECK(collaborative_score >= 0 AND collaborative_score <= 10)
-                self.create_tables = [
+            
+            self.create_tables = [
                     """CREATE TABLE objects (
                         object_id INTEGER PRIMARY KEY,
                         idx INTEGER NOT NULL UNIQUE,
@@ -260,6 +252,18 @@ class RobotState:
                         FOREIGN KEY (object_id) REFERENCES objects (object_id),
                         PRIMARY KEY (agent_id,object_id)
                     );"""]
+            
+            if not self.args.no_reset:
+                
+                if os.path.exists(database_name):
+                    os.remove(database_name)
+                    
+                self.sqliteConnection = sqlite3.connect(database_name)
+                
+                self.cursor = self.sqliteConnection.cursor()
+                
+                #CHECK(collaborative_score >= 0 AND collaborative_score <= 10)
+                
                   
                 for statement in self.create_tables:
                     self.cursor.execute(statement)
@@ -280,6 +284,7 @@ class RobotState:
         self.item_estimates = {}
         self.env = env
         self.current_action_description = ""
+        self.possible_estimates = {}
         
         
         if self.args.sql:
@@ -297,12 +302,23 @@ class RobotState:
                         robot_type = env.neighbors_info[n][1]
                         
                     self.cursor.execute('''INSERT INTO agents (agent_id, idx, last_seen_location, last_seen_time, type, carrying_object, disabled, sensor_benign, sensor_dangerous,collaborative_score,collaborative_score_of_me, team, current_state,last_seen_room,attitude) VALUES (?, ?, "[]", 0, ?, "None", -1, ?, ?, 10, 10, "[]", '', '','')''', (robot_id2, n, robot_type, sensor_parameters[0],sensor_parameters[1]))  
+                    
+            else:
+                item_idx = 0            
+                while True:
+                    row_exists = self.cursor.execute("""SELECT COUNT(*) FROM objects WHERE idx = ?;""", (item_idx,)).fetchall()
+                    if not row_exists[0][0]:
+                        break
+                    weight = self.cursor.execute("""SELECT weight FROM objects WHERE idx = ?;""", (item_idx,)).fetchall()[0][0]
+                    estimates = self.cursor.execute("""SELECT aoe.last_seen_location, MAX(aoe.last_seen_time) FROM agent_object_estimates aoe INNER JOIN objects o ON aoe.object_id = o.object_id WHERE o.idx = ?;""", (item_idx,)).fetchall()[0]
+                    self.items.append({'item_weight': weight, 'item_danger_level': 0, 'item_danger_confidence': np.array([0.]), 'item_location': np.array(eval(estimates[0]), dtype=np.int16), 'item_time': np.array([estimates[1]], dtype=np.int16)})
+                    self.bayesian_fusion(item_idx)
+                    item_idx += 1
         else:
             self.robots = [{"neighbor_type": env.neighbors_info[n][1], "neighbor_location": [-1,-1], "neighbor_time": [0.0], "neighbor_disabled": -1, "collaborative_score":10, "collaborative_score_of_me":10} for n in range(len(env.neighbors_info))] # 0 if human, 1 if ai
             
         self.strength = 1
         self.map_metadata = {}
-        self.possible_estimates = {}
         self.collaborative_score = [{"collaborative_score":[], "collaborative_score_of_me":[]} for n in range(len(env.neighbors_info)+1)]
         
     class Danger_Status(Enum):
@@ -455,6 +471,13 @@ class RobotState:
                 
         return count
         
+    def get_all_robots(self):
+        agents = []
+        if self.args.sql:
+            agents = self.cursor.execute("SELECT * FROM agents;").fetchall()
+            
+        return agents
+        
     def get_num_estimates(self, idx):
                 
         if self.args.sql:
@@ -481,7 +504,22 @@ class RobotState:
             count = len(self.items)
                 
         return count
+        
+    def get_all_objects(self):
+        objects = []
+        if self.args.sql:
+            objects = self.cursor.execute("SELECT * FROM objects;").fetchall()
+            
+        return objects
     
+    def get_all_sensing_estimates(self):
+        estimates = []
+        if self.args.sql:
+            estimates = self.cursor.execute("SELECT object_id,agent_id,danger_status FROM agent_object_estimates;").fetchall()
+            
+        return estimates
+            
+            
     def get(self, database, propert, idx):
     
         
@@ -815,6 +853,7 @@ with open(args.config, 'r') as file:
     
 
 just_starting = True
+rearrange_observations = True
 
 while True:
 
@@ -828,6 +867,8 @@ while True:
             deepq_control = DeepQControl(observation,device,num_steps)
         elif args.control == 'tutorial':
             t_control = TutorialControl(num_steps, env.robot_id, env)
+        
+            
         just_starting = False
     
     
@@ -843,7 +884,10 @@ while True:
     message_queue = []
     
     action = env.action_space.sample()
-    action["action"] = Action.get_occupancy_map.value #actions_to_take.pop(0)
+    if args.no_reset:
+        action["action"] = Action.danger_sensing.value
+    else:
+        action["action"] = Action.get_occupancy_map.value #actions_to_take.pop(0)
 
     action['num_cells_move'] = 1
 
@@ -872,11 +916,14 @@ while True:
     elif args.control == 'tutorial':
         t_control.start(robotState)
         print("INITIALIAZED")
+    elif args.control == 'optimized':
+        decision_control = OptimizedControl(env, robotState, team_structure)
 
     last_high_action = action["action"]
     
     fell_down = 0
-
+    
+    
     while not done:
 
         #action = env.action_space.sample()
@@ -902,7 +949,7 @@ while True:
             
         #print(action, next_observation)
         next_observation, reward, terminated, truncated, info = env.step(action)
-        
+        #print("HELLO", info["object_key_to_index"], env.object_info)
         #print(info["real_location"])
 
         # Computer Vision --------------------------------------------------------------------
@@ -1043,8 +1090,11 @@ while True:
             
             if args.sql:
                 for d in range(num_objects,next_observation["num_items"]):
-                    item_id = list(env.object_key_to_index.keys())[list(env.object_key_to_index.values()).index(d)]
-                    robotState.initialize_object(item_id, d)
+                    try:
+                        item_id = list(env.object_key_to_index.keys())[list(env.object_key_to_index.values()).index(d)]
+                        robotState.initialize_object(item_id, d)
+                    except:
+                        pdb.set_trace()
             
         robotState.strength = next_observation["strength"]
             
@@ -1052,7 +1102,33 @@ while True:
         if next_observation and any(next_observation['action_status']) and not disabled:
             
             
+            #print(info["object_key_to_index"], env.object_info)
             
+            if args.no_reset and rearrange_observations:
+                objects = robotState.get_all_objects()
+                objects.sort(key=lambda x:x[1])
+                new_object_info = []
+                new_object_to_key = {}
+                for ob_idx,ob in enumerate(objects):
+                    if not ob[2]:
+                        location = robotState.items[ob_idx]["item_location"]
+                        time = robotState.items[ob_idx]["item_time"][0]
+                        new_object_info.append([str(ob[0]),ob[2],{}, location[0], location[1], time])
+                    else:
+                        for ob2 in env.object_info:
+                            not_found = True
+                            if int(ob2[0]) == ob[0]:
+                                new_object_info.append(ob2)
+                                not_found = False
+                                break
+                        if not_found:
+                            print("NOT FOUND ITEM FOR NO RESET")
+                    new_object_to_key[str(ob[0])] = ob_idx
+                    
+                env.set_object_info(new_object_info.copy(), new_object_to_key)
+                rearrange_observations = False
+            #else:
+            #    pdb.set_trace()
             ego_location = np.where(next_observation['frame'] == 5)
             previous_ego_location = np.where(robotState.latest_map == 5)
             
@@ -1215,7 +1291,8 @@ while True:
                             env.sio.emit("disable")
                         #high_level_action_finished = False
                         
-                    elif args.control == "decision":
+                    elif args.control == "decision" or args.control == "optimized":
+                    
                         action,terminated_tmp = decision_control.control(messages, robotState, info, next_observation)
                         
                         #if action["action"] == Action.send_message.value:

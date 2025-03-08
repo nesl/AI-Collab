@@ -167,7 +167,7 @@ class Enhanced_Magnebot(Magnebot):
     
         if self.difficulty_level:
             if self.difficulty_level == 1:
-                low_threshold = 0.7
+                low_threshold = 0.9 #0.7
             elif self.difficulty_level == 2:
                 low_threshold = 0.7
             elif self.difficulty_level == 3:
@@ -186,7 +186,6 @@ class Enhanced_Magnebot(Magnebot):
         self.controlled_by = controlled_by
         self.focus_object = ""
         self.item_info = {}
-        self.estimate_confidence = 0.9
         self.screen_positions = {"position_ids":[],"positions":[],"duration":[]}
         self.refresh_sensor = global_refresh_sensor
         self.messages = []
@@ -230,6 +229,17 @@ class Enhanced_Magnebot(Magnebot):
         self.p22 = float(random.uniform(low_thresh, 0.9))
         self.current_teammates = {}
         self.reported_objects = []
+        self.danger_estimates = []
+        
+    def partial_reset(self,position):
+        super().reset(position=position)
+        self.resetting_arm = False
+        self.past_status = ActionStatus.ongoing
+        self.messages = []
+        self.grasping = False
+        self.grasping_time = 0
+        self.screen_positions = {"position_ids":[],"positions":[],"duration":[]}
+        self.focus_object = ""
         self.danger_estimates = []
 
 #Main class
@@ -889,9 +899,95 @@ class Simulation(Controller):
 
         self.user_magnebots_ids = [str(um.robot_id) for um in self.user_magnebots]
         self.ai_magnebots_ids = [str(um.robot_id) for um in self.ai_magnebots]
+     
+    def convert_to_grid_coordinates(self, location, min_pos, multiple):
+
+        if not location:
+            pos_new = [-1,-1]
+        else:
+            pos_new = [round((location[0] + abs(min_pos[0])) / multiple),
+                       round((location[1] + abs(min_pos[1])) / multiple)]
+
+        return pos_new
+    
+    def calculateHValue(self,current,dest):
+
+        dx = abs(current[0] - dest[0])
+        dy = abs(current[1] - dest[1])
+     
+  
+        h = dx + dy #For only four movements
+
+        return h   
+        
+    def tracePath(self,node_details,dest):
+        path = []
+        
+        currentNode = dest
+
+        while node_details[currentNode[0]][currentNode[1]]["parent"][0] != currentNode[0] or node_details[currentNode[0]][currentNode[1]]["parent"][1] != currentNode[1]:
+            path.append(currentNode)
+            currentNode = node_details[currentNode[0]][currentNode[1]]["parent"]
+            
+        path.reverse()
+        
+        return path
+
+    def findPath(self,startNode,endNode,occMap):
+
+        
+        openSet = [startNode]
+        closedSet = []
+        
+        highest_cost = float('inf') #2147483647
+        
+        node_details = {}
+        
+        for s0 in range(occMap.shape[0]):
+            node_details[s0] = {}
+            for s1 in range(occMap.shape[1]):
+                if s0 == startNode[0] and s1 == startNode[1]:
+                    node_details[s0][s1] = {"f":0, "g":0, "h":0, "parent":[startNode[0],startNode[1]]}
+                else:
+                    node_details[s0][s1] = {"f":highest_cost, "g":highest_cost, "h":highest_cost, "parent":[-1,-1]}
         
 
-    
+
+        
+        next_nodes = np.array([[-1,0],[1,0],[0,1],[0,-1]])
+
+        while openSet:
+        
+            currentNode = openSet.pop(0)
+            closedSet.append(tuple(currentNode))
+            
+     
+                
+            for nx in next_nodes:
+                neighborNode = currentNode + nx
+                
+                if neighborNode[0] == endNode[0] and neighborNode[1] == endNode[1]:
+                    node_details[neighborNode[0]][neighborNode[1]]["parent"] = currentNode
+                    return self.tracePath(node_details, endNode)
+                
+                if min(neighborNode) == -1 or any(neighborNode >= occMap.shape) or not (occMap[neighborNode[0],neighborNode[1]] == 0 or occMap[neighborNode[0],neighborNode[1]] == 3 or occMap[neighborNode[0],neighborNode[1]] == -2) or tuple(neighborNode) in closedSet: #modified to allow a robot to step into another robot's place
+                    continue
+
+            
+                gNew = node_details[currentNode[0]][currentNode[1]]["g"] + 1
+                hNew = self.calculateHValue(neighborNode,endNode)
+                fNew = gNew + hNew
+                
+                if node_details[neighborNode[0]][neighborNode[1]]["f"] == highest_cost or node_details[neighborNode[0]][neighborNode[1]]["f"] > fNew:
+                    openSet.append(neighborNode)
+                    
+                    node_details[neighborNode[0]][neighborNode[1]]["f"] = fNew
+                    node_details[neighborNode[0]][neighborNode[1]]["g"] = gNew
+                    node_details[neighborNode[0]][neighborNode[1]]["h"] = hNew
+                    node_details[neighborNode[0]][neighborNode[1]]["parent"] = currentNode
+                    
+
+        return [] #No path
         
     def manual_occupancy_map(self):
     
@@ -974,7 +1070,6 @@ class Simulation(Controller):
             self.wall_length = 6
             cell_size = self.cfg['cell_size']
             wall_width = 0.5
-            
             
             wall1_1 = [{"x": self.wall_length, "y": idx+1} for idx in range(self.wall_length-2)]
             wall1_2 = [{"x": idx+1, "y": self.wall_length} for idx in range(self.wall_length-2)]
@@ -1075,7 +1170,6 @@ class Simulation(Controller):
             self.wall_length = [5,10]
             cell_size = self.cfg['cell_size']
             wall_width = 0.5
-            
 
             self.scenario_size = [self.wall_length[0]*num_users+1,self.wall_length[1]]
             
@@ -1251,6 +1345,8 @@ class Simulation(Controller):
             
             max_coord = int(self.scenario_size/2)-1
             cell_size = self.cfg['cell_size']
+            min_pos = [float(self.static_occupancy_map.positions[0,0,0]),float(self.static_occupancy_map.positions[0,0,1])]
+            
             
             if not partial:
         
@@ -1260,12 +1356,13 @@ class Simulation(Controller):
                 #possible_ranges = [np.arange(max_coord-3,max_coord+0.5,0.5),np.arange(max_coord-3,max_coord+0.5,0.5)]
                 possible_ranges = [np.arange(self.scenario_size/2-self.wall_length+cell_size*1.5,self.scenario_size/2-cell_size*0.5,cell_size),np.arange(self.scenario_size/2-self.wall_length+cell_size*1.5,self.scenario_size/2-cell_size*0.5,cell_size)]
                 
-
-                possible_locations = [[i, j] for i in possible_ranges[0] for j in possible_ranges[1]]
+                possible_locations = [[i, j] for i in possible_ranges[0] for j in possible_ranges[1] if not (self.options.no_block and i == 5.5 and j == 5.5)]
                 
 
                 modifications = [[1.0,1.0],[-1.0,1.0],[1.0,-1.0],[-1.0,-1.0]]
                 #modifications = [[1.0,1.0]]
+                
+                print([[np.array(pl)*np.array(m) for pl in possible_locations] for m in modifications])
                 
                 total_num_objects = sum(np.array(list(object_models.values()))*len(modifications))
                 
@@ -1383,14 +1480,75 @@ class Simulation(Controller):
                 print(weight_assignment)
                 
                 if not self.options.single_object:
+                
+                
                     for m in modifications:
-                        possible_locations_temp = possible_locations.copy()
-                        for fc in final_coords.keys():
-                            for n_obj in range(object_models[fc]):
-                                location = random.choice(possible_locations_temp)
-                                possible_locations_temp.remove(location)
-              
-                                final_coords[fc].append(np.array(location)*m)
+                        while True:
+                            possible_locations_temp = possible_locations.copy()
+                            occMap = self.static_occupancy_map.occupancy_map.copy()
+                            chosen_locations = {objm: [] for objm in object_models.keys()}
+                            for fc in final_coords.keys():
+                                for n_obj in range(object_models[fc]):
+                                
+                                    location = random.choice(possible_locations_temp)
+                        
+                                    possible_locations_temp.remove(location)
+                                
+                                    chosen_locations[fc].append(np.array(location)*m)
+                                    
+                                    grid_location = self.convert_to_grid_coordinates(chosen_locations[fc][-1].tolist(), min_pos, cell_size)
+                                    occMap[grid_location[0],grid_location[1]] = 1
+                                    
+                                    
+                                    
+                                    '''
+                                    location = []
+                                    while True:
+                                        try:
+                                            location = random.choice(possible_locations_temp)
+                                        except:
+                                            pdb.set_trace()
+                                        grid_location = self.convert_to_grid_coordinates(location, min_pos, cell_size)
+                                        
+                                        possible_locations_temp.remove(location)
+                                        
+                                        if self.options.no_block:
+                                        
+                                            occMap[grid_location[0],grid_location[1]] = 1
+                                            
+                                            if not self.findPath([10,10],grid_location,occMap):
+                                                occMap[grid_location[0],grid_location[1]] = 0
+                                                
+                                                if not possible_locations_temp:
+                                                    location = []
+                                                    break
+                                                else:
+                                                    continue
+                                            else:
+                                                break
+                                        else:
+                                            break
+                                        
+                                    if location:
+                                        final_coords[fc].append(np.array(location)*m)
+                                    '''
+                            feasible_room = True
+                            
+                            if self.options.no_block:
+                                for fc in chosen_locations.keys():
+                                    for c in chosen_locations[fc]:
+                                        grid_location = self.convert_to_grid_coordinates(c.tolist(), min_pos, cell_size)
+                                        if not self.findPath([10,10],grid_location,occMap):
+                                            feasible_room = False
+                                            break
+                                    if not feasible_room:
+                                        break
+                            
+                            if feasible_room:
+                                for fc in chosen_locations.keys():
+                                    final_coords[fc].extend(chosen_locations[fc])
+                                
+                                break
                 
                 else:
                     final_coords = {"iron_box": [possible_locations[0]]}
@@ -1453,14 +1611,14 @@ class Simulation(Controller):
                 mass = 1000
                 for obj in partial:
                     
-                    object_index = obj[0]
                     required_strength = obj[1]
                     danger_level = obj[2]
+                    object_name = obj[0]
                     position = {"x": float(obj[3][0]), "y": 0, "z": float(obj[3][2])} 
                     rotation = {"x": 0, "y": 0, "z": 0}
                     object_id = self.get_unique_id()
                     self.graspable_objects.append(object_id)
-                    self.object_names_translate[object_id] = str(object_index)
+                    self.object_names_translate[object_id] = object_name
                     self.required_strength[object_id] = required_strength
                     self.danger_level[object_id] = danger_level
                     command = self.get_add_physics_object(model_name=model_name,
@@ -1685,9 +1843,12 @@ class Simulation(Controller):
         robot_ids = []
         total_time_spent = []
     
-        for robot in current_teammates[object_id].keys():
-            robot_ids.append(robot)
-            total_time_spent.append(current_teammates[object_id][robot])
+        try:
+            for robot in current_teammates[object_id].keys():
+                robot_ids.append(robot)
+                total_time_spent.append(current_teammates[object_id][robot])
+        except:
+            pdb.set_trace()
             
         sort_indices = np.argsort(np.array(total_time_spent)).tolist()
         sort_indices.reverse()
@@ -2302,6 +2463,8 @@ class Simulation(Controller):
                     
                     
                     robot_id_translated = self.robot_names_translate[str(ego_magnebot.robot_id)]
+                    
+                    #print("Sensed",robot_id_translated, o_translated, ego_magnebot.item_info[o_translated])
                     
                     #Get danger estimation, value and confidence level
                     if robot_id_translated not in ego_magnebot.item_info[o_translated]['sensor']:
@@ -3979,7 +4142,11 @@ class Simulation(Controller):
    
             elif self.reset_partial:
                 self.partial_reset()
-              
+                all_ids = [*self.user_magnebots_ids,*self.ai_magnebots_ids]
+                for um in self.user_magnebots:
+                    um.screen_positions["position_ids"].extend(list(range(0,len(all_ids))))
+                    um.screen_positions["positions"].extend([-1]*len(all_ids))
+                    um.screen_positions["duration"].extend([-1]*len(all_ids))
                 self.reset_partial = False
    
             self.frame_num +=1
@@ -4153,9 +4320,10 @@ class Simulation(Controller):
         object_list = []
         all_magnebots = [*self.user_magnebots,*self.ai_magnebots]
         
+        print(self.object_names_translate)
         for go_idx in range(len(self.graspable_objects)):
             object_id = self.graspable_objects[go_idx]
-            object_list.append([go_idx, self.required_strength[object_id], self.danger_level[object_id], self.object_manager.transforms[object_id].position])
+            object_list.append([self.object_names_translate[object_id], self.required_strength[object_id], self.danger_level[object_id], self.object_manager.transforms[object_id].position])
             commands.append({"$type": "destroy_object", "id": object_id})
             
         for env_obj in self.env_objects:
@@ -4181,13 +4349,13 @@ class Simulation(Controller):
         
 
         for idx in range(len(all_magnebots)):
-            all_magnebots[idx].reset(position={"x":float(agent_locations[idx][0]),"y":0,"z":float(agent_locations[idx][2])})
+            all_magnebots[idx].partial_reset(position={"x":float(agent_locations[idx][0]),"y":0,"z":float(agent_locations[idx][2])})
 
         commands.extend(self.populate_world(object_list))
         #pdb.set_trace()
         
         self.communicate(commands)
-
+        
         #self.log_init_data()
         
         #Reattach canvas
@@ -4223,6 +4391,7 @@ if __name__ == "__main__":
     parser.add_argument('--single-object', action='store_true', help="Single object")
     parser.add_argument('--ai-vision', action='store_true', help="Activate cameras for AI agents")
     parser.add_argument('--level', type=int, default=0, help="Difficulty level [1,2,3]")
+    parser.add_argument('--no-block', action='store_true', help="No object will block the way")
     
     
     

@@ -610,7 +610,7 @@ class AICollabEnv(gym.Env):
         info["status"] = world_state[4]
         info["real_location"] = world_state[9]
         
-
+        #print(self.object_info)
         
 
         #REWARD ESTIMATION
@@ -959,6 +959,14 @@ class AICollabEnv(gym.Env):
             self.new_output = ()
 
         return self.old_output, sensing_output, terminated, truncated
+
+
+
+
+    def set_object_info(self, object_info, object_to_key):
+    
+        self.object_info = object_info
+        self.object_key_to_index = object_to_key
 
     # Only works for occupancy maps not centered in magnebot
 
@@ -1622,6 +1630,8 @@ class AICollabEnv(gym.Env):
                 free_coords = np.argwhere((new_array == 0) | (new_array == -2) | (new_array == 5))
             
             free_coords += np.array([coord[0],coord[1]])
+        elif room.isnumeric():
+            free_coords = np.array([])
         elif room == "goal":
             new_array = robo_map[np.array(self.goal_coords)[:,0],np.array(self.goal_coords)[:,1]]
             coords = np.argwhere((new_array == 0) | (new_array == -2) | (new_array == 5))
