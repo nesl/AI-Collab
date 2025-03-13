@@ -88,6 +88,7 @@ class OptimizedControl:
         self.trigger = False
         self.return_waiting_time = 0
         self.functions_to_execute = []
+        self.functions_to_execute_outputs = []
         self.functions_executed = False
         self.room_object_ids = []
         self.help_agent_ids = set()
@@ -208,7 +209,13 @@ class OptimizedControl:
                 arguments = function_str.split(",")
                 argument = eval(arguments[0][arguments[0].find("(") + 1:])
                 
-                function_description = "I'm going to sense object " + str(argument) + ". "     
+                if not argument:
+                    xy_grid = eval(arguments[1] + ',' + arguments[2])
+                    xy_world = self.env.convert_to_real_coordinates(xy_grid)
+                    if xy_world:
+                        function_description = "I'm going to sense object at location " + str(xy_world) + ". " 
+                else:
+                    function_description = "I'm going to sense object " + str(argument) + ". "     
                 
             elif "follow" in function_str:
                 arguments = function_str.split(",")
@@ -384,6 +391,11 @@ class OptimizedControl:
             if re.search(MessagePattern.follow_regex(),rm[1]) or re.search(MessagePattern.following_regex(),rm[1]) or MessagePattern.carry_help_cancel() in rm[1] or MessagePattern.carry_help_reject(self.env.robot_id) in rm[1] or MessagePattern.carry_help_finish() in rm[1] or MessagePattern.carry_help_complain() in rm[1] or re.search(MessagePattern.object_not_found_regex(), rm[1]):
             
                 template_match = True
+                
+                sent_by_leader = False
+                if self.movement.help_status_info[0]:
+                    sent_by_leader = self.movement.help_status_info[0][0] == rm[0]
+                    
             
                 self.action_index,_,message = self.movement.message_processing_help(rm, self.action_index, self.helping_type == self.HelpType.sensing, self.State.decision_state)
                 
@@ -436,7 +448,15 @@ class OptimizedControl:
                     
                 
                 if MessagePattern.carry_help_cancel() in rm[1] or MessagePattern.carry_help_reject(self.env.robot_id) in rm[1] or MessagePattern.carry_help_finish() in rm[1] or MessagePattern.carry_help_complain() in rm[1]:
-                    self.message_text += "Ok " + rm[0] + ". I won't help anymore. " 
+                    if sent_by_leader:
+                        self.message_text += "Ok " + rm[0] + ". I won't help anymore. " 
+                        self.order_status = self.OrderStatus.reporting_availability
+                        self.action_index = self.State.decision_state
+                        self.action_function = ""
+                        self.top_action_sequence = 0
+                        self.functions_to_execute = []
+                    
+                        
                 elif not re.search(MessagePattern.follow_regex(),rm[1]) and not re.search(MessagePattern.following_regex(),rm[1]):
                     self.message_text += "Ok " + rm[0] + ". "     
                     
@@ -732,6 +752,10 @@ class OptimizedControl:
                                             if not object_weight:
                                                 self.message_text += "First give me the weight value of object " + rematch.group(2) + ". "
                                             else:
+                                            
+                                            
+                                                self.functions_to_execute_outputs = []
+                                            
                                                 if object_weight > 1 and not (self.movement.help_status == self.movement.HelpState.being_helped and len(self.movement.help_status_info[0]) == object_weight-1):
                                                     self.create_action_function("ask_for_help('" + rematch.group(2) + "','" +  rm[0] + "')")
                                                 else:
@@ -770,6 +794,8 @@ class OptimizedControl:
                                     self.order_status = self.OrderStatus.ongoing
                                 else:
                                     if self.order_status == self.OrderStatus.finished:
+                                    
+                                        self.functions_to_execute_outputs = []
                                         
                                         location = list(eval(rematch.group(3)))
                             
@@ -801,12 +827,12 @@ class OptimizedControl:
                             
                                 object_ids = rematch.group(2)[1:].replace("]", "").split(",")
                                 
-                                coords_regex = '\(-?\d+\.\d+,-?\d+\.\d+\)'
+                                coords_regex = '\( *-?\d+(\.(\d+)?)? *, *-?\d+(\.(\d+)?)? *\)'
                                 
                                 locations = []
                                 
                                 for coord in re.finditer(coords_regex,rematch.group(4)):
-                                    locations.append(eval(coord.group(1)))
+                                    locations.append(eval(coord.group()))
                                 
                                 delete_objs = []
                                 for ob_idx,ob in enumerate(object_ids):
@@ -826,8 +852,8 @@ class OptimizedControl:
                                     if self.order_status == self.OrderStatus.finished:
                                         
                                         max_real_coords = self.env.convert_to_real_coordinates((robotState.latest_map.shape[0]-1, robotState.latest_map.shape[1]-1))
-                                        
-                                        assigned_target_locations = []
+                                        self.functions_to_execute_outputs = []
+                                        #assigned_target_locations = []
                                         for l_idx,location in enumerate(locations):
                                         
                                             if location[0] > max_real_coords[0] or location[1] > max_real_coords[1]: #last_seen[0] == 99.99 and last_seen[1] == 99.99:
@@ -835,13 +861,18 @@ class OptimizedControl:
                                             else:
                                                 assigned_target_location = self.env.convert_to_grid_coordinates(location)
                                             
-                                            assigned_target_locations.append(assigned_target_location)
+                                            #assigned_target_locations.append(assigned_target_location)
+                                            self.functions_to_execute.append("sense_object(''," +  str(assigned_target_location) + ")")
                                             
-                                        self.create_action_function("sense_multiple_objects(" +  str(assigned_target_locations) + ")")
-                                        
+                                        #self.create_action_function("sense_object(''," +  str(assigned_target_locations) + ")")
                                         self.order_status = self.OrderStatus.ongoing
                                         self.message_text += MessagePattern.order_response(rm[0], "sense")
                                         self.leader_id = rm[0]
+                                        
+                                        self.movement.cancel_cooperation(self.State.decision_state,self.message_text)
+                                        self.action_function = ""
+                                        self.action_index = self.State.decision_state
+                                        self.functions_executed = True
                                     else:
                                         self.message_text += MessagePattern.order_response_negative(rm[0], self.leader_id)
                             else:
@@ -856,6 +887,8 @@ class OptimizedControl:
                         if rematch.group(1) == self.env.robot_id:
                             if self.team_structure["hierarchy"][self.env.robot_id] == "obey" and self.team_structure["hierarchy"][rm[0]] == "order":
                                 if self.order_status == self.OrderStatus.finished:
+                                
+                                    self.functions_to_execute_outputs = []
                                 
                                     assigned_target_location = self.env.convert_to_grid_coordinates(eval(rematch.group(2)))
                                     self.create_action_function("go_to_location(" +  str(assigned_target_location) + ")")
@@ -882,6 +915,8 @@ class OptimizedControl:
                         
                             if self.team_structure["hierarchy"][self.env.robot_id] == "obey" and self.team_structure["hierarchy"][rm[0]] == "order": 
                                 if self.order_status == self.OrderStatus.finished:
+                                
+                                    self.functions_to_execute_outputs = []
                                 
                                     if rematch.group(1) == self.env.robot_id:
                                         object_idx = info['object_key_to_index'][rematch.group(4)]
@@ -1491,7 +1526,7 @@ class OptimizedControl:
                 #pdb.set_trace()                     
                 #try:
                 action, action_finished,function_output = eval(self.action_function)
-                print("function output", function_output)
+                print("function output", function_output, action_finished)
                 #except:
                 #    pdb.set_trace()
                 
@@ -1510,6 +1545,8 @@ class OptimizedControl:
                     if self.functions_to_execute:
                         function_str = self.functions_to_execute.pop(0)
                         external_function = True
+                        if function_output:
+                            self.functions_to_execute_outputs.append(function_output)
                     else:
                         if "hierarchy" in self.team_structure:
                             if self.team_structure["hierarchy"][self.env.robot_id] == "obey":
@@ -1716,18 +1753,7 @@ class OptimizedControl:
             finished = True
         
         return action, finished, output
-        
-    def sense_multiple_objects(self, grid_locations, robotState, next_observation, info):
-    
-        finished = False
-        action = self.sample_action_space
-        action["robot"] = 0
-        action["action"] = Action.get_occupancy_map.value
-        output = []
-        
-        
-        
-        return action, finished, output
+
         
     def sense_object(self, object_id, grid_location, robotState, next_observation, info):
         
@@ -1761,7 +1787,7 @@ class OptimizedControl:
 
                 finished = True
         
-            action, temp_finished, output = self.go_to_location(object_id, robotState, next_observation, info)
+            action, temp_finished, _ = self.go_to_location(object_id, robotState, next_observation, info)
             if temp_finished:
                 self.top_action_sequence += 1
         elif self.top_action_sequence == 1:
@@ -1901,7 +1927,7 @@ class OptimizedControl:
                             if not robotState.get("agents", "type", agent_idx): #robotState.robots[agent_idx]["neighbor_type"]:
                                 self.message_text += MessagePattern.come_closer(agent_id)
                 if wait:          
-                    if time.time() - self.movement.help_status_info[1] > self.help_time_limit2: #time.time() - self.movement.asked_time > self.help_time_limit2:                           
+                    if not ("hierarchy" in self.team_structure and self.team_structure["hierarchy"][self.env.robot_id] == "obey") and time.time() - self.movement.help_status_info[1] > self.help_time_limit2: #time.time() - self.movement.asked_time > self.help_time_limit2:                           
                         action["action"],self.message_text,self.action_index = self.movement.cancel_cooperation(self.State.decision_state,self.message_text,message=MessagePattern.carry_help_complain())
                         finished = True
                         self.object_of_interest = ""
@@ -1945,7 +1971,7 @@ class OptimizedControl:
                 action["action"],self.message_text,self.action_index = self.movement.cancel_cooperation(self.State.decision_state,self.message_text,message=MessagePattern.carry_help_finish())
                 finished = True
                 self.object_of_interest = ""
-            elif time.time() - self.movement.help_status_info[1] > self.help_time_limit2: #time.time() - self.movement.asked_time > self.help_time_limit2:                           
+            elif not ("hierarchy" in self.team_structure and self.team_structure["hierarchy"][self.env.robot_id] == "obey") and time.time() - self.movement.help_status_info[1] > self.help_time_limit2: #time.time() - self.movement.asked_time > self.help_time_limit2:                           
                 action["action"],self.message_text,self.action_index = self.movement.cancel_cooperation(self.State.decision_state,self.message_text,message=MessagePattern.carry_help_complain())
                 finished = True
                 self.object_of_interest = ""
@@ -3147,14 +3173,21 @@ class OptimizedControl:
     
         if self.functions_executed:
             self.functions_executed = False
-            self.order_status = self.OrderStatus.reporting_availability
+            #self.order_status = self.OrderStatus.reporting_availability
     
         if self.order_status == self.OrderStatus.ongoing:
             self.order_status = self.OrderStatus.reporting_output
-            
             self.order_status_info = []
-            if output:
+            if output or self.functions_to_execute_outputs:
+            
+                if not output:
+                    output = []
+            
+                for sf in self.functions_to_execute_outputs:
+                    output.extend(sf)
+            
                 self.order_status_info = [self.action_function, output]
+                self.functions_to_execute_outputs = []
             
 
         if self.order_status == self.OrderStatus.reporting_output and "ask_for_help" in self.action_function:
@@ -3191,21 +3224,36 @@ class OptimizedControl:
                             most_recent = this_time
                     """
                     
+                    objects_reported = []
                     for ob in self.order_status_info[1]:
-                        object_idx = info["object_key_to_index"][ob[0]]
+                    
+                    
+                        if not isinstance(ob,list):
+                            continue
+                    
+                        try:
+                            object_idx = info["object_key_to_index"][ob[0]]
+                        except:
+                            pdb.set_trace()
                         #this_time = robotState.items[object_idx]["item_time"][0]
                         #if this_time >= most_recent:
+                        if ob[0] in objects_reported:
+                            continue
+                        objects_reported.append(ob[0])
                         
                         if ob[0] not in self.other_agents[info['robot_key_to_index'][str(self.leader_id)]].items_info_provided:
                             self.message_text += MessagePattern.item(robotState,object_idx,ob[0], info, self.env.robot_id, self.env.convert_to_real_coordinates)
                             self.other_agents[info['robot_key_to_index'][str(self.leader_id)]].items_info_provided.append(ob[0])
                             
                 elif "collect_object" in self.order_status_info[0]:
-                    try:
-                        object_idx = info["object_key_to_index"][self.order_status_info[1][0]]
-                    except:
-                        pdb.set_trace()
-                    self.message_text += MessagePattern.item(robotState,object_idx,self.order_status_info[1][0], info, self.env.robot_id, self.env.convert_to_real_coordinates)
+                
+                    for ob in self.order_status_info[1]:
+                
+                        try:
+                            object_idx = info["object_key_to_index"][ob]
+                        except:
+                            pdb.set_trace()
+                        self.message_text += MessagePattern.item(robotState,object_idx,ob, info, self.env.robot_id, self.env.convert_to_real_coordinates)
                 elif "go_to_location" in self.order_status_info[0]:
                     self.message_text += MessagePattern.surroundings(self.order_status_info[1], int(self.env.view_radius), robotState, info, self.env.convert_to_real_coordinates)
             self.order_status = self.OrderStatus.reporting_availability
@@ -3231,7 +3279,11 @@ class OptimizedControl:
         for ob in robotState.get_all_objects():
             key = str(ob[0])
             objects.append(key)
-            ob_location = robotState.get("object_estimates", "last_seen_location", (ob[1] ,robotState.get_num_robots())) #robotState.get("objects", "last_seen_location", ob[1])
+            
+           
+            ob_location = robotState.get("objects", "last_seen_location", ob[1]) #robotState.cursor.execute("""SELECT aoe.last_seen_location, MAX(aoe.last_seen_time) FROM agent_object_estimates aoe INNER JOIN objects o ON aoe.object_id = o.object_id WHERE o.idx = ?;""", (ob[1],)).fetchall()[0][0] #robotState.get("object_estimates", "last_seen_location", (ob[1] ,robotState.get_num_robots())) #robotState.get("objects", "last_seen_location", ob[1])
+            if not ob_location or (ob_location[0] == -1 and ob_location[1] == -1):
+                pdb.set_trace()
             locations[key] = ob_location
             object_weights[key] = ob[2]
             
@@ -3253,7 +3305,7 @@ class OptimizedControl:
         occMap[occMap > 2] = 0
 
         if not self.planner:
-            self.planner = DynamicSensorPlanner(agents, objects, locations, agents_initial_positions, pd_pb, object_weights, [], occMap, self.extended_goal_coords)
+            self.planner = DynamicSensorPlanner(agents, objects, locations, agents_initial_positions, pd_pb, object_weights, occMap, self.extended_goal_coords)
         else:
         
             sql_estimates = robotState.get_all_sensing_estimates()
@@ -3265,13 +3317,13 @@ class OptimizedControl:
                 if estimate_value:
                     estimates.append((str(e[0]),e[1],estimate_value-1))
         
-            self.planner.update_state(estimates, object_weights, agents_initial_positions, locations, [], occMap)
+            self.planner.update_state(estimates, object_weights, agents_initial_positions, locations, occMap)
         
         
         
     def give_new_order(self, agent_id, robotState, info):
     
-        if agent_id in self.plan and len(self.plan[agent_id]) > 1 and ('carry' in self.plan[agent_id][1] or 'sense' in self.plan[agent_id][1]):
+        if agent_id in self.plan and len(self.plan[agent_id]) > 1 and ('carry' in self.plan[agent_id][1] or 'sense' in self.plan[agent_id][1] or 'REGION' in self.plan[agent_id][1]):
     
             del self.plan[agent_id][0]
     
@@ -3286,14 +3338,61 @@ class OptimizedControl:
                     self.message_text += MessagePattern.order_collect(agent_id, ob_id)
                     robo_idx = info['robot_key_to_index'][agent_id]
                     robotState.set("agents", "team", int(robo_idx), str([int(robo_idx)]), info["time"])
+                else:
+                    if ob_id not in self.carry_agents.keys():
+                        self.carry_agents[ob_id] = []
+                        if agent_id not in self.carry_agents[ob_id]:
+                            self.carry_agents[ob_id].append(agent_id)
                 
+                    if self.carry_agents[ob_id] == weight:
+                        robot_id = self.carry_agents[ob_id][0]
+                        robo_idx = info['robot_key_to_index'][robot_id]
+                        other_robots_ids = self.carry_agents[ob_id][1:]
+                    
+                        self.message_text += MessagePattern.agent(robot_id, int(robo_idx), robotState, self.env.convert_to_real_coordinates)
+                        self.message_text += MessagePattern.order_collect_group(robot_id, other_robots_ids, ob_id)
+                        
+                        robo_idxs = [info['robot_key_to_index'][rid] for rid in self.carry_agents[ob_id]]
+                        
+                        for p in robo_idxs:
+                            robotState.set("agents", "team", int(p), str([int(p) for p in robo_idxs]), info["time"])  
                     
             elif 'sense' in self.plan[agent_id][0]:
-                ob_id = self.plan[agent_id][0].split("_")[1]
-                idx = info['object_key_to_index'][ob_id]
-                location = robotState.get("object_estimates", "last_seen_location", (idx ,robotState.get_num_robots()))
-                self.message_text += MessagePattern.order_sense(agent_id, ob_id, location, self.env.convert_to_real_coordinates)
+            
+                if 'CLUSTER' in self.plan[agent_id][0]:
+                    cluster_num = self.plan[agent_id][0].split("CLUSTER")[1]
+                    ob_locations = []
+                    for ob_id in self.planner.clusters[int(cluster_num)]['objects']:
+                        idx = info['object_key_to_index'][ob_id]
+                        location = robotState.get("objects", "last_seen_location", idx)
+                        if not location or (location[0] == -1 and location[1] == -1):
+                            pdb.set_trace()
+                        ob_locations.append(location) #robotState.get("object_estimates", "last_seen_location", (idx ,robotState.get_num_robots())))
+                        
+                    try:
+                        
+                        self.message_text += MessagePattern.order_sense_multiple(agent_id, self.planner.clusters[int(cluster_num)]['objects'], ob_locations, self.env.convert_to_real_coordinates)
+                    except:
+                        pdb.set_trace()
+                        
+                else:
+            
+                    ob_id = self.plan[agent_id][0].split("_")[1]
+                    idx = info['object_key_to_index'][ob_id]
+                    location = robotState.get("objects", "last_seen_location", idx) #robotState.get("object_estimates", "last_seen_location", (idx ,robotState.get_num_robots()))
+                    if not location or (location[0] == -1 and location[1] == -1):
+                            pdb.set_trace()
+                    self.message_text += MessagePattern.order_sense(agent_id, ob_id, location, self.env.convert_to_real_coordinates)
         
+            elif 'REGION' in self.plan[agent_id][0]:
+                location = self.planner.locations[self.plan[agent_id][0]]
+                self.message_text += MessagePattern.order_explore(agent_id, location, self.env.convert_to_real_coordinates)
+                
+                
+        elif agent_id in self.plan and len(self.plan[agent_id]) == 1:
+            del self.plan[agent_id]
+            del self.previous_plan[agent_id]
+                
     
     def decision(self,messages, robotState, info, output, nearby_other_agents, help_requests):
 
@@ -3391,7 +3490,7 @@ class OptimizedControl:
                     del self.previous_plan[agent_id]
                     continue
                 
-                if agent_id not in self.previous_plan or self.plan[agent_id][0] != self.previous_plan[agent_id][0]:
+                if agent_id not in self.previous_plan or self.plan[agent_id][0] != self.previous_plan[agent_id][0] or ('carry' in self.plan[agent_id][0] and weight > 1):
                 
                     '''
                     if agent_id in self.plan.keys():
@@ -3437,17 +3536,27 @@ class OptimizedControl:
                             ob_locations = []
                             for ob_id in self.planner.clusters[int(cluster_num)]['objects']:
                                 idx = info['object_key_to_index'][ob_id]
-                                ob_locations.append(robotState.get("object_estimates", "last_seen_location", (idx ,robotState.get_num_robots())))
+                                location = robotState.get("objects", "last_seen_location", idx)
+                                ob_locations.append(location)
+                                #ob_locations.append(robotState.get("object_estimates", "last_seen_location", (idx ,robotState.get_num_robots())))
                                 
-                            self.message_text += MessagePattern.order_sense_multiple(agent_id, self.planner.clusters[int(cluster_num)]['objects'], ob_locations, self.env.convert_to_real_coordinates)
+                                if not ob_locations[-1]:
+                                    pdb.set_trace()
+                            try:
+                                
+                                self.message_text += MessagePattern.order_sense_multiple(agent_id, self.planner.clusters[int(cluster_num)]['objects'], ob_locations, self.env.convert_to_real_coordinates)
+                            except:
+                                pdb.set_trace()
                             
                         else:
                             ob_id = self.plan[agent_id][0].split("_")[1]
                             idx = info['object_key_to_index'][ob_id]
-                            location = robotState.get("object_estimates", "last_seen_location", (idx ,robotState.get_num_robots()))
+                            location = robotState.get("objects", "last_seen_location", idx) #robotState.get("object_estimates", "last_seen_location", (idx ,robotState.get_num_robots()))
                             self.message_text += MessagePattern.order_sense(agent_id, ob_id, location, self.env.convert_to_real_coordinates)
                         
-                        
+                    elif 'REGION' in self.plan[agent_id][0]:
+                        location = self.planner.locations[self.plan[agent_id][0]]
+                        self.message_text += MessagePattern.order_explore(agent_id, location, self.env.convert_to_real_coordinates)
                         
               
             
@@ -3465,6 +3574,9 @@ class OptimizedControl:
                 robot_id = self.carry_agents[ob][0]
                 robo_idx = info['robot_key_to_index'][robot_id]
                 other_robots_ids = self.carry_agents[ob][1:]
+            
+                if not other_robots_ids:
+                    pdb.set_trace()
             
                 self.message_text += MessagePattern.agent(robot_id, int(robo_idx), robotState, self.env.convert_to_real_coordinates)
                 self.message_text += MessagePattern.order_collect_group(robot_id, other_robots_ids, ob)

@@ -3,11 +3,11 @@ from gurobipy import GRB
 import numpy as np
 import pdb
 import itertools
-
-
+from sklearn.cluster import DBSCAN
+import math
 
 class DynamicSensorPlanner:
-    def __init__(self, agents, objects, locations, agent_home, PD_PB_params, object_weights, regions_to_explore, occMap, goal_coords):
+    def __init__(self, agents, objects, locations, agent_home, PD_PB_params, object_weights, occMap, goal_coords):
         self.agents = agents
         self.objects = objects
         self.PD_PB = PD_PB_params  # Dict: {agent: (PD, PB)}
@@ -18,14 +18,16 @@ class DynamicSensorPlanner:
         self.pickup_belief_threshold = 0.91
         self.objects_to_carry = []
         self.object_weights = object_weights
-        self.regions_to_explore = regions_to_explore
+        self.regions_to_explore = []
         self.occMap = occMap
         self.past_beliefs = []
         self.goal_coords = goal_coords
         self.already_carried = []
+        self.region_number = 0
+        self.cluster_number = 0
         
-        locations = self.recluster(locations)
-        
+        self.locations = self.recluster(locations)
+        self.locations.update(self.create_exploration_regions())
         self.nodes = self.create_nodes()
         
         # Initialize beliefs (uniform prior)
@@ -48,7 +50,28 @@ class DynamicSensorPlanner:
                 0: np.log((1 - PD) / PB)    # LLR for Y=0
             }
          
-        self.update_positions(agent_home,locations)
+        self.update_positions(agent_home)
+        
+        
+    def create_exploration_regions(self):
+        region_side_size = 6
+        
+        chunks = (int((self.occMap.shape[0]-2)/region_side_size),int((self.occMap.shape[1]-2)/region_side_size))
+        
+        locations = {}
+        
+        for c1 in range(chunks[0]):
+            for c2 in range(chunks[1]):
+                c_min = (c1*region_side_size+1,c2*region_side_size+1)
+                c_max = (c1*region_side_size+1+region_side_size,c2*region_side_size+1+region_side_size)
+                if np.where(self.occMap[c_min[0]:c_max[0],c_min[1]:c_max[1]] == -2)[0].size:
+                    middle_coords = np.array([(c_max[0]-c_min[0])/2,(c_max[1]-c_min[1])/2]) + np.array(c_min)
+                    middle_coords = middle_coords.astype(int).tolist()
+                    self.regions_to_explore.append(str(self.region_number))
+                    locations['REGION'+str(self.region_number)] = middle_coords
+                    self.region_number += 1
+                    
+        return locations
         
     
     def create_nodes(self):
@@ -138,10 +161,28 @@ class DynamicSensorPlanner:
 
         return [] #No path
         
-    def update_positions(self, current_positions,locations):
+    def update_positions(self, current_positions):
         # Distance from HOME to objects (for each agent)
         
         self.d_home = {}
+        
+        for j in self.clusters.keys():
+            ob_distances = []
+            for ob in self.clusters[j]["objects"]:
+                if tuple([10,10]) != tuple(self.locations[str(ob)]):
+                    ob_distances.append(len(self.findPath(np.array([10,10]),np.array(self.locations[ob]),self.occMap)))
+                    
+            if ob_distances:
+                indices = np.argsort(ob_distances).tolist()
+                try:
+                    self.locations['CLUSTER'+str(j)] = self.locations[str(self.clusters[j]["objects"][indices[int(math.floor(len(indices)/2))]])]
+                except:
+                    pdb.set_trace()
+            else:
+                self.locations['CLUSTER'+str(j)] = 0
+            
+            print(self.locations['CLUSTER'+str(j)])
+        
         for i in self.agents: 
             for j in self.nodes:
                 if j != 'HOME':
@@ -154,10 +195,10 @@ class DynamicSensorPlanner:
                     try:
                         #print(i,j,n,current_positions[i],locations[n])
                         
-                        if tuple(current_positions[i]) == tuple(locations[n]):
+                        if tuple(current_positions[i]) == tuple(self.locations[n]):
                             self.d_home[(i,j)] = 0
                         else:
-                            self.d_home[(i,j)] = len(self.findPath(np.array(current_positions[i]),np.array(locations[n]),self.occMap)) #self.euclidean(current_positions[i], locations[n])    
+                            self.d_home[(i,j)] = len(self.findPath(np.array(current_positions[i]),np.array(self.locations[n]),self.occMap)) #self.euclidean(current_positions[i], locations[n])    
                     except:
                         pdb.set_trace()
                 
@@ -184,12 +225,15 @@ class DynamicSensorPlanner:
                 
                     #print(j,k,n1,n2,locations[n1],locations[n2])
                     
-                    if tuple(locations[n1]) == tuple(locations[n2]):
+                    if tuple(self.locations[n1]) == tuple(self.locations[n2]):
                         self.c_jk[(j, k)] = 0
                     elif (k, j) in self.c_jk.keys():
                         self.c_jk[(j, k)] = self.c_jk[(k, j)]
                     else:
-                        self.c_jk[(j, k)] = len(self.findPath(np.array(locations[n1]),np.array(locations[n2]),self.occMap)) #self.euclidean(locations[n1], locations[n2]) 
+                        try:
+                            self.c_jk[(j, k)] = len(self.findPath(np.array(self.locations[n1]),np.array(self.locations[n2]),self.occMap)) #self.euclidean(locations[n1], locations[n2]) 
+                        except:
+                            pdb.set_trace()
                         
         #print(self.d_home,self.c_jk)
                  
@@ -199,19 +243,33 @@ class DynamicSensorPlanner:
         clustering = DBSCAN(eps=eps,min_samples=1).fit(coords)
         clusters = {}
         for idx, label in enumerate(clustering.labels_):
+            label += self.cluster_number
             if label not in clusters:
                 clusters[label] = {"objects": [], "centroid": None}
             clusters[label]["objects"].append(list(object_positions.keys())[idx])
         # Compute centroids
         for label in clusters:
-            cluster_coords = coords[[i for i, l in enumerate(clustering.labels_) if l == label]]
+        
+            '''
+            cluster_coords = []
+            cluster_distance = []
+            
+            for i,l in enumerate(clustering.labels_):
+                if l == label:
+                    cluster_coords.append(coords[i])
+                    cluster_distance.append(len(self.findPath(np.array([]),np.array(locations[n2]),self.occMap)))
+            '''
+            
+            cluster_coords = coords[[i for i, l in enumerate(clustering.labels_) if l == label-self.cluster_number]]
             clusters[label]["centroid"] = np.mean(cluster_coords, axis=0)
             
             
+        self.cluster_number += len(clustering.labels_)
         return clusters
         
     def recluster(self, locations):
         self.clusters = self.cluster_objects({l:locations[l] for l in locations.keys() if 'CLUSTER' not in l and 'SAFE' not in l and 'REGION' not in l})
+        print('CLUSTERS:', self.clusters)
     
         print(self.clusters)
     
@@ -227,8 +285,8 @@ class DynamicSensorPlanner:
             self.tau_current[j] = self.tau_initial  # Initial confidence threshold
             self.objects.append(j)
         
-        self.nodes = self.create_nodes()
-        self.object_weights.update(weights)
+        #self.nodes = self.create_nodes()
+        #self.object_weights.update(weights)
         
     def update_belief(self, object_j, agent_i, report_Y):
         PD, PB = self.PD_PB[agent_i]
@@ -252,54 +310,86 @@ class DynamicSensorPlanner:
         self.tau_current[object_j] = max(0, self.tau_current[object_j])  # Threshold ≥ 0
         self.sensed_objects.append((agent_i,object_j))
         
-        if self.belief[object_j] >= self.pickup_belief_threshold and object_j not in self.objects_to_carry:
+        if self.object_weights[object_j] <= len(self.agents) and self.belief[object_j] >= self.pickup_belief_threshold and object_j not in self.objects_to_carry:
             self.objects_to_carry.append(object_j)
             
         #CLUSTERS
-            
+        '''  
         cluster_label = ""
         for c in self.clusters.keys():
             if object_j in self.clusters[c]["objects"]:
                 cluster_label = c
                 break
-            
-        objects = self.clusters[cluster_label]["objects"]
-        total_belief = sum(self.belief[o] for o in objects)
-        self.group_belief[str(cluster_label)] = total_belief / len(objects)
-        
-        self.group_tau[str(cluster_label)] = sum(self.tau_current[o] for o in objects)
+        '''
 
-    def update_state(self, object_beliefs, object_weights, current_positions, object_locations, regions_to_explore, occMap):
+    def update_state(self, object_beliefs, object_weights, current_positions, object_locations, occMap):
+        
+        self.occMap = occMap
+        
+        self.object_weights = object_weights
+        
+        self.locations = {}
+        
+        self.regions_to_explore = []
+        
+        for j in object_locations.keys():
+            if 'SAFE' not in j and 'REGION' not in j and 'CLUSTER' not in j and j not in self.objects:
+                self.belief[j] = self.prior_belief
+                self.tau_current[j] = self.tau_initial
+                self.objects.append(j)
+        
+        self.locations = self.recluster(object_locations.copy())
+        
+        print("SENSED:", self.sensed_objects, self.sensed_clusters)
+        
+        #if object_beliefs:
+        #    pdb.set_trace()
         
         for ob in object_beliefs:
             if ob not in self.past_beliefs:
                 self.update_belief(ob[0], ob[1], ob[2])
                 self.past_beliefs.append(ob)
             
-        self.occMap = occMap
-        
         ####### Cluster
         self.sensed_clusters = []
         for a in self.agents:
             for c in self.clusters.keys():
-                if all((a,ob) in self.sensed_objects for ob in self.clusters[c]["objects"] for ss in self.sensed_objects if ss[0] == a):
+                if all(True if (a,ob) in self.sensed_objects else False for ob in self.clusters[c]["objects"]):
                     self.sensed_clusters.append((a,str(c)))
         #######
         
-        for ol_key in object_locations.keys():
-            if ol_key != 'SAFE' and ol_key not in self.already_carried and tuple(object_locations[ol_key]) in self.goal_coords:
+        print("ALREADY IN GOAL:", self.locations, self.goal_coords)
+        for ol_key in self.locations.keys():
+            if ol_key != 'SAFE' and 'CLUSTER' not in ol_key and ol_key != 'REGION' and ol_key not in self.already_carried and tuple(self.locations[ol_key]) in self.goal_coords:
                 self.already_carried.append(ol_key)
-                self.objects.remove(ol_key)
+                try:
+                    self.objects.remove(ol_key)
+                except:
+                    pdb.set_trace()
+            
+        self.locations.update(self.create_exploration_regions())
             
         self.nodes = self.create_nodes()
             
-        self.update_positions(current_positions, object_locations)
+        self.update_positions(current_positions)
         
-        self.regions_to_explore = regions_to_explore
+        
 
+        self.group_belief = {}
+        self.group_tau = {}
+        
+        for cluster_label in self.clusters.keys():
+            objects = self.clusters[cluster_label]["objects"]
+            try:
+                total_belief = sum(self.belief[o] for o in objects)
+            except:
+                pdb.set_trace()
+            self.group_belief[str(cluster_label)] = total_belief / len(objects)
+            
+            self.group_tau[str(cluster_label)] = sum(self.tau_current[o] for o in objects)
         
         
-        self.object_weights = object_weights
+        
 
     def replan(self):
     
@@ -355,10 +445,13 @@ class DynamicSensorPlanner:
         confidence_penalty = gp.quicksum(slack[j] * self.penalty_weight for j in self.objects)
         '''
         
-        uncertainty_penalty = gp.quicksum(
-            (self.group_tau[j.split('CLUSTER')[1]] - gp.quicksum(assign[i,j] * self.LLR[i][1] for i in self.agents)) * self.group_belief[j.split('CLUSTER')[1]]
-            for j in self.nodes if 'sense' in j
-        )
+        try:
+            uncertainty_penalty = gp.quicksum(
+                (self.group_tau[j.split('CLUSTER')[1]] - gp.quicksum(assign[i,j] * self.LLR[i][1] for i in self.agents)) * self.group_belief[j.split('CLUSTER')[1]]
+                for j in self.nodes if 'sense' in j
+            )
+        except:
+            pdb.set_trace()
         
         slack = model.addVars([str(c) for c in self.clusters.keys()], lb=0, name="Slack")  # Shortfall per object
         
@@ -369,15 +462,20 @@ class DynamicSensorPlanner:
             max_dist[j] for j in self.objects if self.object_weights[j] > 1
         )
         
-        exploration_reward = gp.quicksum(
-            assign[i, 'REGION'+str(r)] * 100  # Weighted by probability
-            for i in self.agents 
-            for r in self.regions_to_explore 
-        )
+        
+        try:
+            exploration_reward = gp.quicksum(
+                assign[i, 'REGION'+str(r)]*100  # Weighted by probability
+                for i in self.agents 
+                for r in self.regions_to_explore 
+            )
+        except:
+            pdb.set_trace()
 
         
 
         model.setObjective(inspection_time + travel_time + uncertainty_penalty + confidence_penalty + collaborative_travel - exploration_reward, GRB.MINIMIZE)
+        #model.setObjective(inspection_time + travel_time + uncertainty_penalty + confidence_penalty + collaborative_travel, GRB.MINIMIZE)
 
         # ================== Constraints ==================
         # Confidence requirement (unchanged)
@@ -529,7 +627,7 @@ class DynamicSensorPlanner:
                     model.addConstr(arrivals == departures, f"Flow_{i}_{j}")
 
         # ================== Solve & Results ==================
-        model.Params.TimeLimit = 30
+        model.Params.TimeLimit = 10
         model.optimize()
 
         # Print routes with order
@@ -557,9 +655,12 @@ class DynamicSensorPlanner:
                         route.append(f"-> {curr_obj} (Order {sorted_assigned[idx][1]})")
                     print(f"Agent {i} route: {' '.join(route)}")
                     
+            if not assignments or len(assignments) < len(self.agents):
+                pdb.set_trace()
             return assignments
         else:
             print("No solution found", model.status)
+            pdb.set_trace()
         
         return []
 # ================== Data Setup ==================

@@ -285,6 +285,7 @@ class RobotState:
         self.env = env
         self.current_action_description = ""
         self.possible_estimates = {}
+        self.saved_locations = {}
         
         
         if self.args.sql:
@@ -550,6 +551,12 @@ class RobotState:
                     
                     if propert == "estimate_correct_percentage":
                         row = row[0]
+                        
+                elif propert == "last_seen_location":
+                    if not self.get("objects","last_seen_time",idx):
+                        row = self.cursor.execute("SELECT aoe." + propert + " FROM agent_object_estimates aoe INNER JOIN objects o ON o.object_id = aoe.object_id INNER JOIN agents a ON a.agent_id = aoe.agent_id WHERE o.idx = ? AND a.idx = ?;", (idx ,self.get_num_robots(),)).fetchall()
+                    else:
+                        row = self.cursor.execute("SELECT " + propert + " FROM agent_object_estimates aoe INNER JOIN objects o ON o.object_id = aoe.object_id WHERE last_seen_time = (SELECT MAX(aoe.last_seen_time) FROM agent_object_estimates aoe INNER JOIN objects o ON o.object_id = aoe.object_id WHERE o.idx = ?) AND o.idx = ?;", (idx,idx,)).fetchall()
                 else:
                     row = self.cursor.execute("SELECT " + propert + " FROM agent_object_estimates aoe INNER JOIN objects o ON o.object_id = aoe.object_id WHERE last_seen_time = (SELECT MAX(aoe.last_seen_time) FROM agent_object_estimates aoe INNER JOIN objects o ON o.object_id = aoe.object_id WHERE o.idx = ?) AND o.idx = ?;", (idx,idx,)).fetchall()
              
@@ -679,6 +686,15 @@ class RobotState:
                 
                 self.cursor.execute("""UPDATE agents SET last_seen_location = ?, last_seen_time = ?, last_seen_room = ? WHERE idx = ?;""", (str(robot_location), float(neighbor_output["neighbor_time"][0]), room, robot_idx,))
                 
+                ego_location = np.where(self.latest_map == 5)
+                view_radius = int(self.args.view_radius)
+                max_x = ego_location[0][0] + view_radius
+                max_y = ego_location[1][0] + view_radius
+                min_x = max(ego_location[0][0] - view_radius, 0)
+                min_y = max(ego_location[1][0] - view_radius, 0)
+                
+                if ((grid_location[0] < min_x or grid_location[0] > max_x) or (grid_location[1] < min_y or grid_location[1] > max_y)) and tuple(grid_location) not in self.saved_locations.keys():
+                    self.saved_locations[tuple(grid_location)] = self.latest_map[grid_location[0], grid_location[1]]
                 
                 if self.latest_map[grid_location[0], grid_location[1]] != 5:
                     self.latest_map[grid_location[0], grid_location[1]] = 3
@@ -1166,6 +1182,21 @@ while True:
                     previous_robo_map = np.copy(robotState.latest_map)
                     robotState.latest_map[min_x:max_x+1,min_y:max_y+1]= next_observation["frame"][min_x:max_x+1,min_y:max_y+1]
                     
+                    #print(next_observation["frame"])
+                    
+                    to_delete = []
+                    #This is when we localize agents at all time regardless of view radius
+                    for saved_coord in robotState.saved_locations.keys():
+                        if ((saved_coord[0] < min_x or saved_coord[0] > max_x) or (saved_coord[1] < min_y or saved_coord[1] > max_y)):
+                            if next_observation["frame"][saved_coord[0],saved_coord[1]] != 3:
+                                robotState.latest_map[saved_coord[0],saved_coord[1]] = robotState.saved_locations[saved_coord]
+                                to_delete.append(saved_coord)
+                        else:
+                            to_delete.append(saved_coord)
+                    
+                    for d in to_delete:
+                        del robotState.saved_locations[d]
+                    
                     if not np.array_equal(robotState.latest_map,previous_robo_map):
                         file_name="agent_map_" + str(args.robot_number) + ".txt"
                         with open(file_name, 'wb') as filetowrite:
@@ -1197,7 +1228,7 @@ while True:
                                 template_robot_info = {"neighbor_type": -1, "neighbor_location": np.array([int(m_key_xy[0]), int(m_key_xy[1])], dtype=np.int16), "neighbor_time": np.array([info["time"]], dtype=np.int16), "neighbor_disabled": map_object[2]}
                                 #print("Disabled:", map_object)
                                 robotState.update_robots(template_robot_info, robot_idx)
-
+                                
                                 
                                 
                             

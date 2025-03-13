@@ -562,13 +562,15 @@ class MessagePattern:
         
         real_locations = []
         for l in locations:
-            real_locations.append(tuple(convert_to_real_coordinates(l)))
+            real_locations.append(str(tuple(convert_to_real_coordinates(l))))
+            if not tuple(convert_to_real_coordinates(l)):
+                pdb.set_trace()
             
-        return str(robot_id) + ", sense objects " + ','.join(object_ids) + " at locations " + ','.join(real_locations) + ". "
+        return str(robot_id) + ", sense objects [" + ','.join(object_ids) + "] at locations [" + ','.join(real_locations) + "]. "
         
     @staticmethod    
     def order_sense_multiple_regex():
-        return "(\w+), sense objects (\[(,?\d+)+\]) at locations (\[(,?(\(-?\d+\.\d+,-?\d+\.\d+\)))+\])"
+        return "(\w+), sense objects (\[(,?\d+)+\]) at locations (\[(,?(\( *-?\d+(\.(\d+)?)? *, *-?\d+(\.(\d+)?)? *\)))+\])"
         
     @staticmethod
     def order_collect(robot_id, object_id):
