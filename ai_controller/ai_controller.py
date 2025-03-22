@@ -1182,6 +1182,12 @@ while True:
                     previous_robo_map = np.copy(robotState.latest_map)
                     robotState.latest_map[min_x:max_x+1,min_y:max_y+1]= next_observation["frame"][min_x:max_x+1,min_y:max_y+1]
                     
+                    walls = np.where(next_observation["frame"] == 1)
+                    
+                    for w in range(len(walls[0])):
+                        if robotState.latest_map[walls[0][w],walls[1][w]] == -2:
+                            robotState.latest_map[walls[0][w],walls[1][w]] = 1
+                    
                     #print(next_observation["frame"])
                     
                     to_delete = []

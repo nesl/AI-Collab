@@ -24,6 +24,8 @@ class Movement:
         self.wait_locations = []
         self.env = env
         
+        self.distance_limit = 5
+        
         self.wait_requester = ""
         #self.asked_help = False
         #self.helping = []
@@ -408,6 +410,8 @@ class Movement:
                 else:
                     self.go_retries += 1
                     print("stuck2?", path_to_follow, self.ignore_go_location, self.go_retries)
+                    #if action_index == self.State.follow:
+                    #    pdb.set_trace()
             else:
                 self.go_retries = 0
                 self.ignore_go_location = []
@@ -591,6 +595,8 @@ class Movement:
         
             carrying_object = ""
             if robotState.object_held:
+                if not object_held:
+                    pdb.set_trace()
                 carrying_object = object_held[0]
                 if not carrying_object: #Sometimes the agent doesn't know what it is carrying
                     carrying_object = "9999"
@@ -1587,7 +1593,7 @@ class Movement:
                 if not robotState.get("agents", "type", agent_idx): #depending on whether the robot is human controlled or not, we have different distances at which to maitain helping robots
                     distance_limit = self.env.map_config["strength_distance_limit"]-1
                 else:
-                    distance_limit = self.env.map_config['communication_distance_limit']-2
+                    distance_limit = self.distance_limit-2
                 
                 
                 

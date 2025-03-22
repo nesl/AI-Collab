@@ -15,7 +15,7 @@ class DynamicSensorPlanner:
         self.sensed_clusters = []
         self.penalty_weight = 1000
         self.prior_belief = 0.5
-        self.pickup_belief_threshold = 0.91
+        self.pickup_belief_threshold = 0.95
         self.objects_to_carry = []
         self.object_weights = object_weights
         self.regions_to_explore = []
@@ -166,11 +166,13 @@ class DynamicSensorPlanner:
         
         self.d_home = {}
         
+        center = self.goal_coords[int(len(self.goal_coords)/2)]
+        
         for j in self.clusters.keys():
             ob_distances = []
             for ob in self.clusters[j]["objects"]:
-                if tuple([10,10]) != tuple(self.locations[str(ob)]):
-                    ob_distances.append(len(self.findPath(np.array([10,10]),np.array(self.locations[ob]),self.occMap)))
+                if tuple(center) != tuple(self.locations[str(ob)]):
+                    ob_distances.append(len(self.findPath(np.array(center),np.array(self.locations[ob]),self.occMap)))
                     
             if ob_distances:
                 indices = np.argsort(ob_distances).tolist()
@@ -239,8 +241,31 @@ class DynamicSensorPlanner:
                  
     def cluster_objects(self, object_positions, eps=5.0):
     
+        tuples_done = []
+        distance_matrix = []
+        for ob1_idx,ob1 in enumerate(object_positions.keys()):
+            distance_matrix.append([])
+            for ob2_idx,ob2 in enumerate(object_positions.keys()):
+    
+                if ob1 == ob2:
+                    distance_matrix[-1].append(0)
+                elif (ob2_idx,ob1_idx) in tuples_done:
+                    try:
+                        distance_matrix[-1].append(distance_matrix[ob2_idx][ob1_idx])
+                    except:
+                        pdb.set_trace()
+                else:
+                    try:
+                        distance_matrix[-1].append(len(self.findPath(np.array(object_positions[ob1]),np.array(object_positions[ob2]),self.occMap))) #self.euclidean(locations[n1], locations[n2]) 
+                        tuples_done.append((ob1_idx,ob2_idx))
+                    except:
+                        pdb.set_trace()
+    
+    
         coords = np.array([pos for pos in object_positions.values()])
-        clustering = DBSCAN(eps=eps,min_samples=1).fit(coords)
+        #clustering = DBSCAN(eps=eps,min_samples=1).fit(coords)
+        distance_matrix = np.array(distance_matrix)
+        clustering = DBSCAN(metric='precomputed',eps=eps,min_samples=1).fit(distance_matrix)
         clusters = {}
         for idx, label in enumerate(clustering.labels_):
             label += self.cluster_number
@@ -268,7 +293,7 @@ class DynamicSensorPlanner:
         return clusters
         
     def recluster(self, locations):
-        self.clusters = self.cluster_objects({l:locations[l] for l in locations.keys() if 'CLUSTER' not in l and 'SAFE' not in l and 'REGION' not in l})
+        self.clusters = self.cluster_objects({l:locations[l] for l in locations.keys() if 'CLUSTER' not in l and 'SAFE' not in l and 'REGION' not in l and l not in self.already_carried})
         print('CLUSTERS:', self.clusters)
     
         print(self.clusters)
@@ -322,7 +347,7 @@ class DynamicSensorPlanner:
                 break
         '''
 
-    def update_state(self, object_beliefs, object_weights, current_positions, object_locations, occMap):
+    def update_state(self, object_beliefs, object_weights, current_positions, object_locations, occMap, skip_states):
         
         self.occMap = occMap
         
@@ -333,7 +358,7 @@ class DynamicSensorPlanner:
         self.regions_to_explore = []
         
         for j in object_locations.keys():
-            if 'SAFE' not in j and 'REGION' not in j and 'CLUSTER' not in j and j not in self.objects:
+            if 'SAFE' not in j and 'REGION' not in j and 'CLUSTER' not in j and j not in self.objects and j not in self.already_carried:
                 self.belief[j] = self.prior_belief
                 self.tau_current[j] = self.tau_initial
                 self.objects.append(j)
@@ -358,9 +383,17 @@ class DynamicSensorPlanner:
                     self.sensed_clusters.append((a,str(c)))
         #######
         
-        print("ALREADY IN GOAL:", self.locations, self.goal_coords)
+        print("ALREADY IN GOAL:", self.locations, self.goal_coords,self.already_carried)
+  
+        skip_objects = []      
+        for ss in skip_states: #Make sure, objects being carried are not eliminated from the planning
+            ob_id = ss[0].split("_")[1]
+            if 'carry' in ss[0] and ob_id not in skip_objects:
+                skip_objects.append(ob_id)
+            
+            
         for ol_key in self.locations.keys():
-            if ol_key != 'SAFE' and 'CLUSTER' not in ol_key and ol_key != 'REGION' and ol_key not in self.already_carried and tuple(self.locations[ol_key]) in self.goal_coords:
+            if ol_key != 'SAFE' and 'CLUSTER' not in ol_key and ol_key != 'REGION' and ol_key not in self.already_carried and tuple(self.locations[ol_key]) in self.goal_coords and ol_key not in skip_objects:
                 self.already_carried.append(ol_key)
                 try:
                     self.objects.remove(ol_key)
@@ -391,7 +424,7 @@ class DynamicSensorPlanner:
         
         
 
-    def replan(self):
+    def replan(self,skip_state=[]):
     
         model = gp.Model("FixedRoutingAssignment")
         M = len(self.nodes) + 1  # Upper bound for order variables
@@ -487,10 +520,6 @@ class DynamicSensorPlanner:
             )
         '''
 
-  
-                    
-            
-                
         
         for j in self.nodes:
         
@@ -626,6 +655,25 @@ class DynamicSensorPlanner:
                     departures = gp.quicksum(travel[i,j,k] for k in self.nodes if k != j)
                     model.addConstr(arrivals == departures, f"Flow_{i}_{j}")
 
+
+        for ss in skip_state:
+        
+            try:
+                model.addConstr(
+                    assign[ss[1],ss[0]] == 1,
+                    f"FixedAssign_{ss[0]}"
+                )
+            except:
+                pdb.set_trace()
+            model.addConstr(
+                order[ss[1],ss[0]] == 1,
+                f"FixedOrder_{ss[0]}"
+            )
+            model.addConstr(
+                travel[ss[1], 'HOME', ss[0]] == 1,
+                f"FixedTravel_{ss[0]}"
+            )
+
         # ================== Solve & Results ==================
         model.Params.TimeLimit = 10
         model.optimize()
@@ -636,7 +684,7 @@ class DynamicSensorPlanner:
             print(self.LLR)
             print(max_dist,sync_order)
             
-            print(self.objects_to_carry, self.object_weights)
+            print(self.objects_to_carry, self.belief, self.object_weights)
 
             #for o in self.objects:
             #    print("Object", o, slack[o],self.tau_current[o],self.belief[o]) #, [assign[i,f"sense_{o}"] for i in self.agents],[assign[i,f"carry_{o}"] for i in self.agents])
@@ -655,8 +703,8 @@ class DynamicSensorPlanner:
                         route.append(f"-> {curr_obj} (Order {sorted_assigned[idx][1]})")
                     print(f"Agent {i} route: {' '.join(route)}")
                     
-            if not assignments or len(assignments) < len(self.agents):
-                pdb.set_trace()
+            #if not assignments or len(assignments) < len(self.agents):
+            #    pdb.set_trace()
             return assignments
         else:
             print("No solution found", model.status)

@@ -783,14 +783,14 @@ class AICollabEnv(gym.Env):
 
         map_coordinates = np.arange(self.map_config['edge_coordinate'][0], self.map_config['edge_coordinate'][0]+self.map_config['cell_size']*map_size,1)
         
-        
+        '''
         half_cell = self.map_config['cell_size']/2
         for mc_idx in range(len(map_coordinates)):
             if map_coordinates[mc_idx] > 0:
                 map_coordinates[mc_idx] += half_cell
             elif map_coordinates[mc_idx] < 0:
                 map_coordinates[mc_idx] -= half_cell 
-        
+        '''
         self.goal_coords = [(x,y) for x,x_coord in enumerate(map_coordinates) for y,y_coord in enumerate(map_coordinates) if any(np.linalg.norm(np.array([x_coord,y_coord]) - np.array(goal[1])) <= goal[0] for goal in self.map_config['goal_radius'])]
         
 
@@ -817,6 +817,7 @@ class AICollabEnv(gym.Env):
         self.object_key_to_index = {}
         self.neighbors_info = [[um[0], 0 if um[1] == 'human' else 1,0,0,-1,False] for um in self.map_config['all_robots'] if um[0] != self.robot_id]
         self.robot_key_to_index = {self.neighbors_info[i][0]:i for i in range(len(self.neighbors_info))}
+        self.robot_key_to_index[self.robot_id] = len(self.neighbors_info)
         self.own_neighbors_info_entry = [self.robot_id, 1, 0, 0, -1, False]
         self.last_sensed = []
         self.neighbors_sensor_parameters = []

@@ -167,7 +167,7 @@ class Enhanced_Magnebot(Magnebot):
     
         if self.difficulty_level:
             if self.difficulty_level == 1:
-                low_threshold = 0.9 #0.7
+                low_threshold = 0.7 #0.7
             elif self.difficulty_level == 2:
                 low_threshold = 0.7
             elif self.difficulty_level == 3:
@@ -345,7 +345,7 @@ class Simulation(Controller):
         
         self.manual_occupancy_map()
         
-        
+        print(self.static_occupancy_map.occupancy_map)
         #print(self.static_occupancy_map.occupancy_map[:20,:20])
         
 
@@ -354,10 +354,17 @@ class Simulation(Controller):
         self.user_original_spawn_positions = []#[{"x": 0, "y": 0, "z": 1.1},{"x": 0, "y": 0, "z": 2.1}, {"x": 0, "y": 0, "z": 3.1}, {"x": 1, "y": 0, "z": 0.1}, {"x": 0, "y": 0, "z": 0.1},{"x": 0, "y": 0, "z": -1.1}, {"x": 0, "y": 0, "z": -2.1},{"x": 0, "y": 0, "z": -3.1},{"x": 1, "y": 0, "z": -3.1},{"x": 1, "y": 0, "z": -2.1}]
         
         locations = []
-        for a in range(-5,5):
-            for b in range(-5,5):
-                locations.append({"x": self.cfg['cell_size']/2 + self.cfg['cell_size']*a,  "y": 0, "z": self.cfg['cell_size']/2 + self.cfg['cell_size']*b})
+        if self.scenario != 3:
+            for a in range(-5,5):
+                for b in range(-5,5):
+                    locations.append({"x": self.cfg['cell_size']/2 + self.cfg['cell_size']*a,  "y": 0, "z": self.cfg['cell_size']/2 + self.cfg['cell_size']*b})
+                    
+        else:
+            for a in range(int(self.goal_area[0][1][0] - self.goal_area[0][0]), int(self.goal_area[0][1][0] + self.goal_area[0][0])):
+                for b in range(int(self.goal_area[0][1][1] - self.goal_area[0][0]), int(self.goal_area[0][1][1] + self.goal_area[0][0])):
+                    locations.append({"x": self.cfg['cell_size']/2 + self.cfg['cell_size']*a,  "y": 0, "z": self.cfg['cell_size']/2 + self.cfg['cell_size']*b})
         
+        #print('LOCATIONS', locations)
         for l_idx,spawn_loc in enumerate(locations):
             
             if l_idx > len(locations)/2:
@@ -584,7 +591,7 @@ class Simulation(Controller):
                 def reset():
                     self.reset = True
                     self.previous_scenario = self.scenario
-                    self.scenario = 1
+                    #self.scenario = 1
                     
                 @self.sio.event 
                 def reset_partial():
@@ -1228,6 +1235,103 @@ class Simulation(Controller):
                                              "shape":"circle",
                                              "color": {"r": 0, "g": 0, "b": 1, "a": 1}})
                   
+           
+        
+        elif self.scenario == 3:
+            self.scenario_size = 20
+            self.wall_length = 6
+            cell_size = self.cfg['cell_size']
+            wall_width = 0.5
+            
+            
+            wall0_1 = [{"x": idx+4, "y": 10} for idx in range(self.scenario_size-4)]
+            
+            wall1_1 = [{"x": self.wall_length, "y": idx+3} for idx in range(3)]
+            wall1_2 = [{"x": idx+3, "y": self.wall_length} for idx in range(12)]
+            
+            wall2_1 = [{"x": self.scenario_size-(self.wall_length), "y": idx+1} for idx in range(self.wall_length-3)]
+            wall2_2 = [{"x": self.scenario_size-(idx+1), "y": self.wall_length} for idx in range(self.wall_length-3)]
+            
+            wall3_1 = [{"x": self.wall_length, "y": self.scenario_size-(idx+1)} for idx in range(self.wall_length-2)]
+            wall3_2 = [{"x": idx+1, "y": self.scenario_size-(self.wall_length)} for idx in range(self.wall_length-2)]
+            
+            wall4_1 = [{"x": self.scenario_size-(self.wall_length), "y": self.scenario_size-(idx+1)} for idx in range(self.wall_length)]
+            #wall4_2 = [{"x": self.scenario_size-(idx+1), "y": self.scenario_size-(self.wall_length)} for idx in range(self.wall_length-2)]
+            
+            self.walls = [[[wall[0]['x']+wall_width-self.scenario_size/2,wall[0]['y']+wall_width-self.scenario_size/2],[wall[-1]['x']+wall_width-self.scenario_size/2,wall[-1]['y']+wall_width-self.scenario_size/2]] for wall in [wall1_1,wall1_2,wall2_1,wall2_2,wall3_1,wall3_2,wall4_1,wall0_1]]
+
+            print([wall1_1,wall1_2,wall2_1,wall2_2,wall3_1,wall3_2,wall4_1,wall0_1])
+            commands = [#{'$type': 'add_scene','name': 'building_site','url': 'https://tdw-public.s3.amazonaws.com/scenes/linux/2019.1/building_site'}, 
+                        {"$type": "load_scene", "scene_name": "ProcGenScene"},
+                        TDWUtils.create_empty_room(self.scenario_size, self.scenario_size),
+                        self.get_add_material("parquet_long_horizontal_clean",
+                                              library="materials_high.json"),
+                        {"$type": "set_screen_size",
+                         "width": width, #640,
+                         "height": height}, #480},
+                        {"$type": "rotate_directional_light_by",
+                         "angle": 30,
+                         "axis": "pitch"},
+                         {"$type": "create_interior_walls", "walls": [*wall1_1,*wall1_2]},
+                         {"$type": "create_interior_walls", "walls": [*wall2_1,*wall2_2]},
+                         {"$type": "create_interior_walls", "walls": [*wall3_1,*wall3_2]},
+                         {"$type": "create_interior_walls", "walls": [*wall4_1]},
+                         {"$type": "create_interior_walls", "walls": [*wall0_1]},
+                        #{"$type": "create_interior_walls", "walls": [{"x": 6, "y": 1}, {"x": 6, "y": 2},{"x": 6, "y": 3},{"x": 6, "y": 4},{"x": 1, "y": 6},{"x": 2, "y": 6},{"x": 3, "y": 6},{"x": 4, "y": 6}]},
+                        #{"$type": "create_interior_walls", "walls": [{"x": 14, "y": 1}, {"x": 14, "y": 2},{"x": 14, "y": 3},{"x": 14, "y": 4},{"x": 19, "y": 6},{"x": 18, "y": 6},{"x": 17, "y": 6},{"x": 16, "y": 6}]},   
+                        #{"$type": "create_interior_walls", "walls": [{"x": 6, "y": 19}, {"x": 6, "y": 18},{"x": 6, "y": 17},{"x": 6, "y": 16},{"x": 1, "y": 14},{"x": 2, "y": 14},{"x": 3, "y": 14},{"x": 4, "y": 14}]},
+                        #{"$type": "create_interior_walls", "walls": [{"x": 14, "y": 19}, {"x": 14, "y": 18},{"x": 14, "y": 17},{"x": 14, "y": 16},{"x": 19, "y": 14},{"x": 18, "y": 14},{"x": 17, "y": 14},{"x": 16, "y": 14}]},
+                        {"$type": "set_floor_color", "color": {"r": 1, "g": 1, "b": 1, "a": 1}},
+                        {"$type": "set_proc_gen_walls_color", "color": {"r": 1, "g": 1, "b": 0, "a": 1.0}}]
+        
+        
+            
+            #self.communicate(commands)
+            
+            #commands = [{"$type": "create_interior_walls", "walls": [{"x": 6, "y": 19}, {"x": 6, "y": 18},{"x": 6, "y": 17},{"x": 6, "y": 16},{"x": 6, "y": 15},{"x": 1, "y": 14},{"x": 2, "y": 14},{"x": 3, "y": 14},{"x": 4, "y": 14},{"x": 5, "y": 14}]}]
+                        
+            #self.communicate(commands)
+            
+            #commands = [{"$type": "create_interior_walls", "walls": [{"x": 14, "y": 19}, {"x": 14, "y": 18},{"x": 14, "y": 17},{"x": 14, "y": 16},{"x": 14, "y": 15},{"x": 19, "y": 14},{"x": 18, "y": 14},{"x": 17, "y": 14},{"x": 16, "y": 14},{"x": 15, "y": 14}]}]
+            
+            self.goal_area = [(float(self.cfg["goal_radius"]), [0,5])]
+            
+            number_angles = int(float(self.goal_area[0][0])*2*np.pi)
+            
+            for n in range(number_angles):
+                angle_side = 2*n*np.pi/number_angles
+                xn = float(self.goal_area[0][0])*np.cos(angle_side) + self.goal_area[0][1][0]
+                zn = float(self.goal_area[0][0])*np.sin(angle_side) + self.goal_area[0][1][1]
+            
+                commands.append({"$type": "add_position_marker",
+                                         "position": {"x": xn, "y": 0.01, "z": zn},
+                                         "scale": 0.2,
+                                         "shape":"circle"})
+            self.wall_edges = [[wall['x']+wall_width-self.scenario_size/2,wall['y']+wall_width-self.scenario_size/2] for wall in [wall0_1[0],wall1_1[0],wall1_2[0],wall1_2[-1],wall2_1[-1],wall2_2[-1], wall3_1[-1],wall3_2[-1], wall4_1[-1]]]
+            
+            
+            room_centers = [[r[0]+wall_width-self.scenario_size/2,r[1]+wall_width-self.scenario_size/2] for r in [[16,12],[4,16],[3,3],[10,3],[15,4]]]
+            room_angles = [90,45,90,45,45]
+            
+            #pdb.set_trace()
+            for center_idx in range(len(room_centers)):
+                for c in range(center_idx+1):
+                
+                    xn = room_centers[center_idx][0]
+                    zn = room_centers[center_idx][1]
+                   
+                    add_space = 0.3
+                    angle_side = room_angles[center_idx]
+                    xn += add_space*c*np.cos(angle_side)
+                    zn += add_space*c*np.sin(angle_side)   
+                            
+                    commands.append({"$type": "add_position_marker",
+                                     "position": {"x": xn, "y": 2, "z": zn},
+                                     "scale": 0.2,
+                                     "shape":"sphere",
+                                     "color": {"r": 0, "g": 0, "b": 1, "a": 1}})    
+                            
+           
                   
         commands.append({"$type": "send_framerate", "frequency": "always"})                             
                                      
@@ -1461,6 +1565,9 @@ class Simulation(Controller):
                             
                             percentage_weight /= 2
       
+                        if objects_remaining and self.options.level == 1:
+                            weight_assignment[weight_range[-2]] += objects_remaining
+                            objects_remaining = 0
                         
                     object_index_list = list(range(total_num_objects))
                     random.shuffle(object_index_list)
@@ -1713,7 +1820,414 @@ class Simulation(Controller):
                 commands.extend(self.instantiate_object('iron_box',{"x": c4[0], "y": 0, "z": c4[1]},{"x": 0, "y": 0, "z": 0},1000,2,3, 3 + um*4))
             
             
+        elif self.scenario == 3:
         
+            """
+            wall1 = [{"x": self.wall_length, "y": idx+1} for idx in range(self.wall_length-2)]
+            wall1.extend([{"x": idx+1, "y": self.wall_length} for idx in range(self.wall_length-2)])
+            
+            x = np.arange(cell_size
+            
+            y = np.arange(cell_size*1.5,self.wall_length-cell_size*1.5, cell_size)
+            
+            wall2 = [{"x": self.scenario_size-(self.wall_length), "y": idx+1} for idx in range(self.wall_length-2)]
+            wall2.extend([{"x": self.scenario_size-(idx+1), "y": self.wall_length} for idx in range(self.wall_length-2)])
+            
+            wall3 = [{"x": self.wall_length, "y": self.scenario_size-(idx+1)} for idx in range(self.wall_length-2)]
+            wall3.extend([{"x": idx+1, "y": self.scenario_size-(self.wall_length)} for idx in range(self.wall_length-2)])
+            
+            wall4 = [{"x": self.scenario_size-(self.wall_length), "y": self.scenario_size-(idx+1)} for idx in range(self.wall_length-2)]
+            wall4.extend([{"x": self.scenario_size-(idx+1), "y": self.scenario_size-(self.wall_length)} for idx in range(self.wall_length-2)])
+            """
+            
+            max_coord = int(self.scenario_size/2)-1
+            cell_size = self.cfg['cell_size']
+            min_pos = [float(self.static_occupancy_map.positions[0,0,0]),float(self.static_occupancy_map.positions[0,0,1])]
+            
+            
+            if not partial:
+        
+                object_models = {'iron_box':20} #, 'duffle_bag':1} #,'4ft_shelf_metal':1,'trunck':1,'lg_table_marble_green':1,'b04_backpack':1,'36_in_wall_cabinet_wood_beach_honey':1}
+                #object_models = {'iron_box':1}
+                
+                
+                self.scenario_size = 20
+                cell_size = self.cfg['cell_size']
+                wall_width = 0.5
+                rooms = {}
+
+                rooms[0] = [[x,y] for x in range(1,6) for y in range(1,6)]
+                rooms[1] = [[x,y] for x in range(1,6) for y in range(15,19)]
+                rooms[2] = [[x,y] for x in range(7,14) for y in range(1,6)]
+                rooms[3] = [[x,y] for x in range(15,19) for y in range(1,6)]
+                rooms[4] = [[x,y] for x in range(17,19) for y in range(7,10)]
+                rooms[5] = [[x,y] for x in range(15,19) for y in range(11,19)]
+                
+                for r_key in rooms.keys():
+                    rooms[r_key] = [[loc[0]-self.scenario_size/2+cell_size*0.5,loc[1]-self.scenario_size/2+cell_size*0.5] for loc in rooms[r_key]]
+                
+                room_capacity = {0:5,1:5,2:6,3:5,4:2,5:9}
+                actual_room_capacity = {r_key:0 for r_key in rooms.keys()}
+                
+                #possible_ranges = [np.arange(max_coord-3,max_coord+0.5,0.5),np.arange(max_coord-3,max_coord+0.5,0.5)]
+                #possible_ranges = [np.arange(self.scenario_size/2-self.wall_length+cell_size*1.5,self.scenario_size/2-cell_size*0.5,cell_size),np.arange(self.scenario_size/2-self.wall_length+cell_size*1.5,self.scenario_size/2-cell_size*0.5,cell_size)]
+                
+                #possible_locations = [[i, j] for i in possible_ranges[0] for j in possible_ranges[1] if not (self.options.no_block and i == 5.5 and j == 5.5)]
+                
+                #modifications = [[1.0,1.0],[-1.0,1.0],[1.0,-1.0],[-1.0,-1.0]]
+                #modifications = [[1.0,1.0]]
+                
+                #print([[np.array(pl)*np.array(m) for pl in possible_locations] for m in modifications])
+                
+                total_num_objects = 20 #sum(np.array(list(object_models.values()))*len(modifications))
+                
+                for t in range(total_num_objects):
+                    while True:
+                        room_assignment = random.choice(range(len(rooms.keys())))
+                        if actual_room_capacity[room_assignment] < room_capacity[room_assignment]:
+                            actual_room_capacity[room_assignment] += 1
+                            break
+                        else:
+                            continue
+                
+                
+                weight_assignment = {}
+                if self.options.level:
+                    if self.options.level == 1:
+                        num_dangerous = round(float(random.uniform(0.2, 0.3))*total_num_objects)
+                    elif self.options.level == 2:
+                        num_dangerous = round(float(random.uniform(0.45, 0.55))*total_num_objects)
+                    elif self.options.level == 3:
+                        num_dangerous = round(float(random.uniform(0.7, 0.8))*total_num_objects)
+                    
+                    dangerous_candidates = random.sample(list(range(total_num_objects)),num_dangerous)
+                
+                    percentage_weight = 0.5
+                    
+                    objects_remaining = total_num_objects
+                
+                    
+                    if self.options.level == 2: #approx. normal distribution
+                        middle_weight = round((num_users+num_ais+1)/2)
+                        
+                        first_half = list(range(middle_weight-1,0,-1))
+                        second_half = list(range(middle_weight+1, num_users+num_ais+2))
+
+                        if len(first_half) > len(second_half):
+                            weight_range = first_half
+                            other_weight_range = second_half
+                        else:
+                            weight_range = second_half
+                            other_weight_range = first_half
+                            
+                        num_objects_to_assign = round(total_num_objects*percentage_weight)
+                        weight_assignment[middle_weight] = num_objects_to_assign
+                        objects_remaining = total_num_objects-num_objects_to_assign
+                        percentage_weight /= 2
+                            
+                        for wi in range(len(weight_range)):
+                            
+                            num_objects_to_assign = math.ceil(objects_remaining/2)+1 #math.ceil(total_num_objects*percentage_weight)
+                        
+                            if objects_remaining-num_objects_to_assign < 0 or (not num_objects_to_assign and objects_remaining):
+                                num_objects_to_assign = objects_remaining
+                            
+                            if wi < len(weight_range)-1:
+                                half_assign = math.ceil(num_objects_to_assign/2)
+                            else:
+                                half_assign = math.ceil(num_objects_to_assign)
+                            
+                            #if num_objects_to_assign/2 == 0.5:
+                            #    half_assign = 1
+                            
+                            weight_assignment[weight_range[wi]] = half_assign
+                            objects_remaining -= half_assign
+                            
+                            if wi < len(other_weight_range):
+                                weight_assignment[other_weight_range[wi]] = half_assign
+                                objects_remaining -= half_assign
+                            elif wi-1 < len(other_weight_range):
+                                weight_assignment[other_weight_range[wi-1]] += num_objects_to_assign-half_assign
+                                objects_remaining -= num_objects_to_assign-half_assign
+                            
+                            #objects_remaining -= num_objects_to_assign
+                            
+                            if not objects_remaining:
+                                break
+                            elif wi == len(weight_range)-1:
+                                weight_assignment[weight_range[0]] += objects_remaining
+                            
+                            percentage_weight /= 2
+                            
+                        
+                    elif self.options.level == 1 or self.options.level == 3: #positively skewed or negatively skewed distribution
+                    
+                        if self.options.level == 1:
+                            weight_range = list(range(1,num_users+num_ais+2))
+                        elif self.options.level == 3:
+                            weight_range = list(range(num_users+num_ais,0,-1))
+                            weight_range.append(num_users+num_ais+1)
+                        
+                    
+                    
+                        objects_remaining = total_num_objects
+                        for w in weight_range:
+                            num_objects_to_assign = math.ceil(total_num_objects*percentage_weight)
+                            
+                            if objects_remaining-num_objects_to_assign < 0 or (not num_objects_to_assign and objects_remaining):
+                                num_objects_to_assign = objects_remaining
+                            
+                            weight_assignment[w] = num_objects_to_assign
+                            
+                            objects_remaining -= num_objects_to_assign
+                            
+                            if not objects_remaining:
+                                break
+                            
+                            percentage_weight /= 2
+      
+                        if objects_remaining and self.options.level == 1:
+                            weight_assignment[weight_range[-2]] += objects_remaining
+                            objects_remaining = 0
+                        
+                    object_index_list = list(range(total_num_objects))
+                    random.shuffle(object_index_list)
+                    
+                    weight_object_assignment = {}
+                    
+                    for k in weight_assignment.keys():
+                        for ob in object_index_list[:weight_assignment[k]]:
+                            weight_object_assignment[ob] = k
+                            
+                        object_index_list = object_index_list[weight_assignment[k]:]
+                        
+                danger_prob = self.cfg['danger_prob']*100 #0.3 #1.0 #0.3
+
+                final_coords = {objm: [] for objm in object_models.keys()}
+                
+                print(weight_assignment)
+                #pdb.set_trace()
+                
+                #Ensure connectivity between rooms!!!
+                
+                if not self.options.single_object:
+                
+                    goal_center = self.convert_to_grid_coordinates(self.goal_area[0][1], min_pos, cell_size)
+                    for r_key in rooms.keys():
+                        while True:
+                            possible_locations_temp = rooms[r_key].copy()
+                            occMap = self.static_occupancy_map.occupancy_map.copy()
+                            chosen_locations = {objm: [] for objm in object_models.keys()}
+                            for fc in final_coords.keys():
+                                for n_obj in range(actual_room_capacity[r_key]):
+                                
+                                    location = random.choice(possible_locations_temp)
+                        
+                                    possible_locations_temp.remove(location)
+                                
+                                    chosen_locations[fc].append(np.array(location))
+                                    
+                                    grid_location = self.convert_to_grid_coordinates(chosen_locations[fc][-1].tolist(), min_pos, cell_size)
+                                    occMap[grid_location[0],grid_location[1]] = 1
+                                    
+                                    
+                                    
+                                    '''
+                                    location = []
+                                    while True:
+                                        try:
+                                            location = random.choice(possible_locations_temp)
+                                        except:
+                                            pdb.set_trace()
+                                        grid_location = self.convert_to_grid_coordinates(location, min_pos, cell_size)
+                                        
+                                        possible_locations_temp.remove(location)
+                                        
+                                        if self.options.no_block:
+                                        
+                                            occMap[grid_location[0],grid_location[1]] = 1
+                                            
+                                            if not self.findPath([10,10],grid_location,occMap):
+                                                occMap[grid_location[0],grid_location[1]] = 0
+                                                
+                                                if not possible_locations_temp:
+                                                    location = []
+                                                    break
+                                                else:
+                                                    continue
+                                            else:
+                                                break
+                                        else:
+                                            break
+                                        
+                                    if location:
+                                        final_coords[fc].append(np.array(location)*m)
+                                    '''
+                            feasible_room = True
+                            
+                            if self.options.no_block:
+                                for fc in chosen_locations.keys():
+                                    for c in chosen_locations[fc]:
+                                        grid_location = self.convert_to_grid_coordinates(c.tolist(), min_pos, cell_size)
+                                        if not self.findPath(goal_center,grid_location,occMap):
+                                            feasible_room = False
+                                            break
+                                    if not feasible_room:
+                                        break
+                            
+                            if feasible_room:
+                                for fc in chosen_locations.keys():
+                                    final_coords[fc].extend(chosen_locations[fc])
+                                
+                                break
+                
+                else:
+                    final_coords = {"iron_box": [possible_locations[0]]}
+
+                
+                object_index = 0
+                for fc in final_coords.keys():
+                    for c in final_coords[fc]:
+                        
+                        if self.options.level:
+                        
+                            if object_index in dangerous_candidates:
+                                danger_level = 2
+                            else:
+                                danger_level = 1
+                            try:
+                                weight = weight_object_assignment[object_index]
+                            except:
+                                pdb.set_trace()
+                            
+                        else:
+                            possible_weights = list(range(1,num_users+num_ais+2)) #Add 1 for objects too heavy to carry [1] #list(range(1,num_users+num_ais+1))
+                            weights_probs = [100]*len(possible_weights)
+                            
+                            """
+                            for p_idx in range(len(possible_weights)):
+                                if not p_idx:
+                                    weights_probs[p_idx] /= 2
+                                elif p_idx == len(possible_weights)-1:
+                                    weights_probs[p_idx] = weights_probs[p_idx-1]
+                                else:
+                                    weights_probs[p_idx] = weights_probs[p_idx-1]/2
+                            """
+                            
+                            weights_probs = [int(100/len(possible_weights))]*len(possible_weights)
+                            
+                            if len(possible_weights) == 1:
+                                weight = 1
+                            else:
+                                weight = int(random.choices(possible_weights,weights=weights_probs)[0])
+                            danger_level = random.choices([1,2],weights=[100-danger_prob,danger_prob])[0]
+                            
+                            
+                            #weight = 1
+                            #danger_level = 2
+                        
+                        try:
+                            commands.extend(self.instantiate_object(fc,{"x": c[0], "y": 0, "z": c[1]},{"x": 0, "y": 0, "z": 0},1000,danger_level,weight, object_index))
+                        except:
+                            pdb.set_trace()
+                        object_index += 1
+                        #commands.extend(self.instantiate_object(fc,{"x": c[0], "y": 0, "z": c[1]},{"x": 0, "y": 0, "z": 0},10,2,1)) #Danger level 2 and weight 1
+                        #print("Position:", {"x": c[0], "y": 0, "z": c[1]})
+
+                #commands.extend(self.instantiate_object('iron_box',{"x": 0, "y": 0, "z": 0},{"x": 0, "y": 0, "z": 0},10,1,1)) #Single box
+
+
+            else:
+            
+                model_name = "iron_box"
+                mass = 1000
+                for obj in partial:
+                    
+                    required_strength = obj[1]
+                    danger_level = obj[2]
+                    object_name = obj[0]
+                    position = {"x": float(obj[3][0]), "y": 0, "z": float(obj[3][2])} 
+                    rotation = {"x": 0, "y": 0, "z": 0}
+                    object_id = self.get_unique_id()
+                    self.graspable_objects.append(object_id)
+                    self.object_names_translate[object_id] = object_name
+                    self.required_strength[object_id] = required_strength
+                    self.danger_level[object_id] = danger_level
+                    command = self.get_add_physics_object(model_name=model_name,
+                                                     object_id=object_id,
+                                                     position=position,
+                                                     rotation=rotation,
+                                                     default_physics_values=False,
+                                                     mass=mass,
+                                                     scale_mass=False)
+                    if self.danger_level[object_id] == 2:
+                        self.dangerous_objects.append(object_id)
+
+                    commands.extend(command)
+        
+            #Create environment objects
+            
+            
+            '''
+            self.env_objects.append(self.get_unique_id())
+            
+            
+            
+            commands.extend(self.get_add_physics_object(model_name="satiro_sculpture",
+                                             object_id=self.env_objects[-1],
+                                             position={"x": 0, "y": 0, "z": 0},
+                                             default_physics_values=False,
+                                             mass=1000,
+                                             scale_mass=False,
+                                             rotation={"x": 0, "y": 0, "z": 0}))
+            '''
+            
+                                             
+            #self.env_objects.append(self.get_unique_id())
+            
+
+            '''
+            
+            
+            commands.extend(self.get_add_physics_object(model_name="zenblocks",
+                                             object_id=self.env_objects[-1],
+                                             position={"x": max_coord-self.wall_length+cell_size/2, "y": 0, "z": max_coord-cell_size*1.5},
+                                             default_physics_values=False,
+                                             mass=1000,
+                                             scale_mass=False,
+                                             rotation={"x": 0, "y": 0, "z": 0}))
+         
+                                             
+            self.env_objects.append(self.get_unique_id())
+            
+            commands.extend(self.get_add_physics_object(model_name="amphora_jar_vase",
+                                             object_id=self.env_objects[-1],
+                                             position={"x": 2.5*cell_size-max_coord, "y": 0, "z": self.wall_length-max_coord+cell_size/2},
+                                             default_physics_values=False,
+                                             mass=1000,
+                                             scale_mass=False,
+                                             rotation={"x": 0, "y": 0, "z": 0}))
+                                             
+            self.env_objects.append(self.get_unique_id())
+            
+            commands.extend(self.get_add_physics_object(model_name="linen_dining_chair",
+                                             object_id=self.env_objects[-1],
+                                             position={"x": 2.5*cell_size-max_coord, "y": 0, "z": max_coord-self.wall_length+cell_size/2},
+                                             default_physics_values=False,
+                                             mass=1000,
+                                             scale_mass=False,
+                                             rotation={"x": 0, "y": 0, "z": 0}))
+                                             
+            self.env_objects.append(self.get_unique_id())
+            
+            commands.extend(self.get_add_physics_object(model_name="cgaxis_models_50_12_vray",
+                                             object_id=self.env_objects[-1],
+                                             position={"x": max_coord-self.wall_length+cell_size/2, "y": 0, "z": 2.5*cell_size-max_coord},
+                                             default_physics_values=False,
+                                             mass=1000,
+                                             scale_mass=False,
+                                             rotation={"x": 0, "y": 0, "z": 0}))
+            '''
             
         # Add post-processing.
         commands.extend(get_default_post_processing_commands())     
@@ -1741,7 +2255,7 @@ class Simulation(Controller):
             commands.append({"$type": "set_render_quality", "render_quality": 0})
         
         
-        if self.scenario != 2:
+        if self.scenario != 2 and self.scenario != 3:
             commands.append({"$type": "add_compass_rose"})
         
         return commands
@@ -2596,13 +3110,49 @@ class Simulation(Controller):
                 limited_map[:,[0,limited_map.shape[1]-1]] = -1
                 limited_map[x_min:x_max+1,y_min:y_max+1] = self.object_type_coords_map[x_min:x_max+1,y_min:y_max+1]
                 objects_locations = np.where(limited_map > 1)
+                
                 reduced_metadata = {}
+                
+                if self.options.agents_localized:
+                    agents = np.where(self.object_type_coords_map == 3)
+                    for ag_idx in range(len(agents[0])):
+                        if (agents[0][ag_idx] < x_min or agents[0][ag_idx] > x_max) or (agents[1][ag_idx] < y_min or agents[1][ag_idx] > y_max):
+                            limited_map[agents[0][ag_idx],agents[1][ag_idx]] = 3
+                            
+                            rkey = str(agents[0][ag_idx])+'_'+str(agents[1][ag_idx])
+                            
+                            elements = []
+                            
+                            for element in self.object_attributes_id[rkey]:
+                                if element[0]:
+                                    elements.append(element)
+                            
+                            reduced_metadata[rkey] = elements
+                    
+                    #Make sure to track objects that have been picked up by others
+                    for metadata_key in self.object_attributes_id.keys():
+                        for el in self.object_attributes_id[metadata_key]:
+                            if not el[0] and el[4]:
+                                if metadata_key not in reduced_metadata.keys():
+                                    reduced_metadata[metadata_key] = []
+                                reduced_metadata[metadata_key].append(el)
+                                    
+                            
+                    
+                                
                 limited_map[x,y] = 5
+                
+                
                 
                 for ol in range(len(objects_locations[0])):
                     rkey = str(objects_locations[0][ol])+'_'+str(objects_locations[1][ol])
                     reduced_metadata[rkey] = self.object_attributes_id[rkey]
+                    
                 
+                walls = np.where(self.object_type_coords_map == 1)
+                
+                for w in range(len(walls[0])):
+                    limited_map[walls[0][w],walls[1][w]] = 1
                 
             """
             for ol in range(len(objects_locations[0])):
@@ -2638,9 +3188,27 @@ class Simulation(Controller):
             
         else: #If only location of robot
             limited_map = np.ones_like(self.object_type_coords_map)*(-2)
-            limited_map[x,y] = 5
+            
             reduced_metadata = {}
             
+            '''
+            if self.options.agents_localized:
+                agents = np.where(self.object_type_coords_map == 3)
+                for ag_idx in range(len(agents[0])):
+                    limited_map[agents[0][ag_idx],agents[1][ag_idx]] = 3
+                    
+                    rkey = str(agents[0][ag_idx])+'_'+str(agents[1][ag_idx])
+                    
+                    elements = []
+                    
+                    for element in self.object_attributes_id[rkey]:
+                        if element[0]:
+                            elements.append(element)
+                    
+                    reduced_metadata[rkey] = elements
+            '''
+            
+            limited_map[x,y] = 5
             #objects_locations = np.where(self.object_type_coords_map[x-1:x+2:y-1:y+2] == 2) #Object metadata only for surrounding objects
             objects_locations = np.where(self.object_type_coords_map > 1)
             for ol in range(len(objects_locations[0])):
@@ -3384,7 +3952,7 @@ class Simulation(Controller):
                             self.reset = True
                         elif self.options.no_human_test:
                             self.previous_scenario = self.scenario
-                            self.scenario = 1
+                            #self.scenario = 1
                             self.reset = True
                             
                             if len(self.user_magnebots) > 0:
@@ -3889,7 +4457,7 @@ class Simulation(Controller):
                         self.reset_message = False
                         self.reset = True
                         self.previous_scenario = self.scenario
-                        self.scenario = 1
+                        #self.scenario = 1
                         
                         
                 
@@ -4392,6 +4960,7 @@ if __name__ == "__main__":
     parser.add_argument('--ai-vision', action='store_true', help="Activate cameras for AI agents")
     parser.add_argument('--level', type=int, default=0, help="Difficulty level [1,2,3]")
     parser.add_argument('--no-block', action='store_true', help="No object will block the way")
+    parser.add_argument('--agents-localized', action='store_true', help="Agents will always be localized by other agents")
     
     
     
