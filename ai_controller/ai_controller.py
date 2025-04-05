@@ -1280,33 +1280,35 @@ while True:
             robotState.latest_map[ego_location[0][0],ego_location[1][0]] = 5 #Set ego robot in map
             
             
+            if next_observation['action_status'][2]: #If sensing action was succesful
+                if Action(last_action[1]) == Action.get_occupancy_map: #Maintain the state of the occupancy map and update it whenever needed
     
-            robot_count = robotState.get_num_robots()
-                
-            for ob_key in range(robot_count):
-            
-                location = robotState.get("agents", "last_seen_location", ob_key)
-                neighbor_disabled = robotState.get("agents", "disabled", ob_key)
+                    robot_count = robotState.get_num_robots()
+                        
+                    for ob_key in range(robot_count):
+                    
+                        location = robotState.get("agents", "last_seen_location", ob_key)
+                        neighbor_disabled = robotState.get("agents", "disabled", ob_key)
 
-            
-                robo_location = robotState.latest_map[location[0],location[1]]
-                if robo_location != 5 and robo_location != 3 and location[0] != -1 and location[1] != -1 and neighbor_disabled != 1:
-                    #pdb.set_trace()
-                    print("ROBOT NOT FOUND", ob_key, location)
                     
-                    robotState.set("agents","last_seen_location",ob_key, [-1,-1], info["time"]) 
-                    
-                    
-                    #robotState.robots[ob_key]["neighbor_time"] = info["time"]
-                    
-            for ob_key in range(robotState.get_num_objects()): #If the agent is not where it was last seen, mark it
-                try:
-                    ob_location = robotState.get("objects", "last_seen_location", ob_key)
-                    item_location = robotState.latest_map[ob_location[0],ob_location[1]]
-                    if item_location == 0:
-                        robotState.set("objects", "last_seen_location", ob_key, [-1,-1], info["time"])
-                except:
-                    pdb.set_trace()
+                        robo_location = robotState.latest_map[location[0],location[1]]
+                        if robo_location != 5 and robo_location != 3 and location[0] != -1 and location[1] != -1 and neighbor_disabled != 1:
+                            #pdb.set_trace()
+                            print("ROBOT NOT FOUND", ob_key, location)
+                            
+                            robotState.set("agents","last_seen_location",ob_key, [-1,-1], info["time"]) 
+                            
+                            
+                            #robotState.robots[ob_key]["neighbor_time"] = info["time"]
+                            
+                    for ob_key in range(robotState.get_num_objects()): #If the agent is not where it was last seen, mark it
+                        try:
+                            ob_location = robotState.get("objects", "last_seen_location", ob_key)
+                            item_location = robotState.latest_map[ob_location[0],ob_location[1]]
+                            if item_location == 0:
+                                robotState.set("objects", "last_seen_location", ob_key, [-1,-1], info["time"])
+                        except:
+                            pdb.set_trace()
             	
             
             

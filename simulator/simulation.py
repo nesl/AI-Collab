@@ -271,6 +271,7 @@ class Simulation(Controller):
         self.enable_logs = False
         self.timer_limit = 0#float(self.cfg['timer'])
         self.waiting = False
+        self.rooms = {}
 
         """
         if float(self.cfg['timer']) > 0:
@@ -702,6 +703,7 @@ class Simulation(Controller):
         extra_config["goal_radius"] = self.goal_area
         extra_config["scenario"] = self.scenario
         extra_config["sensor_parameters"] = [(self.robot_names_translate[str(um.robot_id)], um.p11, um.p22) for um in [*self.user_magnebots,*self.ai_magnebots]]
+        extra_config["rooms"] = self.rooms
         
         
         return extra_config
@@ -1854,20 +1856,22 @@ class Simulation(Controller):
                 self.scenario_size = 20
                 cell_size = self.cfg['cell_size']
                 wall_width = 0.5
-                rooms = {}
+                self.rooms = {}
+                rooms_locations = {}
 
-                rooms[0] = [[x,y] for x in range(1,6) for y in range(1,6)]
-                rooms[1] = [[x,y] for x in range(1,6) for y in range(15,19)]
-                rooms[2] = [[x,y] for x in range(7,14) for y in range(1,6)]
-                rooms[3] = [[x,y] for x in range(15,19) for y in range(1,6)]
-                rooms[4] = [[x,y] for x in range(17,19) for y in range(7,10)]
-                rooms[5] = [[x,y] for x in range(15,19) for y in range(11,19)]
+                self.rooms[3] = [[x,y] for x in range(1,6) for y in range(1,6)]
+                self.rooms[2] = [[x,y] for x in range(1,6) for y in range(15,19)]
+                self.rooms[4] = [[x,y] for x in range(7,14) for y in range(1,6)]
+                self.rooms[5] = [[x,y] for x in range(15,19) for y in range(1,6)]
+                self.rooms[0] = [[x,y] for x in range(17,19) for y in range(7,10)]
+                self.rooms[1] = [[x,y] for x in range(15,19) for y in range(11,19)]
                 
-                for r_key in rooms.keys():
-                    rooms[r_key] = [[loc[0]-self.scenario_size/2+cell_size*0.5,loc[1]-self.scenario_size/2+cell_size*0.5] for loc in rooms[r_key]]
+                for r_key in self.rooms.keys():
+                    rooms_locations[r_key] = [[loc[0]-self.scenario_size/2+cell_size*0.5,loc[1]-self.scenario_size/2+cell_size*0.5] for loc in self.rooms[r_key]]
+                    self.rooms[r_key] = [[loc[0]-self.scenario_size/2-cell_size*0.5,loc[1]-self.scenario_size/2-cell_size*0.5] if loc_idx < len(self.rooms[r_key])-1 else [loc[0]-self.scenario_size/2+cell_size*1.5,loc[1]-self.scenario_size/2+cell_size*1.5] for loc_idx,loc in enumerate(self.rooms[r_key])]
                 
                 room_capacity = {0:5,1:5,2:6,3:5,4:2,5:9}
-                actual_room_capacity = {r_key:0 for r_key in rooms.keys()}
+                actual_room_capacity = {r_key:0 for r_key in rooms_locations.keys()}
                 
                 #possible_ranges = [np.arange(max_coord-3,max_coord+0.5,0.5),np.arange(max_coord-3,max_coord+0.5,0.5)]
                 #possible_ranges = [np.arange(self.scenario_size/2-self.wall_length+cell_size*1.5,self.scenario_size/2-cell_size*0.5,cell_size),np.arange(self.scenario_size/2-self.wall_length+cell_size*1.5,self.scenario_size/2-cell_size*0.5,cell_size)]
@@ -1883,7 +1887,7 @@ class Simulation(Controller):
                 
                 for t in range(total_num_objects):
                     while True:
-                        room_assignment = random.choice(range(len(rooms.keys())))
+                        room_assignment = random.choice(range(len(rooms_locations.keys())))
                         if actual_room_capacity[room_assignment] < room_capacity[room_assignment]:
                             actual_room_capacity[room_assignment] += 1
                             break
@@ -2013,9 +2017,9 @@ class Simulation(Controller):
                 if not self.options.single_object:
                 
                     goal_center = self.convert_to_grid_coordinates(self.goal_area[0][1], min_pos, cell_size)
-                    for r_key in rooms.keys():
+                    for r_key in rooms_locations.keys():
                         while True:
-                            possible_locations_temp = rooms[r_key].copy()
+                            possible_locations_temp = rooms_locations[r_key].copy()
                             occMap = self.static_occupancy_map.occupancy_map.copy()
                             chosen_locations = {objm: [] for objm in object_models.keys()}
                             for fc in final_coords.keys():
@@ -2952,10 +2956,27 @@ class Simulation(Controller):
             ego_magnebot.refresh_sensor = 0
             
             ego_magnebot.stats.sensor_activation += 1
+
+            #Roooms
+            ego_room = -1
+            for r in self.rooms.keys():
+                #print([ego_magnebot.dynamic.transform.position[0], ego_magnebot.dynamic.transform.position[2]], self.rooms[r][0],self.rooms[r][-1])
+                if ego_magnebot.dynamic.transform.position[0] >= self.rooms[r][0][0] and ego_magnebot.dynamic.transform.position[2] >= self.rooms[r][0][1] and ego_magnebot.dynamic.transform.position[0] <= self.rooms[r][-1][0] and ego_magnebot.dynamic.transform.position[2] <= self.rooms[r][-1][1]:
+                    ego_room = r
+                    break
             
             for o_idx,o in enumerate(self.graspable_objects): #Sensor only actuates over objects that are in a certain radius
+            
+                #Roooms
+                object_room = -1
+                for r in self.rooms.keys():
+                    if self.object_manager.transforms[o].position[0] >= self.rooms[r][0][0] and self.object_manager.transforms[o].position[2] >= self.rooms[r][0][1] and self.object_manager.transforms[o].position[0] <= self.rooms[r][-1][0] and self.object_manager.transforms[o].position[2] <= self.rooms[r][-1][1]:
+                        object_room = r
+                        break
+            
+                print(object_room, ego_room)
                 if np.linalg.norm(self.object_manager.transforms[o].position -
-                        ego_magnebot.dynamic.transform.position) < int(self.cfg['sensing_radius']) and not any(doIntersect([self.object_manager.transforms[o].position[0],self.object_manager.transforms[o].position[2]],[ego_magnebot.dynamic.transform.position[0],ego_magnebot.dynamic.transform.position[2]],[self.walls[w_idx][0][0],self.walls[w_idx][0][1]],[self.walls[w_idx][-1][0],self.walls[w_idx][-1][1]]) for w_idx in range(len(self.walls))):
+                        ego_magnebot.dynamic.transform.position) < int(self.cfg['sensing_radius']) and not any(doIntersect([self.object_manager.transforms[o].position[0],self.object_manager.transforms[o].position[2]],[ego_magnebot.dynamic.transform.position[0],ego_magnebot.dynamic.transform.position[2]],[self.walls[w_idx][0][0],self.walls[w_idx][0][1]],[self.walls[w_idx][-1][0],self.walls[w_idx][-1][1]]) for w_idx in range(len(self.walls))) and ego_room == object_room:
                         
                     #print([doIntersect([self.object_manager.transforms[o].position[0],self.object_manager.transforms[o].position[2]],[ego_magnebot.dynamic.transform.position[0],ego_magnebot.dynamic.transform.position[2]],[self.walls[w_idx][0][0],self.walls[w_idx][0][1]],[self.walls[w_idx][-1][0],self.walls[w_idx][-1][1]]) for w_idx in range(len(self.walls))])
                     

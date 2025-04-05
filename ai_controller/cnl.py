@@ -573,6 +573,14 @@ class MessagePattern:
         return "(\w+), sense objects (\[(,?\d+)+\]) at locations (\[(,?(\( *-?\d+(\.(\d+)?)? *, *-?\d+(\.(\d+)?)? *\)))+\])"
         
     @staticmethod
+    def order_sense_room(robot_id, room):
+        return str(robot_id) + ", sense room " + room + ". "
+    
+    @staticmethod    
+    def order_sense_room_regex():
+        return "(\w+), sense room (\d+)"    
+        
+    @staticmethod
     def order_collect(robot_id, object_id):
 
         return str(robot_id) + ", collect object " + str(object_id) + ". "

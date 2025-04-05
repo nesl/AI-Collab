@@ -1588,6 +1588,8 @@ class AICollabEnv(gym.Env):
         return pos_new
     
     def get_coords_room(self, robo_map, room, objects=False):
+    
+        '''
         walls_coords = [[-3.5,-3.5], [4.5,-3.5],[-3.5,4.5],[4.5,4.5]]
         
 
@@ -1659,7 +1661,27 @@ class AICollabEnv(gym.Env):
             free_coords3 = area_coords[coords]
             
             free_coords = np.concatenate((free_coords1, free_coords2, free_coords3)).squeeze()
+        '''
+        if str(room) in self.map_config['rooms'].keys():
+            coord1 = self.convert_to_grid_coordinates(list(np.array(self.map_config['rooms'][str(room)][0]) + np.array([self.map_config['cell_size'],self.map_config['cell_size']])))
+            coord2 = self.convert_to_grid_coordinates(list(np.array(self.map_config['rooms'][str(room)][-1]) - np.array([self.map_config['cell_size'],self.map_config['cell_size']])))
             
+            new_array = robo_map[coord1[0]:coord2[0]+1,coord1[1]:coord2[1]+1]
+            
+            if objects:
+                free_coords = np.argwhere((new_array == 0) | (new_array == -2) | (new_array == 5) | (new_array == 2))
+            else:
+                free_coords = np.argwhere((new_array == 0) | (new_array == -2) | (new_array == 5))
+            
+            free_coords += np.array(coord1)
+        elif room.isnumeric():
+            free_coords = np.array([])
+        elif room == "goal":
+            new_array = robo_map[np.array(self.goal_coords)[:,0],np.array(self.goal_coords)[:,1]]
+            coords = np.argwhere((new_array == 0) | (new_array == -2) | (new_array == 5))
+            free_coords = np.array(self.goal_coords)[coords].squeeze()
+        else:
+            pdb.set_trace()
             
         return free_coords
 
@@ -1669,7 +1691,7 @@ class AICollabEnv(gym.Env):
     
     def get_room(self, location, convert_coordinates):
     
-        walls_coords = [[-3.5,-3.5], [4.5,-3.5],[-3.5,4.5],[4.5,4.5]]
+        #walls_coords = [[-3.5,-3.5], [4.5,-3.5],[-3.5,4.5],[4.5,4.5]]
         
         if convert_coordinates:
             location = self.convert_to_real_coordinates(location)
@@ -1677,6 +1699,7 @@ class AICollabEnv(gym.Env):
         if not location:
             return ""
         
+        '''
         if np.linalg.norm(location) <= self.map_config['goal_radius'][0][0]:
             room = "goal area"
         elif location[0] <= walls_coords[0][0] and location[1] <= walls_coords[0][1]:
@@ -1689,6 +1712,21 @@ class AICollabEnv(gym.Env):
             room = "room 4"
         else:
             room = "main area"
+        '''
+        
+        if np.linalg.norm(location-np.array(self.map_config['goal_radius'][0][1])) <= self.map_config['goal_radius'][0][0]:
+            room = "goal area"
+        else:
+            in_room = False
+            rooms = self.map_config['rooms']
+            for r in rooms.keys():
+                if location[0] >= rooms[r][0][0]+self.map_config['cell_size'] and location[1] >= rooms[r][0][1]+self.map_config['cell_size'] and location[0] <= rooms[r][-1][0]-self.map_config['cell_size'] and location[1] <= rooms[r][-1][1]-self.map_config['cell_size']:
+                    room = "room " + str(r)
+                    in_room = True
+                    break
+            
+            if not in_room:
+                room = "main area"
         
         return room
     

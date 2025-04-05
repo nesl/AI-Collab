@@ -890,7 +890,32 @@ class OptimizedControl:
                                         self.message_text += MessagePattern.order_response_negative(rm[0], self.leader_id)
                             else:
                                  self.message_text += MessagePattern.order_not_obey(rm[0])
-                        
+            
+            if re.search(MessagePattern.order_sense_room_regex(),rm[1]):
+            
+                template_match = True
+            
+                if "hierarchy" in self.team_structure and self.team_structure["role"][self.env.robot_id] != "lifter":  
+                    for rematch in re.finditer(MessagePattern.order_sense_room_regex(),rm[1]):
+                        if rematch.group(1) == self.env.robot_id:
+                            if (self.team_structure["hierarchy"][self.env.robot_id] == "obey" and self.team_structure["hierarchy"][rm[0]] == "order") or (self.team_structure["hierarchy"][self.env.robot_id] == "order" and self.env.robot_id == rm[0]):
+                            
+                                room = rematch.group(2)
+                                
+                                if self.order_status == self.OrderStatus.finished:
+                                
+                                    self.functions_to_execute_outputs = []
+                                    
+                                    self.create_action_function("sense_room(\""+ str(room) +"\")")
+                                    
+                                    self.order_status = self.OrderStatus.ongoing
+                                    self.message_text += MessagePattern.order_response(rm[0], "sense")
+                                    self.leader_id = rm[0]
+                                else:
+                                    self.message_text += MessagePattern.order_response_negative(rm[0], self.leader_id)
+                            else:
+                                 self.message_text += MessagePattern.order_not_obey(rm[0])
+                     
             if re.search(MessagePattern.order_sense_multiple_regex(),rm[1]):
             
                 template_match = True
@@ -1155,7 +1180,8 @@ class OptimizedControl:
                             if weight > 1:
                                 carrying_agents = [s for s in self.plan.keys() if s in self.plan.keys() and self.plan[s] and self.plan[s][0] == self.plan[rm[0]][0]]
                                 
-                                del self.carry_agents[ob_id]
+                                if ob_id in self.carry_agents:
+                                    del self.carry_agents[ob_id]
                             else:
                                 carrying_agents = [rm[0]]
                             
@@ -1699,7 +1725,9 @@ class OptimizedControl:
                         print("Created function")
                         self.action_sequence = 0
                         self.top_action_sequence = 0
-
+                        
+                elif self.commander_order_status == self.OrderStatus.giving_order:
+                    self.decision(messages, robotState, info, function_output, self.nearby_other_agents, self.help_requests)
 
             else:
             
@@ -1936,15 +1964,16 @@ class OptimizedControl:
         output = []
         ego_location = np.where(robotState.latest_map == 5)
         
+        '''
         if room not in ['1','2','3','4']:
             finished = True
             return action, finished, output 
+        '''
         
         if self.top_action_sequence == 0:
             current_room = self.env.get_room([ego_location[0][0],ego_location[1][0]], True)
             #print(current_room, "room " + room, current_room == "room " + room)
             if current_room == "room " + room:
-                self.top_action_sequence += 1
                 '''
                 room_coords = self.env.get_coords_room(self, robotState.latest_map, room, objects=True)
                 cells = robotState.latest_map[room_coords[:,0],room_coords[:,1]]
@@ -1954,7 +1983,13 @@ class OptimizedControl:
                 self.room_object_coords = room_coords[object_cells].squeeze().tolist()
                 '''
                 
-                self.room_object_ids = []
+                self.action_sequence = 0
+                action, _, output = self.activate_sensor(robotState, next_observation, info)
+                self.top_action_sequence = 3
+
+                self.room_object_ids = []                
+                '''
+                self.top_action_sequence += 1
                 for ob_idx in range(robotState.get_num_objects()): #For all possible objects
                     ob_location = robotState.get("objects", "last_seen_location", ob_idx)
                     if self.env.get_room(ob_location, True) == current_room:
@@ -1967,6 +2002,7 @@ class OptimizedControl:
                 #if not self.room_object_ids:
                 #    pdb.set_trace()
                 print("Objects", self.room_object_ids)
+                '''
             else:
                 action, temp_finished, output = self.go_to_location("room " + room, robotState, next_observation, info)
                 
@@ -2008,6 +2044,14 @@ class OptimizedControl:
             action, temp_finished, output = self.activate_sensor(robotState, next_observation, info)
             if temp_finished:
                 self.top_action_sequence = 1
+                print('hello000000000', output)
+                while self.room_object_ids and robotState.get("object_estimates", "danger_status", [info['object_key_to_index'][self.room_object_ids[0]],robotState.get_num_robots()]):
+                    print("Objects4", self.room_object_ids)
+                    self.room_object_ids.pop(0)
+                    
+            
+                if not self.room_object_ids:
+                    finished = True
             
         return action, finished, output     
         
@@ -2775,15 +2819,29 @@ class OptimizedControl:
                     return action,finished,output
                     
                 location_list = self.env.get_coords_room(robotState.latest_map, object_id.replace("room ", "").strip())
-                
+                print(location_list)
                 if location_list.size == 0:
                     action["action"] = Action.get_occupancy_map.value
                     output = [ego_location[0][0],ego_location[1][0]]
                     finished = True
                     return action,finished,output
                 
-                x,y = random.choice(location_list)
-                
+                path_distance = []
+                for loc in location_list:
+                    path = self.movement.findPath(np.array([ego_location[0][0],ego_location[1][0]]),np.array([loc[0],loc[1]]),robotState.latest_map)
+                    if path:
+                        path_distance.append(len(path))
+                    else:
+                        path_distance.append(float('inf'))
+                        
+                sorted_path_distance = np.argsort(path_distance)
+                x,y = location_list[sorted_path_distance[0]]
+                '''
+                while True:
+                    x,y = random.choice(location_list)
+                    if self.movement.findPath(np.array([ego_location[0][0],ego_location[1][0]]),np.array([x,y]),robotState.latest_map):
+                        break
+                '''
                 xy_world = self.env.convert_to_real_coordinates([x,y])
                 if xy_world:
                     place = "towards [" + str(xy_world[0]) + "," + str(xy_world[1]) + "] in " + room
@@ -3344,7 +3402,7 @@ class OptimizedControl:
         
         if self.order_status == self.OrderStatus.reporting_output:
             if self.order_status_info and not self.team_structure["hierarchy"][self.env.robot_id] == "order":
-                if "sense_object" in self.order_status_info[0]:
+                if "sense_object" in self.order_status_info[0] or "sense_room" in self.order_status_info[0]:
                 
                     """
                     most_recent = 0
@@ -3355,6 +3413,7 @@ class OptimizedControl:
                             most_recent = this_time
                     """
                     
+                    print('info PROVIDED:', self.other_agents[info['robot_key_to_index'][str(self.leader_id)]].items_info_provided, self.order_status_info[1])
                     objects_reported = []
                     for ob in self.order_status_info[1]:
                     
@@ -3375,7 +3434,9 @@ class OptimizedControl:
                         if ob[0] not in self.other_agents[info['robot_key_to_index'][str(self.leader_id)]].items_info_provided:
                             self.message_text += MessagePattern.item(robotState,object_idx,ob[0], info, self.env.robot_id, self.env.convert_to_real_coordinates)
                             self.other_agents[info['robot_key_to_index'][str(self.leader_id)]].items_info_provided.append(ob[0])
-                            
+                     
+                    print('MESSAGE:',self.message_text)
+
                 elif "collect_object" in self.order_status_info[0]:
                 
                     for ob in self.order_status_info[1]:
@@ -3426,7 +3487,13 @@ class OptimizedControl:
             #if ag[0] != self.env.robot_id:
         
             agents.append(ag[0])
-            ag_location = robotState.get("agents", "last_seen_location", ag[1])
+            
+            if ag[0] != self.env.robot_id:
+                ag_location = robotState.get("agents", "last_seen_location", ag[1])
+            else:
+                ego_location = np.where(robotState.latest_map == 5) 
+                ag_location = [ego_location[0][0],ego_location[1][0]]
+                
             agents_initial_positions[ag[0]] = ag_location
             pb = robotState.get("agents", "sensor_benign", ag[1])
             pd = robotState.get("agents", "sensor_dangerous", ag[1])
@@ -3439,7 +3506,15 @@ class OptimizedControl:
         occMap[occMap > 2] = 0
 
         if not self.planner:
-            self.planner = DynamicSensorPlanner(agents, objects, locations, agents_initial_positions, pd_pb, object_weights, occMap, self.extended_goal_coords)
+            rooms = self.env.map_config['rooms']
+            new_rooms = {}
+            for r in rooms.keys():
+                room_array = []
+                for l in rooms[r]:
+                    room_array.append(self.env.convert_to_grid_coordinates(l))
+                new_rooms[r] = room_array
+                
+            self.planner = DynamicSensorPlanner(agents, objects, locations, agents_initial_positions, pd_pb, object_weights, occMap, self.extended_goal_coords, new_rooms)
         else:
         
             sql_estimates = robotState.get_all_sensing_estimates()
@@ -3575,9 +3650,7 @@ class OptimizedControl:
                     self.message_text += MessagePattern.finish()
                         
                     self.report_heavy_dangerous_objects(robotState, info)
-                            
                     
-                    self.finished = True
                     self.told_to_finish = True
 
 
@@ -3624,6 +3697,9 @@ class OptimizedControl:
         
             self.decide_order = False
         
+            if self.told_to_finish:
+                self.finished = True
+        
             all_agents = [r[0] for r in robotState.get_all_robots()] # if r[0] != self.env.robot_id]
         
             print("COMPARISON", self.plan, self.previous_plan, self.carry_agents)
@@ -3664,7 +3740,7 @@ class OptimizedControl:
                     del self.previous_plan[agent_id]
                     continue
                 
-                if agent_id not in self.previous_plan or self.plan[agent_id][0] != self.previous_plan[agent_id][0] or ('carry' in self.plan[agent_id][0] and weight > 1):
+                if agent_id not in self.previous_plan or 'sense' in self.plan[agent_id][0] or self.plan[agent_id][0] != self.previous_plan[agent_id][0] or ('carry' in self.plan[agent_id][0] and weight > 1):
                 
                     '''
                     if agent_id in self.plan.keys():
@@ -3726,8 +3802,19 @@ class OptimizedControl:
                                     self.message_text += MessagePattern.order_sense_multiple(agent_id, self.planner.clusters[int(cluster_num)]['objects'], ob_locations, self.env.convert_to_real_coordinates)
                             except:
                                 pdb.set_trace()
-                            
+                        
+                        elif 'ROOM' in self.plan[agent_id][0]:
+                            #room = self.plan[agent_id][0].split("_")[1]   
+                            #location = self.planner.locations[room]
+                            room = self.plan[agent_id][0].split("ROOM")[1]   
+                            if agent_id == self.env.robot_id:
+                                #self.self_messages.append(self.self_message_create(MessagePattern.order_sense(agent_id, 99, location, self.env.convert_to_real_coordinates), robotState, info))
+                                self.self_messages.append(self.self_message_create(MessagePattern.order_sense_room(agent_id, str(room)), robotState, info))
+                            else:
+                                #self.message_text += MessagePattern.order_sense(agent_id, 99, location, self.env.convert_to_real_coordinates)
+                                self.message_text += MessagePattern.order_sense_room(agent_id, str(room))
                         else:
+                            #pdb.set_trace()
                             ob_id = self.plan[agent_id][0].split("_")[1]
                             idx = info['object_key_to_index'][ob_id]
                             location = robotState.get("objects", "last_seen_location", idx) #robotState.get("object_estimates", "last_seen_location", (idx ,robotState.get_num_robots()))

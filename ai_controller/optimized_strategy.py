@@ -7,7 +7,7 @@ from sklearn.cluster import DBSCAN
 import math
 
 class DynamicSensorPlanner:
-    def __init__(self, agents, objects, locations, agent_home, PD_PB_params, object_weights, occMap, goal_coords):
+    def __init__(self, agents, objects, locations, agent_home, PD_PB_params, object_weights, occMap, goal_coords, room_locations):
         self.agents = agents
         self.objects = objects
         self.PD_PB = PD_PB_params  # Dict: {agent: (PD, PB)}
@@ -25,9 +25,14 @@ class DynamicSensorPlanner:
         self.already_carried = []
         self.region_number = 0
         self.cluster_number = 0
+        self.clusters = {}
         
-        self.locations = self.recluster(locations)
-        self.locations.update(self.create_exploration_regions())
+        self.room_locations = room_locations
+        self.rooms = {r_idx:[] for r_idx in range(len(self.room_locations)+1)}
+        self.locations = self.objects_in_rooms(locations)
+        
+        #self.locations = self.recluster(locations)
+        #self.locations.update(self.create_exploration_regions())
         self.nodes = self.create_nodes()
         
         # Initialize beliefs (uniform prior)
@@ -37,8 +42,14 @@ class DynamicSensorPlanner:
         
         self.tau_current = {j: self.tau_initial for j in self.objects}
         
-        self.group_belief = {str(label): self.prior_belief for label in self.clusters}  # Initial belief
-        self.group_tau = {str(label): self.tau_initial * len(cluster["objects"]) for label, cluster in self.clusters.items()}  # Threshold scaled by group size
+        #self.group_belief = {str(label): self.prior_belief for label in self.clusters}  # Initial belief
+        #self.group_tau = {str(label): self.tau_initial * len(cluster["objects"]) for label, cluster in self.clusters.items()}  # Threshold scaled by group size
+        
+        self.room_numbers = list(range(len(self.room_locations)))
+        self.room_numbers.extend([o+len(self.room_locations) for o in range(len(self.rooms[len(self.room_locations)]))])
+        self.group_belief = {'ROOM'+str(label): self.prior_belief for label in self.room_numbers}  # Initial belief
+        #self.group_tau = {'ROOM'+str(label): (self.tau_initial * len(self.rooms[label])) if label < len(self.room_locations) else self.tau_initial for label in self.room_numbers}  # Threshold scaled by group size
+        self.group_tau = {'ROOM'+str(label): self.tau_initial for label in self.room_numbers}  # Threshold scaled by group size
         
         # Precompute LLR contributions
         self.LLR = {}
@@ -51,6 +62,34 @@ class DynamicSensorPlanner:
             }
          
         self.update_positions(agent_home)
+        
+        
+    def objects_in_rooms(self, locations):
+    
+        for l_key in locations.keys():
+        
+            if 'SAFE' in l_key or l_key in self.already_carried:
+                continue
+        
+            in_room = False
+            for r_idx in range(len(self.room_locations)):
+                try:
+                    if locations[l_key][0] >= self.room_locations[str(r_idx)][0][0] and locations[l_key][1] >= self.room_locations[str(r_idx)][0][1] and locations[l_key][0] <= self.room_locations[str(r_idx)][-1][0] and locations[l_key][1] <= self.room_locations[str(r_idx)][-1][1]:
+                        self.rooms[r_idx].append(l_key)
+                        in_room = True
+                        break
+                except:
+                    pdb.set_trace()
+                    
+            if not in_room:
+                self.rooms[len(self.room_locations)].append(l_key)
+                
+                
+        for r_idx in range(len(self.room_locations)):
+            locations['ROOM' + str(r_idx)] = self.room_locations[str(r_idx)][int(len(self.room_locations[str(r_idx)])/2)]
+            
+        return locations
+        
         
         
     def create_exploration_regions(self):
@@ -74,10 +113,13 @@ class DynamicSensorPlanner:
         return locations
         
     
+    
+    
     def create_nodes(self):
         #return ['HOME'] + [a + o for a in ['sense_', 'carry_', 'SAFE'] for o in self.objects] + ['REGION' + str(r) for r in self.regions_to_explore]
         #return ['HOME'] + ['sense_' + o for o in self.objects] + [a + o for a in ['carry_', 'SAFE'] for o in self.objects if o in self.objects_to_carry] + ['REGION' + str(r) for r in self.regions_to_explore]
-        return ['HOME'] + ['sense_' + 'CLUSTER' + str(c_key) for c_key in self.clusters.keys()] + [a + o for a in ['carry_', 'SAFE'] for o in self.objects if o in self.objects_to_carry] + ['REGION' + str(r) for r in self.regions_to_explore]
+        #return ['HOME'] + ['sense_' + 'CLUSTER' + str(c_key) for c_key in self.clusters.keys()] + [a + o for a in ['carry_', 'SAFE'] for o in self.objects if o in self.objects_to_carry] + ['REGION' + str(r) for r in self.regions_to_explore]
+        return ['HOME'] + ['sense_' + 'ROOM' + str(c_key) for c_key in range(len(self.room_locations))] + ['sense_' + o for o in self.rooms[len(self.room_locations)]] + [a + o for a in ['carry_', 'SAFE'] for o in self.objects if o in self.objects_to_carry] + ['REGION' + str(r) for r in self.regions_to_explore]
     
     def euclidean(self, a, b):
         return np.sqrt((a[0]-b[0])**2 + (a[1]-b[1])**2)
@@ -166,6 +208,7 @@ class DynamicSensorPlanner:
         
         self.d_home = {}
         
+        '''
         center = self.goal_coords[int(len(self.goal_coords)/2)]
         
         for j in self.clusters.keys():
@@ -184,6 +227,7 @@ class DynamicSensorPlanner:
                 self.locations['CLUSTER'+str(j)] = 0
             
             print(self.locations['CLUSTER'+str(j)])
+        '''
         
         for i in self.agents: 
             for j in self.nodes:
@@ -196,11 +240,22 @@ class DynamicSensorPlanner:
                         n = j
                     try:
                         #print(i,j,n,current_positions[i],locations[n])
+                        if isinstance(current_positions[i],str):
+                            curr_pos = self.locations[current_positions[i]]
+                        else:
+                            curr_pos = current_positions[i]
                         
+                        if tuple(curr_pos) == tuple(self.locations[n]):
+                            self.d_home[(i,j)] = 0
+                        else:
+                            self.d_home[(i,j)] = len(self.findPath(np.array(curr_pos),np.array(self.locations[n]),self.occMap)) #self.euclidean(current_positions[i], locations[n]) 
+                        
+                        '''
                         if tuple(current_positions[i]) == tuple(self.locations[n]):
                             self.d_home[(i,j)] = 0
                         else:
                             self.d_home[(i,j)] = len(self.findPath(np.array(current_positions[i]),np.array(self.locations[n]),self.occMap)) #self.euclidean(current_positions[i], locations[n])    
+                        '''
                     except:
                         pdb.set_trace()
                 
@@ -363,7 +418,9 @@ class DynamicSensorPlanner:
                 self.tau_current[j] = self.tau_initial
                 self.objects.append(j)
         
-        self.locations = self.recluster(object_locations.copy())
+        #self.locations = self.recluster(object_locations.copy())
+        self.rooms = {r_idx:[] for r_idx in range(len(self.room_locations)+1)}
+        self.locations = self.objects_in_rooms(object_locations.copy())
         
         print("SENSED:", self.sensed_objects, self.sensed_clusters)
         
@@ -375,6 +432,7 @@ class DynamicSensorPlanner:
                 self.update_belief(ob[0], ob[1], ob[2])
                 self.past_beliefs.append(ob)
             
+        '''
         ####### Cluster
         self.sensed_clusters = []
         for a in self.agents:
@@ -382,7 +440,24 @@ class DynamicSensorPlanner:
                 if all(True if (a,ob) in self.sensed_objects else False for ob in self.clusters[c]["objects"]):
                     self.sensed_clusters.append((a,str(c)))
         #######
+        '''
+        self.sensed_clusters = []
+        self.room_numbers = list(range(len(self.room_locations)))
+        self.room_numbers.extend([o+len(self.room_locations) for o in range(len(self.rooms[len(self.room_locations)]))])
         
+        if self.sensed_objects:
+            for a in self.agents:
+                for c in self.room_numbers:
+                    if c < len(self.room_locations):
+                        if self.rooms[c] and all(True if (a,ob) in self.sensed_objects else False for ob in self.rooms[c]):
+                            self.sensed_clusters.append((a,'ROOM'+str(c)))
+                    else:
+                        
+                        if (a,ob) in self.sensed_objects:
+                            self.sensed_clusters.append((a,str(c)))
+        else:
+            pdb.set_trace()
+
         print("ALREADY IN GOAL:", self.locations, self.goal_coords,self.already_carried)
   
         skip_objects = []      
@@ -400,7 +475,7 @@ class DynamicSensorPlanner:
                 except:
                     pdb.set_trace()
             
-        self.locations.update(self.create_exploration_regions())
+        #self.locations.update(self.create_exploration_regions())
             
         self.nodes = self.create_nodes()
             
@@ -411,6 +486,24 @@ class DynamicSensorPlanner:
         self.group_belief = {}
         self.group_tau = {}
         
+        
+        for c in self.room_numbers:
+            if c < len(self.room_locations):
+                objects = self.rooms[c]
+                if objects:
+                    total_belief = sum(self.belief[o] for o in objects)
+                    self.group_belief['ROOM'+str(c)] = total_belief / len(objects)
+                    self.group_tau['ROOM'+str(c)] = sum(self.tau_current[o] for o in objects)
+                else:
+                    self.group_belief['ROOM'+str(c)] = self.prior_belief  # Initial belief
+                    self.group_tau['ROOM'+str(c)] = self.tau_initial  # Threshold scaled by group size
+                    
+            else:
+                ob = self.rooms[len(self.room_locations)][c-len(self.room_locations)]
+                self.group_belief[str(ob)] = self.belief[ob]
+                self.group_tau[str(ob)] = self.tau_current[ob]
+                
+        '''
         for cluster_label in self.clusters.keys():
             objects = self.clusters[cluster_label]["objects"]
             try:
@@ -420,7 +513,7 @@ class DynamicSensorPlanner:
             self.group_belief[str(cluster_label)] = total_belief / len(objects)
             
             self.group_tau[str(cluster_label)] = sum(self.tau_current[o] for o in objects)
-        
+        '''
         
         
 
@@ -478,6 +571,7 @@ class DynamicSensorPlanner:
         confidence_penalty = gp.quicksum(slack[j] * self.penalty_weight for j in self.objects)
         '''
         
+        '''
         try:
             uncertainty_penalty = gp.quicksum(
                 (self.group_tau[j.split('CLUSTER')[1]] - gp.quicksum(assign[i,j] * self.LLR[i][1] for i in self.agents)) * self.group_belief[j.split('CLUSTER')[1]]
@@ -489,6 +583,16 @@ class DynamicSensorPlanner:
         slack = model.addVars([str(c) for c in self.clusters.keys()], lb=0, name="Slack")  # Shortfall per object
         
         confidence_penalty = gp.quicksum(slack[str(j)] * self.penalty_weight for j in self.clusters)
+        '''
+        
+        uncertainty_penalty = gp.quicksum(
+            (self.group_tau[j.split('_')[1]] - gp.quicksum(assign[i,j] * self.LLR[i][1] for i in self.agents)) * self.group_belief[j.split('_')[1]]
+            for j in self.nodes if 'sense' in j
+        )
+        slack = model.addVars(['ROOM'+str(c) if c < len(self.room_locations) else self.rooms[len(self.room_locations)][c-len(self.room_locations)] for c in self.room_numbers], lb=0, name="Slack")  # Shortfall per object
+        
+        confidence_penalty = gp.quicksum(slack['ROOM'+str(j)] * self.penalty_weight if j < len(self.room_locations) else slack[self.rooms[len(self.room_locations)][j-len(self.room_locations)]] * self.penalty_weight for j in self.room_numbers)
+        
         
         # Collaborative travel time (max distance per object)
         collaborative_travel = gp.quicksum(
@@ -539,14 +643,27 @@ class DynamicSensorPlanner:
                             f"already_sensed_{i}_{j}"
                         )
                 '''
+                
+                '''
                 model.addConstr(
                     gp.quicksum(assign[i,j] * self.LLR[i][1]  # Assume worst case (Y=1)
                                for i in self.agents) + slack[j.split('CLUSTER')[1]] >= self.group_tau[j.split('CLUSTER')[1]],
                     f"Confidence_{j}"
                 )
+                '''
+                
+                try:
+                    model.addConstr(
+                        gp.quicksum(assign[i,j] * self.LLR[i][1]  # Assume worst case (Y=1)
+                                   for i in self.agents) + slack[j.split('_')[1]] >= self.group_tau[j.split('_')[1]],
+                        f"Confidence_{j}"
+                    )
+                except:
+                    pdb.set_trace()
                 
                 for i in self.agents:
-                    if (i,j.split('CLUSTER')[1]) in self.sensed_clusters:
+                    #if (i,j.split('CLUSTER')[1]) in self.sensed_clusters:
+                    if (i,j.split('_')[1]) in self.sensed_clusters:
                         model.addConstr(
                             assign[i,j] == 0,
                             f"already_sensed_{i}_{j}"
