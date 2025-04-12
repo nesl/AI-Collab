@@ -1415,6 +1415,7 @@ class AICollabEnv(gym.Env):
                             
                     if extra_status[1]:  # Danger estimate received
                         self.last_sensed = []
+                        print("Danger estimates received!!!", danger_sensing_data)
                         for object_key in danger_sensing_data.keys():
                             '''
                             min_pos = self.map_config['edge_coordinate']

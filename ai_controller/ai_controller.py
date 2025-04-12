@@ -12,7 +12,7 @@ import yaml
 import sqlite3
 import os
 from enum import Enum
-
+import json
 
 from magnebot import ActionStatus
 from gym_collab.envs.action import Action
@@ -767,6 +767,8 @@ class RobotState:
             #print("myself", item_output["item_time"][0], self.cursor.execute("SELECT * FROM agent_object_estimates aoe INNER JOIN objects o ON o.object_id = aoe.object_id ;""", ).fetchall())
 
             item_loc = self.env.convert_to_real_coordinates([int(item_output["item_location"][0]),int(item_output["item_location"][1])])
+            if not item_loc:
+                pdb.set_trace()
             room = self.env.get_room(item_loc,False)
             item_loc = str(item_loc)
             
@@ -867,6 +869,7 @@ team_structure = {}
 with open(args.config, 'r') as file:
     team_structure = yaml.safe_load(file)
     
+txt_profiling = open("profiling_" + str(args.robot_number) + ".json", 'w')
 
 just_starting = True
 rearrange_observations = True
@@ -895,6 +898,7 @@ while True:
 
     action_issued = [False,False]
     last_action = [0,0]
+    previous_action = -1
 
     messages = []
     message_queue = []
@@ -1332,6 +1336,22 @@ while True:
                         
                     elif args.control == "decision" or args.control == "optimized":
                     
+                        if args.control == "optimized":
+                            
+                            if previous_action <= Action.move_right.value and previous_action >= Action.move_up.value and decision_control.profiling['previous_ego_location'] != [int(ego_location[0][0]),int(ego_location[1][0])]:
+                                timing_value = time.time() -  decision_control.profiling['current_time']
+                                if not decision_control.profiling['previous_action'] or decision_control.profiling['previous_action'] == previous_action:
+                                    decision_control.profiling['moving_straight'].append(timing_value)
+                                elif ((decision_control.profiling['previous_action'] == Action.move_right.value or decision_control.profiling['previous_action'] == Action.move_left.value) and (previous_action == Action.move_right.value or previous_action == Action.move_left.value)) or ((decision_control.profiling['previous_action'] == Action.move_up.value or decision_control.profiling['previous_action'] == Action.move_down.value) and (previous_action == Action.move_up.value or previous_action == Action.move_down.value)):
+                                    decision_control.profiling['moving_180_turn'].append(timing_value)
+                                else:
+                                    decision_control.profiling['moving_turn'].append(timing_value)
+                                
+                                decision_control.profiling['previous_action'] = previous_action   
+                                print(decision_control.profiling)
+                                json.dump(decision_control.profiling,txt_profiling)
+                    
+                    
                         action,terminated_tmp = decision_control.control(messages, robotState, info, next_observation)
                         
                         #if action["action"] == Action.send_message.value:
@@ -1349,6 +1369,11 @@ while True:
                             
                             del action["message_ai"]
                         
+                        if args.control == "optimized":
+                            if action["action"] <= Action.move_right.value and action["action"] >= Action.move_up.value:
+                                decision_control.profiling['current_time'] = time.time()
+                                decision_control.profiling['previous_ego_location'] = [int(ego_location[0][0]),int(ego_location[1][0])]
+                        previous_action = action['action']
                         if terminated or truncated:
                             break
                         

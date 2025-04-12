@@ -578,7 +578,15 @@ class MessagePattern:
     
     @staticmethod    
     def order_sense_room_regex():
-        return "(\w+), sense room (\d+)"    
+        return "(\w+), sense room (\d+)"   
+        
+    @staticmethod
+    def order_sense_room_empty(room):
+        return "Room " + str(room) + " is empty. "
+    
+    @staticmethod    
+    def order_sense_room_empty_regex():
+        return "Room (\d+) is empty"   
         
     @staticmethod
     def order_collect(robot_id, object_id):

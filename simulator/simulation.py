@@ -1857,21 +1857,25 @@ class Simulation(Controller):
                 cell_size = self.cfg['cell_size']
                 wall_width = 0.5
                 self.rooms = {}
-                rooms_locations = {}
+                self.rooms_limits = {}
 
-                self.rooms[3] = [[x,y] for x in range(1,6) for y in range(1,6)]
-                self.rooms[2] = [[x,y] for x in range(1,6) for y in range(15,19)]
-                self.rooms[4] = [[x,y] for x in range(7,14) for y in range(1,6)]
-                self.rooms[5] = [[x,y] for x in range(15,19) for y in range(1,6)]
                 self.rooms[0] = [[x,y] for x in range(17,19) for y in range(7,10)]
                 self.rooms[1] = [[x,y] for x in range(15,19) for y in range(11,19)]
+                self.rooms[2] = [[x,y] for x in range(1,6) for y in range(15,19)]
+                self.rooms[3] = [[x,y] for x in range(1,6) for y in range(1,6)]
+                self.rooms[4] = [[x,y] for x in range(7,14) for y in range(1,6)]
+                self.rooms[5] = [[x,y] for x in range(15,19) for y in range(1,6)]
+                self.rooms[6] = [[x,y] for x in range(1,5) for y in range(7,14)]
+                self.rooms[7] = [[x,y] for x in range(5,17) for y in range(7,10)]
+                
+                map_variations = [[[x,6] for x in range(1,3)],[[x,6] for x in range(15,17)]]
                 
                 for r_key in self.rooms.keys():
-                    rooms_locations[r_key] = [[loc[0]-self.scenario_size/2+cell_size*0.5,loc[1]-self.scenario_size/2+cell_size*0.5] for loc in self.rooms[r_key]]
-                    self.rooms[r_key] = [[loc[0]-self.scenario_size/2-cell_size*0.5,loc[1]-self.scenario_size/2-cell_size*0.5] if loc_idx < len(self.rooms[r_key])-1 else [loc[0]-self.scenario_size/2+cell_size*1.5,loc[1]-self.scenario_size/2+cell_size*1.5] for loc_idx,loc in enumerate(self.rooms[r_key])]
+                    self.rooms_limits[r_key] = [[loc[0]-self.scenario_size/2-cell_size*0.5,loc[1]-self.scenario_size/2-cell_size*0.5] if loc_idx < len(self.rooms[r_key])-1 else [loc[0]-self.scenario_size/2+cell_size*1.5,loc[1]-self.scenario_size/2+cell_size*1.5] for loc_idx,loc in enumerate(self.rooms[r_key])]
+                    self.rooms[r_key] = [[loc[0]-self.scenario_size/2+cell_size*0.5,loc[1]-self.scenario_size/2+cell_size*0.5] for loc in self.rooms[r_key]]
                 
-                room_capacity = {0:5,1:5,2:6,3:5,4:2,5:9}
-                actual_room_capacity = {r_key:0 for r_key in rooms_locations.keys()}
+                room_capacity = {0:3,1:10,2:0,3:0,4:0,5:7,6:0,7:0}
+                actual_room_capacity = {r_key:0 for r_key in self.rooms.keys()}
                 
                 #possible_ranges = [np.arange(max_coord-3,max_coord+0.5,0.5),np.arange(max_coord-3,max_coord+0.5,0.5)]
                 #possible_ranges = [np.arange(self.scenario_size/2-self.wall_length+cell_size*1.5,self.scenario_size/2-cell_size*0.5,cell_size),np.arange(self.scenario_size/2-self.wall_length+cell_size*1.5,self.scenario_size/2-cell_size*0.5,cell_size)]
@@ -1887,7 +1891,7 @@ class Simulation(Controller):
                 
                 for t in range(total_num_objects):
                     while True:
-                        room_assignment = random.choice(range(len(rooms_locations.keys())))
+                        room_assignment = random.choice(range(len(self.rooms.keys())))
                         if actual_room_capacity[room_assignment] < room_capacity[room_assignment]:
                             actual_room_capacity[room_assignment] += 1
                             break
@@ -2017,9 +2021,9 @@ class Simulation(Controller):
                 if not self.options.single_object:
                 
                     goal_center = self.convert_to_grid_coordinates(self.goal_area[0][1], min_pos, cell_size)
-                    for r_key in rooms_locations.keys():
+                    for r_key in self.rooms.keys():
                         while True:
-                            possible_locations_temp = rooms_locations[r_key].copy()
+                            possible_locations_temp = self.rooms[r_key].copy()
                             occMap = self.static_occupancy_map.occupancy_map.copy()
                             chosen_locations = {objm: [] for objm in object_models.keys()}
                             for fc in final_coords.keys():
@@ -2070,10 +2074,17 @@ class Simulation(Controller):
                             feasible_room = True
                             
                             if self.options.no_block:
+                            
+                                occMap_variations = []
+                                for m1 in map_variations:
+                                    occMap_variations.append(occMap.copy())
+                                    for m2 in m1:
+                                         occMap_variations[-1][m2[0],m2[1]] = 1
+                            
                                 for fc in chosen_locations.keys():
                                     for c in chosen_locations[fc]:
                                         grid_location = self.convert_to_grid_coordinates(c.tolist(), min_pos, cell_size)
-                                        if not self.findPath(goal_center,grid_location,occMap):
+                                        if not self.findPath(goal_center,grid_location,occMap) or any(not self.findPath(goal_center,grid_location,ov) for ov in occMap_variations):
                                             feasible_room = False
                                             break
                                     if not feasible_room:
@@ -2131,7 +2142,10 @@ class Simulation(Controller):
                             #danger_level = 2
                         
                         try:
+                            #if object_index:
                             commands.extend(self.instantiate_object(fc,{"x": c[0], "y": 0, "z": c[1]},{"x": 0, "y": 0, "z": 0},1000,danger_level,weight, object_index))
+                            #else:
+                            #    commands.extend(self.instantiate_object(fc,{"x": -5, "y": 0, "z": 2},{"x": 0, "y": 0, "z": 0},1000,danger_level,weight, object_index))
                         except:
                             pdb.set_trace()
                         object_index += 1
@@ -2959,9 +2973,9 @@ class Simulation(Controller):
 
             #Roooms
             ego_room = -1
-            for r in self.rooms.keys():
+            for r in self.rooms_limits.keys():
                 #print([ego_magnebot.dynamic.transform.position[0], ego_magnebot.dynamic.transform.position[2]], self.rooms[r][0],self.rooms[r][-1])
-                if ego_magnebot.dynamic.transform.position[0] >= self.rooms[r][0][0] and ego_magnebot.dynamic.transform.position[2] >= self.rooms[r][0][1] and ego_magnebot.dynamic.transform.position[0] <= self.rooms[r][-1][0] and ego_magnebot.dynamic.transform.position[2] <= self.rooms[r][-1][1]:
+                if ego_magnebot.dynamic.transform.position[0] >= self.rooms_limits[r][0][0] and ego_magnebot.dynamic.transform.position[2] >= self.rooms_limits[r][0][1] and ego_magnebot.dynamic.transform.position[0] <= self.rooms_limits[r][-1][0] and ego_magnebot.dynamic.transform.position[2] <= self.rooms_limits[r][-1][1]:
                     ego_room = r
                     break
             
@@ -2969,8 +2983,8 @@ class Simulation(Controller):
             
                 #Roooms
                 object_room = -1
-                for r in self.rooms.keys():
-                    if self.object_manager.transforms[o].position[0] >= self.rooms[r][0][0] and self.object_manager.transforms[o].position[2] >= self.rooms[r][0][1] and self.object_manager.transforms[o].position[0] <= self.rooms[r][-1][0] and self.object_manager.transforms[o].position[2] <= self.rooms[r][-1][1]:
+                for r in self.rooms_limits.keys():
+                    if self.object_manager.transforms[o].position[0] >= self.rooms_limits[r][0][0] and self.object_manager.transforms[o].position[2] >= self.rooms_limits[r][0][1] and self.object_manager.transforms[o].position[0] <= self.rooms_limits[r][-1][0] and self.object_manager.transforms[o].position[2] <= self.rooms_limits[r][-1][1]:
                         object_room = r
                         break
             
