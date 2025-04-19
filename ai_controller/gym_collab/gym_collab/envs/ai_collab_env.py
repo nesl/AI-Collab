@@ -1690,7 +1690,7 @@ class AICollabEnv(gym.Env):
             
             
     
-    def get_room(self, location, convert_coordinates):
+    def get_room(self, location, convert_coordinates, constrained=True):
     
         #walls_coords = [[-3.5,-3.5], [4.5,-3.5],[-3.5,4.5],[4.5,4.5]]
         
@@ -1714,20 +1714,23 @@ class AICollabEnv(gym.Env):
         else:
             room = "main area"
         '''
-        
+        room = ""
         if np.linalg.norm(location-np.array(self.map_config['goal_radius'][0][1])) <= self.map_config['goal_radius'][0][0]:
             room = "goal area"
         else:
             in_room = False
             rooms = self.map_config['rooms']
             for r in rooms.keys():
-                if location[0] >= rooms[r][0][0]+self.map_config['cell_size'] and location[1] >= rooms[r][0][1]+self.map_config['cell_size'] and location[0] <= rooms[r][-1][0]-self.map_config['cell_size'] and location[1] <= rooms[r][-1][1]-self.map_config['cell_size']:
+                if (constrained and location[0] >= rooms[r][0][0]+self.map_config['cell_size'] and location[1] >= rooms[r][0][1]+self.map_config['cell_size'] and location[0] <= rooms[r][-1][0]-self.map_config['cell_size'] and location[1] <= rooms[r][-1][1]-self.map_config['cell_size']) or (not constrained and location[0] >= rooms[r][0][0]-self.map_config['cell_size'] and location[1] >= rooms[r][0][1]-self.map_config['cell_size'] and location[0] <= rooms[r][-1][0]+self.map_config['cell_size'] and location[1] <= rooms[r][-1][1]+self.map_config['cell_size']):
                     room = "room " + str(r)
                     in_room = True
                     break
+                
             
             if not in_room:
-                room = "main area"
+                if location[0] >= rooms['6'][-1][0] and location[1] >= rooms['1'][0][1] and location[0] <= rooms['1'][-1][0]:
+                    room = "main area"
+                    
         
         return room
     

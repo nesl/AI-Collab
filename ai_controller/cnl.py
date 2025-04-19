@@ -589,6 +589,10 @@ class MessagePattern:
         return "Room (\d+) is empty"   
         
     @staticmethod
+    def not_following_order(agent_id):
+        return "You are steering away from the objective, " + agent_id + ". "
+        
+    @staticmethod
     def order_collect(robot_id, object_id):
 
         return str(robot_id) + ", collect object " + str(object_id) + ". "

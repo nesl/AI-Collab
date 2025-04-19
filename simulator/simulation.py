@@ -703,7 +703,7 @@ class Simulation(Controller):
         extra_config["goal_radius"] = self.goal_area
         extra_config["scenario"] = self.scenario
         extra_config["sensor_parameters"] = [(self.robot_names_translate[str(um.robot_id)], um.p11, um.p22) for um in [*self.user_magnebots,*self.ai_magnebots]]
-        extra_config["rooms"] = self.rooms
+        extra_config["rooms"] = self.rooms #self.rooms
         
         
         return extra_config
