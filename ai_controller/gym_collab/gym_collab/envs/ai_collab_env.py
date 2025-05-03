@@ -821,6 +821,7 @@ class AICollabEnv(gym.Env):
         self.own_neighbors_info_entry = [self.robot_id, 1, 0, 0, -1, False]
         self.last_sensed = []
         self.neighbors_sensor_parameters = []
+        self.last_time_danger_estimates_received = 0
         
         for um in self.map_config['sensor_parameters']:
             if um[0] == self.robot_id:
@@ -1416,6 +1417,7 @@ class AICollabEnv(gym.Env):
                     if extra_status[1]:  # Danger estimate received
                         self.last_sensed = []
                         print("Danger estimates received!!!", danger_sensing_data)
+                        #self.last_time_danger_estimates_received = timer
                         for object_key in danger_sensing_data.keys():
                             '''
                             min_pos = self.map_config['edge_coordinate']
@@ -1423,8 +1425,8 @@ class AICollabEnv(gym.Env):
                             pos_new = [round((danger_sensing_data[object_key]['location'][0]+abs(min_pos))/multiple), round((danger_sensing_data[object_key]['location'][2]+abs(min_pos))/multiple)]
                             '''
 
-                            
-                            self.last_sensed.append(object_key)
+                            if danger_sensing_data[object_key]['time'] >= timer:
+                                self.last_sensed.append(object_key)
 
                             if "sensor" not in danger_sensing_data[object_key]:
                                 sensor_data = {}

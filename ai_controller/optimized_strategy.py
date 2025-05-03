@@ -6,6 +6,7 @@ import itertools
 from sklearn.cluster import DBSCAN
 import math
 from collections import deque, defaultdict
+import time
 
 
 def calculateHValue(current,dest):
@@ -23,9 +24,15 @@ def tracePath(node_details,dest):
     
     currentNode = dest
 
+    debug_counter = 0
+
     while node_details[currentNode[0]][currentNode[1]]["parent"][0] != currentNode[0] or node_details[currentNode[0]][currentNode[1]]["parent"][1] != currentNode[1]:
         path.append(currentNode)
         currentNode = node_details[currentNode[0]][currentNode[1]]["parent"]
+        debug_counter += 1
+        
+        if debug_counter >= 10000:
+            pdb.set_trace()
         
     path.reverse()
     
@@ -98,17 +105,144 @@ class UndirectedGraph:
         self.edges[v].append(u)
 
 class RobotMonitor:
-    def __init__(self, graph, goal, occMap, room_locations, goal_area):
+
+    def __init__(self,agent_type,graph,goal_area,rooms):
+
+        self.agent_type = agent_type
+        self.base_learning_rate = 0.01
+        self.decay = False
+        self.times = {'sensing':1.39, 'check_item':0.12,'move_straight':2.32,'turn':2.79,'turn_180':3.51}
+        self.updates = 0
         self.graph = graph
+        self.goal_area = goal_area
+        self.rooms = rooms
+        self.consecutive_increases_limit = 1
+        
+        self.reliability = {r:0.7 for r in ['sense', 'carry', 'carry_heavy']}
+        
+    def predict_actions(self,curr_pos, path, node):
+        next_pos = curr_pos
+        last_direction = 0
+        total_time_spent = 0
+        
+        actions = {k:0 for k in self.times.keys()}
+        
+        for p in path:
+            diff = np.array(p) - np.array(next_pos)
+            direction = 0
+            if diff[0] > 0:
+                direction = 1
+            elif diff[0] < 0:
+                direction = 2
+            elif diff[1] > 0:
+                direction = 3
+            elif diff[1] < 0:
+                direction = 4
+                
+            if last_direction == direction:
+                actions['move_straight'] += 1
+            elif ((last_direction == 1 and direction == 2) or (last_direction == 2 and direction == 1)) and ((last_direction == 3 and direction == 4) or (last_direction == 4 and direction == 3)):
+                actions['turn_180'] += 1
+            else:
+                actions['turn'] += 1
+                
+            last_direction = direction
+            next_pos = p                       
+            
+        
+        if "sense" in node:
+            actions['sensing'] += 1
+            
+            if self.agent_type == "ai":
+                if "ROOM" in node:
+                    room_idx = int(node.split("ROOM")[1])
+                    
+                    if room_idx in self.rooms.keys():
+                        if self.rooms[room_idx]:
+                            actions['check_item'] += len(self.rooms[room_idx])
+                        else:
+                            actions['check_item'] += 5
+                else:            
+                    actions['check_item'] += 1
+        elif "carry" in node:
+            try:
+                return_path = findPath(np.array(path[-1]),np.array(self.goal_area),self.occMap)
+                all_actions = self.predict_actions(path[-1], return_path, '')
+            
+                for a in all_actions.keys():
+                    actions[a] += all_actions[a]
+            except:
+                pdb.set_trace()
+             
+                
+        
+        return actions
+        
+    def get_time_spent(self,curr_pos,path,node):
+    
+        predicted_actions = self.predict_actions(curr_pos, path, node)
+        
+        return sum(predicted_actions[p]*self.times[p] for p in predicted_actions.keys())
+        
+    def set_time_spent(self,curr_pos,path,node):
+    
+        self.predicted_actions = self.predict_actions(curr_pos, path, node)
+        
+    def update_reliability(self, task, success):
+    
+        #alpha_success = 1.1
+        #alpha_fail = 0.9
+        lambda_param = 0.2
+        #pdb.set_trace()
+        
+        
+        self.reliability[task] = max(min((1-lambda_param)*self.reliability[task] + lambda_param * success, 1), 0)  # Cap at 1
+        '''
+        if success:
+            self.reliability[task] = min(self.reliability[task] * alpha_success, 1)  # Cap at 1
+        else:
+            self.reliability[task] *= alpha_fail  # No floor (can approach 0)
+        '''
+        
+    def update_model(self, actual_time, time_factor):
+    
+        if self.decay:
+            eta = self.base_learning_rate / (1 + self.updates)
+        else:
+            eta = self.base_learning_rate
+    
+        if time_factor == "moving":
+            factors = ['move_straight','turn','turn_180']
+            
+        elif time_factor == "sensing":
+            factors = ['sensing', 'check_item']
+        
+        predicted_time = sum(self.predicted_actions[p]*self.times[p] for p in factors)
+        error = actual_time - predicted_time
+        
+        for f in factors:
+            self.times[f] += eta * error * self.predicted_actions[f]
+        
+        self.updates += 1
+        
+
+    def set(self, goal, occMap, room_locations):
+        
         self.goal = goal
         self.occMap = occMap.copy()
-        self.occMap[goal_area[0], goal_area[1]] = 0
+        self.occMap[self.goal_area[0], self.goal_area[1]] = 0
         self.room_locations = room_locations.copy()
-        self.room_locations["goal area"] = goal_area
-        self.room_locations["main area"] = goal_area
+        self.room_locations["goal area"] = self.goal_area
+        self.room_locations["main area"] = self.goal_area
         self.distances = self._compute_distances()
         self.current_node = None
         self.consecutive_increases = 0
+        self.initial_time = time.time()
+        self.moving_finished = False
+        self.sensing_finished = False
+    
+    def set_current_node(self, current_node):
+        self.current_node = current_node
     
     def _compute_distances(self):
         # Direct BFS on original undirected graph
@@ -174,7 +308,7 @@ class RobotMonitor:
         # Direction check
         if new_dist > current_dist:
             self.consecutive_increases += 1
-            if self.consecutive_increases >= 1:
+            if self.consecutive_increases >= self.consecutive_increases_limit:
                 print(f"⚠️ Warning: Detected {self.consecutive_increases} consecutive steps away from goal")
                 return_value = 1
             else:
@@ -184,10 +318,17 @@ class RobotMonitor:
         
         print(f"Moved {self.current_node} → {new_node} | Distance: {current_dist} → {new_dist}")
         self.current_node = new_node
+        
+        if self.current_node == self.goal and not self.moving_finished:
+            return_value = 2
+            self.update_model(time.time()-self.initial_time, "moving")
+            self.initial_time = time.time()
+            self.moving_finished = True
+        
         return return_value
 
 class DynamicSensorPlanner:
-    def __init__(self, agents, objects, locations, agent_home, PD_PB_params, object_weights, occMap, goal_coords, room_locations):
+    def __init__(self, agents, objects, locations, agent_home, PD_PB_params, object_weights, occMap, goal_coords, room_locations, agents_type):
         self.agents = agents
         self.objects = objects
         self.PD_PB = PD_PB_params  # Dict: {agent: (PD, PB)}
@@ -206,9 +347,22 @@ class DynamicSensorPlanner:
         self.region_number = 0
         self.cluster_number = 0
         self.clusters = {}
-        self.g = []
-        self.path_monitoring = {a:[] for a in self.agents}
-        self.goal_area = goal_coords[int(len(goal_coords)/2)]
+        #self.goal_area = goal_coords[int(len(goal_coords)/2)]
+        
+        self.g = UndirectedGraph()
+        self.g.add_edge('1', 'main area')
+        self.g.add_edge('main area', 'goal area')
+        self.g.add_edge('2', 'main area')
+        self.g.add_edge('6', 'main area')
+        self.g.add_edge('2', '6')
+        self.g.add_edge('6', '7')
+        self.g.add_edge('7', '0')
+        self.g.add_edge('6', '3')
+        self.g.add_edge('3', '4')
+        self.g.add_edge('4', '5')
+        self.g.add_edge('5', '7')
+        self.g.add_edge('5', '0')
+        self.g.add_edge('4', '7')
         
         self.room_locations = room_locations
         self.original_room_locations = room_locations.copy()
@@ -216,6 +370,8 @@ class DynamicSensorPlanner:
         self.rooms = {r:[] for r in self.room_locations.keys()}
         self.rooms["extra"] = []
         self.locations = self.objects_in_rooms(locations)
+        
+        self.path_monitoring = {a:RobotMonitor(agents_type[a],self.g,locations['SAFE'],self.rooms) for a in self.agents}
         
         #self.locations = self.recluster(locations)
         #self.locations.update(self.create_exploration_regions())
@@ -250,20 +406,11 @@ class DynamicSensorPlanner:
          
         self.update_positions(agent_home,[])
         
-        self.g = UndirectedGraph()
-        self.g.add_edge('1', 'main area')
-        self.g.add_edge('main area', 'goal area')
-        self.g.add_edge('2', 'main area')
-        self.g.add_edge('6', 'main area')
-        self.g.add_edge('2', '6')
-        self.g.add_edge('6', '7')
-        self.g.add_edge('7', '0')
-        self.g.add_edge('6', '3')
-        self.g.add_edge('3', '4')
-        self.g.add_edge('4', '5')
-        self.g.add_edge('5', '7')
-        self.g.add_edge('5', '0')
-        self.g.add_edge('4', '7')
+        self.current_positions = agent_home
+        
+        self.node_type = self.node_type_classification(self.nodes)
+        
+        
         
     def objects_in_rooms(self, locations):
     
@@ -326,55 +473,6 @@ class DynamicSensorPlanner:
         return np.sqrt((a[0]-b[0])**2 + (a[1]-b[1])**2)
         
     
-    def get_time_spent(self,curr_pos, path, node):
-        times = {'sensing':1.39, 'check_item':0.12,'move_straight':2.32,'turn':2.79,'turn_180':3.51}
-        next_pos = curr_pos
-        last_direction = 0
-        total_time_spent = 0
-        for p in path:
-            diff = np.array(p) - np.array(next_pos)
-            direction = 0
-            if diff[0] > 0:
-                direction = 1
-            elif diff[0] < 0:
-                direction = 2
-            elif diff[1] > 0:
-                direction = 3
-            elif diff[1] < 0:
-                direction = 4
-                
-            if last_direction == direction:
-                total_time_spent += times['move_straight']
-            elif ((last_direction == 1 and direction == 2) or (last_direction == 2 and direction == 1)) and ((last_direction == 3 and direction == 4) or (last_direction == 4 and direction == 3)):
-                total_time_spent += times['turn_180']
-            else:
-                total_time_spent += times['turn']
-                
-            last_direction = direction
-            next_pos = p                       
-            
-        
-        if "sense" in node:
-            total_time_spent += times['sensing']
-            
-            if "ROOM" in node:
-                room_idx = int(node.split("ROOM")[1])
-                
-                if room_idx in self.rooms.keys():
-                    if self.rooms[room_idx]:
-                        total_time_spent += times['check_item']*len(self.rooms[room_idx])
-                    else:
-                        total_time_spent += times['check_item']*5
-            else:            
-                total_time_spent += times['check_item']
-        elif "carry" in node:
-            return_path = findPath(np.array(path[-1]),np.array(self.locations['SAFE']),self.occMap) 
-            total_time_spent += self.get_time_spent(path[-1], return_path, '') 
-             
-                
-        
-        return total_time_spent
-        
         
         
     def update_positions(self, current_positions, being_carried):
@@ -426,7 +524,7 @@ class DynamicSensorPlanner:
                             if n in being_carried:
                                 self.d_home[(i,j)] = 0
                             else:
-                                self.d_home[(i,j)] = self.get_time_spent(curr_pos, path, j) 
+                                self.d_home[(i,j)] = self.path_monitoring[i].get_time_spent(curr_pos, path, j) 
                         
                         '''
                         if tuple(current_positions[i]) == tuple(self.locations[n]):
@@ -439,37 +537,39 @@ class DynamicSensorPlanner:
                 
         
         self.c_jk = {}
-        for j in self.nodes:
         
-            if '_' in j:
-                n1 = j.split('_')[1]
-            elif 'SAFE' in j:
-                n1 = 'SAFE'
-            else:
-                n1 = j
-        
-            for k in self.nodes:
-                if j != k and not (j == 'HOME' or k == 'HOME'):
-                
-                    if '_' in k:
-                        n2 = k.split('_')[1]
-                    elif 'SAFE' in k:
-                        n2 = 'SAFE'
-                    else:
-                        n2 = k
-                
-                    #print(j,k,n1,n2,locations[n1],locations[n2])
+        for i in self.agents:
+            for j in self.nodes:
+            
+                if '_' in j:
+                    n1 = j.split('_')[1]
+                elif 'SAFE' in j:
+                    n1 = 'SAFE'
+                else:
+                    n1 = j
+            
+                for k in self.nodes:
+                    if j != k and not (j == 'HOME' or k == 'HOME'):
                     
-                    if tuple(self.locations[n1]) == tuple(self.locations[n2]):
-                        self.c_jk[(j, k)] = 0
-                    elif (k, j) in self.c_jk.keys():
-                        self.c_jk[(j, k)] = self.c_jk[(k, j)]
-                    else:
-                        try:
-                            path = findPath(np.array(self.locations[n1]),np.array(self.locations[n2]),self.occMap) #self.euclidean(locations[n1], locations[n2]) 
-                            self.c_jk[(j, k)] = self.get_time_spent(self.locations[n1], path, k) 
-                        except:
-                            pdb.set_trace()
+                        if '_' in k:
+                            n2 = k.split('_')[1]
+                        elif 'SAFE' in k:
+                            n2 = 'SAFE'
+                        else:
+                            n2 = k
+                    
+                        #print(j,k,n1,n2,locations[n1],locations[n2])
+                        
+                        if tuple(self.locations[n1]) == tuple(self.locations[n2]):
+                            self.c_jk[(i, j, k)] = 0
+                        elif (k, j) in self.c_jk.keys():
+                            self.c_jk[(i, j, k)] = self.c_jk[(i, k, j)]
+                        else:
+                            try:
+                                path = findPath(np.array(self.locations[n1]),np.array(self.locations[n2]),self.occMap) #self.euclidean(locations[n1], locations[n2]) 
+                                self.c_jk[(i, j, k)] = self.path_monitoring[i].get_time_spent(self.locations[n1], path, k) 
+                            except:
+                                pdb.set_trace()
                         
         #print(self.d_home,self.c_jk)
                  
@@ -546,7 +646,24 @@ class DynamicSensorPlanner:
         
         #self.nodes = self.create_nodes()
         #self.object_weights.update(weights)
+    
+    def node_type_classification(self, nodes):
+    
+        node_type = {}
         
+        for j in nodes:
+            if 'sense' in j:
+                node_type[j] = 'sense'
+            elif 'carry' in j:
+                ob_id = j.split('_')[1]
+                
+                if self.object_weights[ob_id] > 1:
+                    node_type[j] = 'carry_heavy'
+                else:
+                    node_type[j] = 'carry'
+                    
+        return node_type
+       
     def update_belief(self, object_j, agent_i, report_Y):
         PD, PB = self.PD_PB[agent_i]
         prior = self.belief[object_j]
@@ -592,6 +709,8 @@ class DynamicSensorPlanner:
         self.locations = {}
         
         self.regions_to_explore = []
+        
+        self.current_positions = current_positions
         
         for j in object_locations.keys():
             if 'SAFE' not in j and 'REGION' not in j and 'CLUSTER' not in j and j not in self.objects and j not in self.already_carried:
@@ -701,6 +820,8 @@ class DynamicSensorPlanner:
             self.group_tau[str(cluster_label)] = sum(self.tau_current[o] for o in objects)
         '''
         
+        self.node_type = self.node_type_classification(self.nodes)
+        
         
 
     def replan(self,skip_state=[]):
@@ -741,7 +862,7 @@ class DynamicSensorPlanner:
         )
 
         travel_time = gp.quicksum(
-            travel[i,j,k] * self.c_jk.get((j,k), 0) 
+            travel[i,j,k] * self.c_jk.get((i,j,k), 0) 
             for i in self.agents for j in self.nodes for k in self.nodes 
             if j != k and (j != 'HOME' or k != 'HOME') and not (j.startswith("carry_") and self.object_weights.get(j.split("_")[1], 1) == 1) #and (i,j) not in self.sensed_objects
         )
@@ -782,6 +903,10 @@ class DynamicSensorPlanner:
         confidence_penalty = gp.quicksum(slack['ROOM'+str(j)] * self.penalty_weight if j in self.room_locations.keys() else slack[j.split('extra')[1]] * self.penalty_weight for j in self.room_numbers)
         
         
+        
+        reliability_objective = gp.quicksum(assign[i,j]*(1-self.path_monitoring[i].reliability[self.node_type[j]]) for i in self.agents for j in self.nodes if 'sense' in j or 'carry' in j)
+        
+        
         # Collaborative travel time (max distance per object)
         collaborative_travel = gp.quicksum(
             max_dist[j] for j in self.objects if self.object_weights[j] > 1
@@ -798,11 +923,12 @@ class DynamicSensorPlanner:
             pdb.set_trace()
 
         
-        objective_weights = [0.1,1,1]
-        objective_names = ["distance to travel", "completeness", "uncertainty reduction"]
+        objective_weights = [0.1,1,1,1]
+        objective_names = ["distance to travel", "completeness", "uncertainty reduction", "reliability"]
         model.setObjectiveN(inspection_time + travel_time + collaborative_travel - exploration_reward, index=0, weight=objective_weights[0])
         model.setObjectiveN(confidence_penalty, index=1, weight=objective_weights[1])
         model.setObjectiveN(uncertainty_penalty, index=2, weight=objective_weights[2])
+        model.setObjectiveN(reliability_objective, index=3, weight=objective_weights[3])
         #model.setObjective(inspection_time + travel_time + uncertainty_penalty + confidence_penalty + collaborative_travel, GRB.MINIMIZE)
 
         # ================== Constraints ==================
@@ -881,7 +1007,7 @@ class DynamicSensorPlanner:
                             # Distance from agent's current position to object j
                             d_to_j = self.d_home.get((i, f"carry_{object_id}"), 0)
                             # Distance from object j to safe zone
-                            d_to_safe = self.c_jk.get((f"carry_{object_id}", f"SAFE{object_id}"), 0)
+                            d_to_safe = self.c_jk.get((i,f"carry_{object_id}", f"SAFE{object_id}"), 0)
                             total_d = d_to_j + d_to_safe
                             
                             # If agent i carries j, max_dist[j] >= their total distance
@@ -1006,6 +1132,9 @@ class DynamicSensorPlanner:
             
             assignments = []
             
+            #if not assignments or len(assignments) < len(self.agents):
+            #    pdb.set_trace()
+            
             for i in self.agents:
                 assigned = [(j, int(order[i,j].X)) for j in self.nodes if j != 'HOME' and assign[i,j].X > 0.5]
                 if assigned:
@@ -1018,20 +1147,41 @@ class DynamicSensorPlanner:
                         route.append(f"-> {curr_obj} (Order {sorted_assigned[idx][1]})")
                     print(f"Agent {i} route: {' '.join(route)}")
                     
-            #if not assignments or len(assignments) < len(self.agents):
-            #    pdb.set_trace()
+                    
+                    if isinstance(self.current_positions[i],str):
+                        curr_pos = self.locations[self.current_positions[i]]
+                    else:
+                        curr_pos = self.current_positions[i]
+                            
+                    if '_' in sorted_assigned[0][0]:
+                        n = sorted_assigned[0][0].split('_')[1]
+                    elif 'SAFE' in sorted_assigned[0][0]:
+                        n = 'SAFE'
+                    else:
+                        n = sorted_assigned[0][0]
+                    
+                    print(curr_pos, n, self.locations[n], self.occMap)
+                    
+                    if curr_pos == self.locations[n]:
+                        pdb.set_trace()
+                    
+                    path = findPath(np.array(curr_pos),np.array(self.locations[n]),self.occMap)
+                    
+                    self.path_monitoring[i].set_time_spent(curr_pos,path,sorted_assigned[0][0])
+                    
                     if 'SAFE' in sorted_assigned[0][0]:
-                        self.path_monitoring[i] = RobotMonitor(self.g, 'goal area', self.occMap, self.original_room_locations, self.goal_area)
+                        self.path_monitoring[i].set('goal area', self.occMap, self.original_room_locations)
+                        
                     elif 'ROOM' in sorted_assigned[0][0]:
-                        self.path_monitoring[i] = RobotMonitor(self.g, sorted_assigned[0][0].split('ROOM')[1], self.occMap, self.original_room_locations, self.goal_area)
+                        self.path_monitoring[i].set(sorted_assigned[0][0].split('ROOM')[1], self.occMap, self.original_room_locations)
                     else:
                         ob = sorted_assigned[0][0].split('_')[1]
                         for r in self.rooms.keys():
                             if ob in self.rooms[r]:
                                 if r == "extra":
-                                    self.path_monitoring[i] = RobotMonitor(self.g, 'main area', self.occMap, self.original_room_locations, self.goal_area) #What happens if in the boundary?
+                                    self.path_monitoring[i].set('main area', self.occMap, self.original_room_locations) #What happens if in the boundary?
                                 else:
-                                    self.path_monitoring[i] = RobotMonitor(self.g, r, self.occMap, self.original_room_locations, self.goal_area)
+                                    self.path_monitoring[i].set(r, self.occMap, self.original_room_locations)
                                 break
                         
                     

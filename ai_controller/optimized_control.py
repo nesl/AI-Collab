@@ -295,6 +295,8 @@ class OptimizedControl:
     
         tmp_message_history = []
         translated_messages_index = -1
+        
+        message_text_save = ""
     
         for rm_idx,rm in enumerate(received_messages):
             
@@ -303,6 +305,10 @@ class OptimizedControl:
             tmp_message = rm[1]
             
             agent_idx = info['robot_key_to_index'][rm[0]]
+            
+            #Ignore any messages sent to itself
+            if rm[0] == str(self.env.robot_id):
+                message_text_save = self.message_text
             
             if re.search(MessagePattern.carry_help_accept_regex(),rm[1]):
             
@@ -721,7 +727,25 @@ class OptimizedControl:
                         
                     MessagePattern.parse_sensing_message(rematch, new_rm, robotState, info, self.other_agents, self.env.convert_to_grid_coordinates, self.env.convert_to_real_coordinates)
                     
-                    
+                    if not robotState.get("agents", "type", info['robot_key_to_index'][rm[0]]) and self.planner and self.planner.path_monitoring[rm[0]] and "sense" in self.plan[rm[0]][0] and self.planner.path_monitoring[rm[0]].moving_finished and not self.planner.path_monitoring[rm[0]].sensing_finished:
+                        
+
+                        if "ROOM" in self.plan[rm[0]][0]:
+                            room = self.plan[rm[0]][0].split('ROOM')[1]
+                            
+                            grid_loc = robotState.get("objects", "last_seen_location", info['object_key_to_index'][object_id])
+                            room_num = self.env.get_room(grid_loc,True,constrained=False).replace("room ", "")
+                        else:
+                            room = object_id
+                            room_num = self.plan[rm[0]][0].split('_')[1]
+                        
+                        
+                        if room_num == room: #get room location of object
+                            self.planner.path_monitoring[rm[0]].update_model(time.time()-self.planner.path_monitoring[rm[0]].initial_time,"sensing")
+                            self.planner.path_monitoring[rm[0]].sensing_finished = True
+                            print("MODEL TIMES:", rm[0], self.planner.path_monitoring[rm[0]].times)
+                            #pdb.set_trace()
+
                         
                     if object_id not in objects_str[rm[1]]:
                         if objects_str[rm[1]]:
@@ -1171,9 +1195,18 @@ class OptimizedControl:
                         room_num = str(rematch.group(1))
                         if room_num in self.new_rooms.keys():
                             del self.new_rooms[room_num]
+                            
+                        
+                        if not robotState.get("agents", "type", info['robot_key_to_index'][rm[0]]) and self.planner and self.planner.path_monitoring[rm[0]] and "sense" in self.plan[rm[0]][0] and self.planner.path_monitoring[rm[0]].moving_finished and not self.planner.path_monitoring[rm[0]].sensing_finished:
+                        
+                        
+                            self.planner.path_monitoring[rm[0]].update_model(time.time()-self.planner.path_monitoring[rm[0]].initial_time,"sensing")
+                            self.planner.path_monitoring[rm[0]].sensing_finished = True
+                            print("MODEL TIMES:", rm[0], self.planner.path_monitoring[rm[0]].times)
+                            #pdb.set_trace()
                     
                 
-                
+            #What happens if a human lies about room being empty?
             if re.search(MessagePattern.order_finished_regex(),rm[1]):  
             
                 template_match = True
@@ -1192,6 +1225,66 @@ class OptimizedControl:
                         
                         print(self.agent_requesting_order)
                         
+                        
+                        if rm[0] in self.plan.keys() and self.plan[rm[0]]:
+                            success = 0
+                            if "sense" in self.plan[rm[0]][0]:
+                                if "ROOM" in self.plan[rm[0]][0]:
+                                    room = self.plan[rm[0]][0].split('ROOM')[1]
+                                    
+                                    objects_in_room = self.planner.rooms[room]
+                                    
+                                    if objects_in_room:
+                                        results = []
+                                        for object_id in objects_in_room:
+                                            danger_status = robotState.get("object_estimates", "danger_status", [info['object_key_to_index'][object_id],robot_idx])
+                                            results.append(bool(danger_status))
+                                        
+                                        try:
+                                            success = sum(results)/len(results)
+                                        except:
+                                            pdb.set_trace()
+                                    else:
+                                        success = 1
+                                            
+                                else:
+                                    room = object_id
+                                    room_num = self.plan[rm[0]][0].split('_')[1]
+                                    
+                                    danger_status = robotState.get("object_estimates", "danger_status", [info['object_key_to_index'][object_id],robot_idx])
+                                
+                                
+                                    success = int(bool(danger_status))
+                                    
+                            elif "carry" in self.plan[rm[0]][0]:
+                                object_id = self.plan[rm[0]][0].split('_')[1]
+                                
+                                current_object_location = robotState.get("objects", "last_seen_location", info['object_key_to_index'][object_id])
+                                
+                                current_room = self.env.get_room(current_object_location,True,constrained=False)
+                                
+                                if current_room == "goal area":
+                                    success = 1
+                                else:
+                                
+                                    object_location = self.planner.locations[object_id]
+                                    try:
+                                        goal_area = self.planner.locations["SAFE"]
+                                    except:
+                                        pdb.set_trace()                                    
+                                    prior_path = len(self.movement.findPath(np.array(object_location),np.array(goal_area),robotState.latest_map))
+                                    
+                                    
+                                    
+                                    current_path = len(self.movement.findPath(np.array(current_object_location),np.array(goal_area),robotState.latest_map))
+                                    
+                                    success = 1 - max(current_path/prior_path,1)
+                            else:
+                                pdb.set_trace()
+                            
+                            task = self.planner.node_type[self.plan[rm[0]][0]]
+                            self.planner.path_monitoring[rm[0]].update_reliability(task, success)
+                            print("UPDATED reliability:", task, success, rm[0], self.planner.path_monitoring[rm[0]].reliability[task])
                         
                         if rm[0] in self.plan.keys() and self.plan[rm[0]] and 'carry' in self.plan[rm[0]][0]:
                         
@@ -1511,6 +1604,10 @@ class OptimizedControl:
             if tmp_message:
                 tmp_message_history.append({"Sender": rm[0], "Message": tmp_message, "Time": rm[2]})
         
+            
+            #Ignore any messages sent to itself
+            if rm[0] == str(self.env.robot_id):
+                self.message_text = message_text_save
                 
         if tmp_message_history:
             self.message_history.extend(tmp_message_history)
@@ -1592,9 +1689,21 @@ class OptimizedControl:
                 self.other_agents[idx].rooms.append(room_num)
                 robot_id = list(info['robot_key_to_index'].keys())[list(info['robot_key_to_index'].values()).index(idx)]
                 if self.planner and self.planner.path_monitoring[robot_id]:
+                    if not self.planner.path_monitoring[robot_id].current_node:
+                        self.planner.path_monitoring[robot_id].set_current_node(self.other_agents[idx].rooms[-2])
                     moving_result = self.planner.path_monitoring[robot_id].move_to(room_num)
                     if moving_result == 1:
                         self.message_text += MessagePattern.not_following_order(robot_id)
+                        
+                        sanction_limit = 1
+                        if self.planner.path_monitoring[robot_id].consecutive_increases - self.planner.path_monitoring[robot_id].consecutive_increases_limit >= sanction_limit:
+                            try:
+                                self.planner.path_monitoring[robot_id].update_reliability(self.planner.node_type[self.plan[robot_id][0]], 0)
+                            except:
+                                pdb.set_trace()
+                            
+                    elif moving_result == 2:
+                        pass
                         
             print("ROOM", idx, self.other_agents[idx].rooms[-1])
 
@@ -1684,7 +1793,7 @@ class OptimizedControl:
                             else:
                                 function_str = self.decision(messages, robotState, info, [], self.nearby_other_agents, self.help_requests)
                                 message_order = self.message_text
-                                self.self_messages.append(("A","I think i should sense room 4", info['time']))
+                                #self.self_messages.append(("A","I think i should sense room 4", info['time'])) #DEBUG
                                 if self.action_function:
                                     function_str = ''
                         else:
@@ -3032,6 +3141,14 @@ class OptimizedControl:
         elif self.action_sequence == 1:
             self.profiling['sensing'].append(time.time()-self.profiling['current_time'])
             self.profiling['current_time'] = time.time()
+            
+            '''
+            self.item_list = {}
+            for object_key in info["last_sensed"].keys():
+                if info["last_sensed"][object_key]["time"] >= self.env.last_time_danger_estimates_received:
+                    self.item_list[object_key] = info["last_sensed"][object_key]
+            '''
+            
             self.item_list = info["last_sensed"]
             print("LAST SENSED:", info["last_sensed"] )
             #print(item_list)
@@ -3561,7 +3678,9 @@ class OptimizedControl:
         agents = []
         objects = []
         
-        locations = {'SAFE':(10,10)}
+        safe_location = self.env.convert_to_grid_coordinates(self.env.map_config['goal_radius'][0][1])
+
+        locations = {'SAFE':tuple(safe_location)} #{'SAFE':(10,10)}
             
         object_weights = {}
         agents_initial_positions = {}
@@ -3591,7 +3710,7 @@ class OptimizedControl:
                     
                         
                     
-            
+        agents_type = {}
         for ag in robotState.get_all_robots():
         
             #if ag[0] != self.env.robot_id:
@@ -3610,6 +3729,13 @@ class OptimizedControl:
             
             pd_pb[ag[0]] = (pd,pb)
             
+            a_type = robotState.get("agents", "type", ag[1])
+            
+            if a_type:
+                agents_type[ag[0]] = "ai"
+            else:
+                agents_type[ag[0]] = "human"
+            
 
         occMap = np.copy(robotState.latest_map)
         
@@ -3625,7 +3751,7 @@ class OptimizedControl:
                 for l in rooms[r]:
                     room_array.append(self.env.convert_to_grid_coordinates(l))
                 self.new_rooms[r] = room_array
-            self.planner = DynamicSensorPlanner(agents, objects, locations, agents_initial_positions, pd_pb, object_weights, occMap, self.extended_goal_coords, self.new_rooms)
+            self.planner = DynamicSensorPlanner(agents, objects, locations, agents_initial_positions, pd_pb, object_weights, occMap, self.extended_goal_coords, self.new_rooms, agents_type)
         else:
         
             sql_estimates = robotState.get_all_sensing_estimates()

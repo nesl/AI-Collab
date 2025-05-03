@@ -942,6 +942,82 @@ function create_survey(){
 
 }
 
+var last_clicked_id = {};
+
+function selectOnlyThis(event, id, name) {
+
+    if(! event.ctrlKey && ! event.shiftKey){
+        var all_checkboxes = document.getElementsByName(name);
+        for (var i = 0;i < all_checkboxes.length; i++)
+        {
+            all_checkboxes[i].checked = false;
+        }
+        document.getElementById(id).checked = true;
+    }else if(event.shiftKey){
+        var all_checkboxes = Array.prototype.slice.call(document.getElementsByName(name),0);
+        
+        all_checkboxes.sort(function(a,b){
+            return a.value_order - b.value_order;
+        });
+        
+        //last_element = document.getElementById(id).value_order;
+        
+        current_value_order = parseInt(document.getElementById(id).getAttribute('value_order'));
+        
+        if(name in last_clicked_id){
+            last_value_order = parseInt(document.getElementById(last_clicked_id[name]).getAttribute('value_order'));
+        } else{
+            last_value_order = current_value_order;
+        }
+        
+        
+        if(last_clicked_id[name]){
+            if(last_value_order >= current_value_order){
+                last_element = last_value_order;
+                first_element = current_value_order;
+            } else{
+                last_element = current_value_order;
+                first_element = last_value_order;
+            }
+        } else{
+            last_element = current_value_order;
+            first_element = current_value_order;
+        }
+        
+        
+        for (var i = 0; i < all_checkboxes.length; i++){
+            if(parseInt(all_checkboxes[i].getAttribute('value_order')) >= first_element && parseInt(all_checkboxes[i].getAttribute('value_order')) <= last_element){
+                all_checkboxes[i].checked = true;
+            } else{
+                all_checkboxes[i].checked = false;
+            }
+        }
+        
+        /*
+        for (var i = 0; i < all_checkboxes.length; i++){
+            
+            
+            if(all_checkboxes[i].id == id){
+                for(var j = first_element; j <= i; j++){
+                    all_checkboxes[j].checked = true;
+                }
+                checked_required_boxes = true;
+            } else{
+                if(all_checkboxes[i].checked){
+                    first_element = i;
+                }
+            
+                all_checkboxes[i].checked = false;
+            }
+        }
+        */
+    }else{
+        document.getElementById(id).checked = true;
+    }
+    last_clicked_id[name] = id;
+}
+
+
 //TODO: use the communication distance limit for something
 var map_config = {};
 var communication_distance_limit, strength_distance_limit, sensing_distance_limit;
@@ -1064,11 +1140,16 @@ function reset(config_options){
     var div_element = document.createElement("div");
     div_element.setAttribute("class", "wrapper");
     var input_element = document.createElement("input");
-    input_element.setAttribute("type", "radio");
+    input_element.setAttribute("type", "checkbox");
     input_element.setAttribute("id", "All");
     input_element.setAttribute("name", "neighbors");
     input_element.setAttribute("value", "All");
     input_element.setAttribute("checked", true);
+    input_element.addEventListener('click', function (e) {
+            selectOnlyThis(e,this.id,'neighbors');
+    });
+    var value_order = 0;
+    input_element.setAttribute("value_order", value_order);
     var label_element = document.createElement("label");
     label_element.setAttribute("for", "All");
     label_element.style.color = "black";
@@ -1093,11 +1174,16 @@ function reset(config_options){
         var div_element = document.createElement("div");
         div_element.setAttribute("class", "wrapper");
         var input_element = document.createElement("input");
-        input_element.setAttribute("type", "radio");
+        input_element.setAttribute("type", "checkbox");
         input_element.setAttribute("id", String(map_config['all_robots'][um_idx][0]));
         input_element.setAttribute("name", "neighbors");
         input_element.setAttribute("value", String(map_config['all_robots'][um_idx][0]));
-        input_element.onclick = function(){
+        value_order += 1;
+        input_element.setAttribute("value_order", value_order);
+        input_element.onclick = function(e){
+        
+            selectOnlyThis(e,this.id,'neighbors');
+        
             if(document.getElementById('command_text').value && last_pattern_clicked){
                 var res = setCommand(last_pattern_clicked,false);
                 if(res){
@@ -1119,6 +1205,11 @@ function reset(config_options){
 	    const td2 = tr2.insertCell();
 	    td2.classList.add("rr-block");
 	    td2.appendChild(document.createTextNode("(location: Out of Range)"));
+	    
+	    const tr3 = tbl.insertRow();
+	    const td3 = tr3.insertCell();
+	    //td3.classList.add("rr-block");
+	    td3.appendChild(document.createTextNode("P.B.: " + String((map_config["sensor_parameters"][um_idx][1]*100).toFixed(2)) + "%, P.D.: " + String((map_config["sensor_parameters"][um_idx][2]*100).toFixed(2)) + "%"));
 	
         label_element.appendChild(tbl);
         
@@ -1870,11 +1961,15 @@ function update_objects_info(object_key, timer, danger_data, position, weight, c
 	    div_element.setAttribute("id", "div_" + String(object_key));
 	    div_element.setAttribute("value", String(object_key));
 	    var input_element = document.createElement("input");
-	    input_element.setAttribute("type", "radio");
+	    input_element.setAttribute("type", "checkbox");
 	    input_element.setAttribute("id", String(object_key));
 	    input_element.setAttribute("name", "objects");
 	    input_element.setAttribute("value", String(object_key));
-	    input_element.onclick = function(){
+        input_element.setAttribute("value_order", object_key);
+	    input_element.onclick = function(e){
+	    
+	        selectOnlyThis(e,this.id,'objects');
+	    
             if(document.getElementById('command_text').value && last_pattern_clicked){
                 var res = setCommand(last_pattern_clicked,false);
                 if(res){
@@ -2078,12 +2173,13 @@ function update_neighbors_info(agent_key, timer, position, convert_coordinates){
 
 function findCheckedRadio(radio_elements,final_string,pattern){
 
-	var command_string, extra_info;
-	
-	match_results = final_string.matchAll(/\[(\w+)\]/g);
+	var command_string, extra_info, final_string_multiple = '';
 	
 	for(i = 0; i < radio_elements.length; i++) {
 		if(radio_elements[i].checked){
+		
+		    var final_string_temp = final_string;
+		
 			command_string = radio_elements[i].value;
 			if(pattern == 'object'){
 			    const child_table = document.getElementById("object_entries").children[i].children[1].children[0];
@@ -2092,21 +2188,23 @@ function findCheckedRadio(radio_elements,final_string,pattern){
 				    command_string += child_table.rows[j].cells[0].textContent + " ";
 				}
 				
+				match_results = final_string.matchAll(/\[(\w+)\]/g);
+				
 				if(match_results){
                     for (const itItem of match_results) {
                     
                         switch(itItem[1]){
                             case 'object':
-                                final_string = final_string.replace('[object]', command_string);
+                                final_string_temp = final_string_temp.replace('[object]', command_string);
                                 break;
                             case 'object_id':
-                                final_string = final_string.replace('[object_id]', command_string.match(/Object (\d+)/)[1]);
+                                final_string_temp = final_string_temp.replace('[object_id]', command_string.match(/Object (\d+)/)[1]);
                                 break;
                             case 'object_location':
-                                final_string = final_string.replace('[object_location]', command_string.match(/Last seen in (\(-?\d+\.\d+,-?\d+\.\d+\))/)[1]);
+                                final_string_temp = final_string_temp.replace('[object_location]', command_string.match(/Last seen in (\(-?\d+\.\d+,-?\d+\.\d+\))/)[1]);
                                 break;
                             case 'object_time':
-                                final_string = final_string.replace('[object_time]', command_string.match(/at (\d+:\d+)/)[1]);
+                                final_string_temp = final_string_temp.replace('[object_time]', command_string.match(/at (\d+:\d+)/)[1]);
                                 break;
                         }
                     
@@ -2127,19 +2225,21 @@ function findCheckedRadio(radio_elements,final_string,pattern){
 				    }
 				    command_string = document.getElementById(neighbors_list_store[i-1][0] + '_entry').children[0].rows[0].cells[0].textContent + " " + second_string;
 					
+					match_results = final_string.matchAll(/\[(\w+)\]/g);
+					
                     if(match_results){
                         for (const itItem of match_results) {
   
                         
                             switch(itItem[1]){
                                 case 'agent':
-                                    final_string = final_string.replace('[agent]', command_string);
+                                    final_string_temp = final_string_temp.replace('[agent]', command_string);
                                     break;
                                 case 'agent_id':
-                                    final_string = final_string.replace('[agent_id]', command_string.match(/Agent (\w+)/)[1]);
+                                    final_string_temp = final_string_temp.replace('[agent_id]', command_string.match(/Agent (\w+)/)[1]);
                                     break;
                                 case 'agent_count':
-                                    final_string = final_string.replace('[agent_count]', "1");
+                                    final_string_temp = final_string_temp.replace('[agent_count]', "1");
                                     break;
                             }
                         
@@ -2151,8 +2251,11 @@ function findCheckedRadio(radio_elements,final_string,pattern){
 				}
 			}
 			
-
-			break;
+			if(final_string_multiple){
+                final_string_multiple += " ";
+            }
+            final_string_multiple += final_string_temp;
+			//break;
 		}
 	}
 	var not_found = false;
@@ -2161,7 +2264,7 @@ function findCheckedRadio(radio_elements,final_string,pattern){
 	}
 	//var result = final_string.replace(pattern,command_string);
 
-	return [final_string,not_found];
+	return [final_string_multiple,not_found];
 
 }
 

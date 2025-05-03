@@ -1874,7 +1874,7 @@ class Simulation(Controller):
                     self.rooms_limits[r_key] = [[loc[0]-self.scenario_size/2-cell_size*0.5,loc[1]-self.scenario_size/2-cell_size*0.5] if loc_idx < len(self.rooms[r_key])-1 else [loc[0]-self.scenario_size/2+cell_size*1.5,loc[1]-self.scenario_size/2+cell_size*1.5] for loc_idx,loc in enumerate(self.rooms[r_key])]
                     self.rooms[r_key] = [[loc[0]-self.scenario_size/2+cell_size*0.5,loc[1]-self.scenario_size/2+cell_size*0.5] for loc in self.rooms[r_key]]
                 
-                room_capacity = {0:3,1:10,2:0,3:0,4:0,5:7,6:0,7:0}
+                room_capacity = {0:3,1:10,2:5,3:5,4:5,5:7,6:0,7:0}
                 actual_room_capacity = {r_key:0 for r_key in self.rooms.keys()}
                 
                 #possible_ranges = [np.arange(max_coord-3,max_coord+0.5,0.5),np.arange(max_coord-3,max_coord+0.5,0.5)]
