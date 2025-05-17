@@ -117,6 +117,7 @@ class RobotMonitor:
         self.goal_area = goal_area
         self.rooms = rooms
         self.consecutive_increases_limit = 1
+        self.init_state = True
         
         self.reliability = {r:0.7 for r in ['sense', 'carry', 'carry_heavy']}
         
@@ -175,7 +176,7 @@ class RobotMonitor:
                 pdb.set_trace()
              
                 
-        
+        #TODO: humans can go between objects
         return actions
         
     def get_time_spent(self,curr_pos,path,node):
@@ -240,6 +241,7 @@ class RobotMonitor:
         self.initial_time = time.time()
         self.moving_finished = False
         self.sensing_finished = False
+        self.init_state = False
     
     def set_current_node(self, current_node):
         self.current_node = current_node
@@ -350,19 +352,19 @@ class DynamicSensorPlanner:
         #self.goal_area = goal_coords[int(len(goal_coords)/2)]
         
         self.g = UndirectedGraph()
-        self.g.add_edge('1', 'main area')
+        self.g.add_edge('0', 'main area')
         self.g.add_edge('main area', 'goal area')
+        self.g.add_edge('1', 'main area')
         self.g.add_edge('2', 'main area')
-        self.g.add_edge('6', 'main area')
+        self.g.add_edge('1', '2')
         self.g.add_edge('2', '6')
         self.g.add_edge('6', '7')
-        self.g.add_edge('7', '0')
-        self.g.add_edge('6', '3')
+        self.g.add_edge('2', '3')
         self.g.add_edge('3', '4')
         self.g.add_edge('4', '5')
         self.g.add_edge('5', '7')
-        self.g.add_edge('5', '0')
-        self.g.add_edge('4', '7')
+        self.g.add_edge('5', '6')
+        self.g.add_edge('4', '6')
         
         self.room_locations = room_locations
         self.original_room_locations = room_locations.copy()
@@ -429,12 +431,24 @@ class DynamicSensorPlanner:
                 except:
                     pdb.set_trace()
                     
-            if not in_room:
+            if not in_room and tuple(locations[l_key]) not in self.goal_coords:
                 self.rooms['extra'].append(l_key)
                 
                 
         for r_idx in self.room_locations.keys():
-            locations['ROOM' + str(r_idx)] = self.room_locations[str(r_idx)][int(len(self.room_locations[str(r_idx)])/2)]
+            
+            middle = int(len(self.room_locations[str(r_idx)])/2)
+            for rr in range(len(self.room_locations[str(r_idx)])):
+                new_rr = (rr + middle) % len(self.room_locations[str(r_idx)])
+                
+                locations['ROOM' + str(r_idx)] = self.room_locations[str(r_idx)][new_rr] 
+                path = findPath(np.array(locations["SAFE"]),np.array(locations['ROOM' + str(r_idx)]),self.occMap)
+                if path:
+                    break
+                    
+            if not path:
+                pdb.set_trace()
+                   
             
         return locations
         
@@ -724,7 +738,7 @@ class DynamicSensorPlanner:
         self.rooms["extra"] = []
         self.locations = self.objects_in_rooms(object_locations.copy())
         
-        print("SENSED:", self.sensed_objects, self.sensed_clusters)
+        print("SENSED:", self.sensed_objects, self.sensed_clusters, self.rooms)
         
         #if object_beliefs:
         #    pdb.set_trace()
@@ -822,9 +836,57 @@ class DynamicSensorPlanner:
         
         self.node_type = self.node_type_classification(self.nodes)
         
+        print("BELIEFS", self.belief)
+        
+    
+    def set_monitoring(self, agent, assigned, skip_state):
+    
+        if not any(agent == s[1] for s in skip_state):
+            if isinstance(self.current_positions[agent],str):
+                curr_pos = self.locations[self.current_positions[agent]]
+            else:
+                curr_pos = self.current_positions[agent]
+                    
+            if '_' in assigned:
+                n = assigned.split('_')[1]
+            elif 'SAFE' in assigned:
+                n = 'SAFE'
+            else:
+                n = assigned
+            
+            #print(curr_pos, n, self.locations[n], self.occMap)
+            
+            if curr_pos == self.locations[n]:
+                path = []
+            else:
+                path = findPath(np.array(curr_pos),np.array(self.locations[n]),self.occMap)
+            
+            
+            
+            if not (not path and "carry" in assigned):
+            
+                self.path_monitoring[agent].set_time_spent(curr_pos,path,assigned)
+                
+                init_time = time.time()
+                if 'SAFE' in assigned:
+                    self.path_monitoring[agent].set('goal area', self.occMap, self.original_room_locations)
+                    
+                elif 'ROOM' in assigned:
+                    self.path_monitoring[agent].set(assigned.split('ROOM')[1], self.occMap, self.original_room_locations)
+                else:
+                    ob = assigned.split('_')[1]
+                    for r in self.rooms.keys():
+                        if ob in self.rooms[r]:
+                            if r == "extra":
+                                self.path_monitoring[agent].set('main area', self.occMap, self.original_room_locations) #What happens if in the boundary?
+                            else:
+                                self.path_monitoring[agent].set(r, self.occMap, self.original_room_locations)
+                            break
+                            
+                print(time.time() - init_time)        
         
 
-    def replan(self,skip_state=[]):
+    def replan(self,skip_state=[],pretend=False):
     
         model = gp.Model("FixedRoutingAssignment")
         M = len(self.nodes) + 1  # Upper bound for order variables
@@ -1136,6 +1198,7 @@ class DynamicSensorPlanner:
             #    pdb.set_trace()
             
             for i in self.agents:
+                
                 assigned = [(j, int(order[i,j].X)) for j in self.nodes if j != 'HOME' and assign[i,j].X > 0.5]
                 if assigned:
                     sorted_assigned = sorted(assigned, key=lambda x: x[1])
@@ -1147,50 +1210,15 @@ class DynamicSensorPlanner:
                         route.append(f"-> {curr_obj} (Order {sorted_assigned[idx][1]})")
                     print(f"Agent {i} route: {' '.join(route)}")
                     
-                    
-                    if isinstance(self.current_positions[i],str):
-                        curr_pos = self.locations[self.current_positions[i]]
-                    else:
-                        curr_pos = self.current_positions[i]
-                            
-                    if '_' in sorted_assigned[0][0]:
-                        n = sorted_assigned[0][0].split('_')[1]
-                    elif 'SAFE' in sorted_assigned[0][0]:
-                        n = 'SAFE'
-                    else:
-                        n = sorted_assigned[0][0]
-                    
-                    print(curr_pos, n, self.locations[n], self.occMap)
-                    
-                    if curr_pos == self.locations[n]:
-                        pdb.set_trace()
-                    
-                    path = findPath(np.array(curr_pos),np.array(self.locations[n]),self.occMap)
-                    
-                    self.path_monitoring[i].set_time_spent(curr_pos,path,sorted_assigned[0][0])
-                    
-                    if 'SAFE' in sorted_assigned[0][0]:
-                        self.path_monitoring[i].set('goal area', self.occMap, self.original_room_locations)
+                    if not pretend:
+                        self.set_monitoring(i, sorted_assigned[0][0], skip_state)
                         
-                    elif 'ROOM' in sorted_assigned[0][0]:
-                        self.path_monitoring[i].set(sorted_assigned[0][0].split('ROOM')[1], self.occMap, self.original_room_locations)
-                    else:
-                        ob = sorted_assigned[0][0].split('_')[1]
-                        for r in self.rooms.keys():
-                            if ob in self.rooms[r]:
-                                if r == "extra":
-                                    self.path_monitoring[i].set('main area', self.occMap, self.original_room_locations) #What happens if in the boundary?
-                                else:
-                                    self.path_monitoring[i].set(r, self.occMap, self.original_room_locations)
-                                break
-                        
-                    
-                    
+                
             
             return assignments, (objectives,objective_weights,objective_names)
         else:
-            print("No solution found", model.status)
-            pdb.set_trace()
+            print("No solution found", model.status, skip_state)
+            #pdb.set_trace()
         
         return [], []
 # ================== Data Setup ==================

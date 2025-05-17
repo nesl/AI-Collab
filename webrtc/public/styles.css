@@ -66,9 +66,18 @@ video {
 .chat_title, .user-count {
   margin-left: 10%;
   margin-right: 10%;
+  margin-bottom:0;
   padding: 10px 0;
   font-size: 20px;
   color: white;
+}
+
+.sensor_title {
+  padding: 10px 0;
+  color: white;
+  margin-left: 10%;
+  margin-top: 0;
+
 }
 
 h2 {

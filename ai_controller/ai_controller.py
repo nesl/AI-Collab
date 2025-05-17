@@ -61,6 +61,7 @@ parser.add_argument('--video-index', type=int, default=0, help='index of the fir
 parser.add_argument('--config', type=str, default='team_structure.yaml', help='Path to team structure configuration file')
 parser.add_argument('--sql', default=True, action="store_true", help='Use SQL for message parsing')
 parser.add_argument('--no-reset', default=False, action="store_true", help='Continue without waiting for reset')
+#parser.add_argument('--communication-distance', type=int, default=5, help='local communication distance limit')
 #parser.add_argument("--openai", action='store_true', help="Use openai.")
 #parser.add_argument("--llm", action='store_true', help="Use LLM.")
 
@@ -210,6 +211,7 @@ class RobotState:
         self.args = args
         self.create_tables = ''
         self.sqliteConnection = None
+        self.dropped_objects = []
     
         if args.sql:
         
@@ -520,7 +522,17 @@ class RobotState:
             
         return estimates
             
-            
+    def get_object_in_room(self, propert, idx):
+        row = self.cursor.execute("SELECT " + propert + " FROM agent_object_estimates WHERE last_seen_room = ? AND agent_id = ?;", (idx[0],idx[1],)).fetchall()
+        
+        output = []
+        if propert == "danger_status":
+            for r in row:
+                output.append((self.Danger_Status[r[0]].value,))
+                
+        
+        return output
+    
     def get(self, database, propert, idx):
     
         
@@ -921,6 +933,7 @@ while True:
     process_reward = 0
     
     disabled = False
+    dropped_objects = []
     
 
     if args.control == 'llm' or args.control == 'openai':
@@ -969,6 +982,10 @@ while True:
             
         #print(action, next_observation)
         next_observation, reward, terminated, truncated, info = env.step(action)
+        
+        if info["dropped_objects"]:
+            robotState.dropped_objects.append(info["dropped_objects"])
+                    
         #print("HELLO", info["object_key_to_index"], env.object_info)
         #print(info["real_location"])
 
@@ -1135,8 +1152,9 @@ while True:
                         time = robotState.items[ob_idx]["item_time"][0]
                         new_object_info.append([str(ob[0]),ob[2],{}, location[0], location[1], time])
                     else:
+                        not_found = True
                         for ob2 in env.object_info:
-                            not_found = True
+                            
                             if int(ob2[0]) == ob[0]:
                                 new_object_info.append(ob2)
                                 not_found = False

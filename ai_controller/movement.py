@@ -1575,7 +1575,10 @@ class Movement:
             """
         elif action_index == self.State.follow:
             
-            agent_idx = info['robot_key_to_index'][self.help_status_info[0][0]]
+            try:
+                agent_idx = info['robot_key_to_index'][self.help_status_info[0][0]]
+            except:
+                pdb.set_trace()
             
             robo_location = robotState.get("agents", "last_seen_location", agent_idx)
             

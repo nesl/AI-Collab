@@ -278,7 +278,7 @@ io.sockets.on("connection", socket => { //When a client connects
         ai_ids[client_number-1] = socket.id;
         all_ids[client_number-1+user_ids_list.length] = socket.id;
 
-        socket.emit("watcher_ai", ai_ids_list[client_number-1], map_config, dateTime);
+        socket.emit("watcher_ai", ai_ids_list[client_number-1], map_config, dateTime, yaml_doc);
         /*
         if (ai_ids.includes(socket.id) == false){
             ai_ids.push(socket.id);
@@ -400,8 +400,8 @@ io.sockets.on("connection", socket => { //When a client connects
     socket.to(all_ids[idx]).emit("ai_status",status);
   });
   
-  socket.on("ai_output", (idx, object_type_coords_map, object_attributes_id, objects_held, sensing_results, ai_status, extra_status, strength, timer, disable, location) => {//AI output forwarding
-    socket.to(all_ids[idx]).emit("ai_output", object_type_coords_map, object_attributes_id, objects_held, sensing_results, ai_status, extra_status, strength, timer, disable, location);
+  socket.on("ai_output", (idx, object_type_coords_map, object_attributes_id, objects_held, sensing_results, ai_status, extra_status, strength, timer, disable, location, dropped_objects) => {//AI output forwarding
+    socket.to(all_ids[idx]).emit("ai_output", object_type_coords_map, object_attributes_id, objects_held, sensing_results, ai_status, extra_status, strength, timer, disable, location, dropped_objects);
     //Sensing actions missing
     if((! disable_list.includes(all_ids_list[idx])) && disable){
     	disable_list.push(all_ids_list[idx]);
@@ -412,7 +412,7 @@ io.sockets.on("connection", socket => { //When a client connects
   });
   
   
-  socket.on("human_output", (idx, location, item_info, neighbors_info, timer, disable) => {
+  socket.on("human_output", (idx, location, item_info, neighbors_info, timer, disable, dropped_objects) => {
     socket.to(all_ids[idx]).emit("human_output", location, item_info, neighbors_info, timer, disable);
     
     if(command_line_options.log && Object.keys(item_info).length > 0){ //(timer - past_timer > 1 || Object.keys(item_info).length > 0)){
@@ -496,16 +496,16 @@ io.sockets.on("connection", socket => { //When a client connects
     //const origin_id = user_ids_list[clients_ids.indexOf(socket.id)]
     
     
-    var sim_id = socket_to_simulator_id(socket.id);
-    message = filter.clean(message); //censor
+    let source_id = socket_to_simulator_id(socket.id);
     
-    console.log(timestamp,sim_id,message, neighbors_list);
-    
-    
-    let source_id = socket_to_simulator_id(socket.id)
     
     
     if(socket.id == broadcaster){
+    
+        message = filter.clean(message); //censor
+    
+        console.log(timestamp,source_id,message, neighbors_list);
+    
         if(Object.keys(neighbors_list).length == 0){
             for (let id_idx = 0; id_idx < clients_ids.length; id_idx++) {
                 socket.to(clients_ids[id_idx]).emit("message", message, timestamp, "ADMIN");
@@ -522,21 +522,26 @@ io.sockets.on("connection", socket => { //When a client connects
             }
         }
     } else{
-        socket.to(broadcaster).emit("message", message, timestamp, source_id);
+    
+        let whole_message = message["whole"];
+        socket.to(broadcaster).emit("message", whole_message, timestamp, source_id);
         
+        //message = filter.clean(message); //censor
     
+        
+        //console.log(user_ids_list,ai_ids_list)
     
-        if(! disable_list.includes(sim_id)){
+        if(! disable_list.includes(source_id)){
 		    message_sent = true;
 		    //console.log("not disabled 1")
 		    
-		    if(stats[sim_id]["average_message_length"] > 0){
-			    stats[sim_id]["average_message_length"] = (stats[sim_id]["average_message_length"] + message.length)/2;
+		    if(stats[source_id]["average_message_length"] > 0){
+			    stats[source_id]["average_message_length"] = (stats[source_id]["average_message_length"] + whole_message.length)/2;
 		    } else{
-			    stats[sim_id]["average_message_length"] = message.length;
+			    stats[source_id]["average_message_length"] = whole_message.length;
 		    }
-		    stats[sim_id]["num_messages_sent"] += 1;
-		    if(all_ids.indexOf(socket.id) >= 0 && neighbors_list){
+		    stats[source_id]["num_messages_sent"] += 1;
+		    if(all_ids.indexOf(socket.id) >= 0){
 		        //console.log("not disabled 2")
 		        
 		        //console.log(source_id)
@@ -548,22 +553,25 @@ io.sockets.on("connection", socket => { //When a client connects
 			        socket.emit("message", message, timestamp, source_id); //Emit message to itself
 		        }
 		        
-		        for (const [key, value] of Object.entries(neighbors_list)) {
+		        console.log(timestamp,source_id,message);
+		        for (const [key, value] of Object.entries(message)) {
 		            //console.log(key)
 		            //console.log(value)
 		            
-		            if(! disable_list.includes(key)){
+		            if(key != "whole" && ! disable_list.includes(key) && value){
 		                //console.log("not disabled 3")
 				        keys_neighbors += key + ',';
-				        if(value === 'human'){
+				        
+				        
+				        
+				        if(user_ids_list.includes(key)){
 				            let c = clients_ids[user_ids_list.indexOf(key)]; 
 				            
-					        //console.log(c)
-					        socket.to(c).emit("message", message, timestamp, source_id);
+					        socket.to(c).emit("message", value, timestamp, source_id);
 				            
-				        } else if(value === 'ai'){
+				        } else if(ai_ids_list.includes(key)){
 				            let c = ai_ids[ai_ids_list.indexOf(key)];
-				            socket.to(c).emit('message', message, timestamp, source_id);
+				            socket.to(c).emit('message', value, timestamp, source_id);
 				        }
 			        }
 		            

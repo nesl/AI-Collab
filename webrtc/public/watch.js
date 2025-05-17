@@ -8,7 +8,7 @@ var completed_survey = false;
 var token;
 var last_pattern_clicked;
 var team_strategy;
-const pattern_regex = {"[agent_id]": "(\\w+)", "[object_id]": "(\\d+)", "[object_location]":"(\\(-?\\d+\\.\\d+,-?\\d+\\.\\d+\\))", "[object_time]":"(\\d+:\\d+)", "[agent]":"Agent (\\w+) \\(type: (\\w+)\\) Last seen in (\\(-?\\d+\\.\\d+,-?\\d+\\.\\d+\\)) at (\\d+:\\d+)", "[object]": "Object (\\d+) \\(weight: (\\d+)\\) Last seen in (\\(-?\\d+\\.\\d+,-?\\d+\\.\\d+\\)) at (\\d+:\\d+).( Status: (\\w+), Prob. Correct: (\\d+\\.\\d+)%)?", "[agent_count]": "(\\d+)"};
+const pattern_regex = {"[agent_id]": "(\\w+)", "[object_id]": "(\\d+)", "[object_location]":"(\\(-?\\d+\\.\\d+,-?\\d+\\.\\d+\\))", "[object_time]":"(\\d+:\\d+)", "[agent]":"Agent (\\w+) \\(type: (\\w+)\\) Last seen in (\\(-?\\d+\\.\\d+,-?\\d+\\.\\d+\\)) at (\\d+:\\d+)", "[object]": "Object (\\d+) \\(weight: (\\d+)\\) Last seen in (\\(-?\\d+\\.\\d+,-?\\d+\\.\\d+\\)) at (\\d+:\\d+).( Status: (\\w+), Prob. Correct: (\\d+\\.\\d+)%)?", "[agent_count]": "(\\d+)", "[room_id]": "(\\w+)", "[agent_id_list]": "(\\[(,?\\w+)+\\])"};
 var message_patterns_regex = {"normal":{},"regex":{}};
 var type_of_help = '';
 var wait_for_survey = false;
@@ -34,6 +34,8 @@ function loadXMLDoc() {
     xmlhttp.send();
 }
 
+var cnl_filters = {"normal":{},"regex":{}};
+var cnl_filter_names = ["Order sense room","Order collect object","Order collect object team","Order cancelled","Order sense object"];
 function set_cnl(){
     const cnl_entries_doc = document.getElementById("cnl");
     const cnl_xml = xmlDoc.getElementsByTagName("cnl")[0];
@@ -44,7 +46,7 @@ function set_cnl(){
     
         cnl_name = cnl_entries[z].getAttribute("name");
         
-        if((only_cnl && cnl_name != "Title") || cnl_name == "Agent to message" || cnl_name == "Object to message"){
+        if((only_cnl && cnl_name != "Title") || cnl_name == "Agent to message" || cnl_name == "Object to message" || cnl_name == "Order complete" || cnl_name == "Room empty"){
         
             if(! cnl_entries[z].getAttribute("hide")){
                 var div_cnl = document.createElement('div');
@@ -116,6 +118,18 @@ function set_cnl(){
             div_cnl.appendChild(p_cnl);
             
             cnl_entries_doc.appendChild(div_cnl);
+        } else if(cnl_filter_names.includes(cnl_name)){
+        
+            let message_text2 = cnl_entries[z].textContent;
+            
+            var message_template = message_text2;
+            
+            Object.keys(pattern_regex).forEach(function(key) {
+                message_template = message_template.replace(key,pattern_regex[key])
+            });
+            
+            cnl_filters["regex"][cnl_entries[z].getAttribute("id")] = message_template;
+            cnl_filters["normal"][cnl_entries[z].getAttribute("id")] = message_text2; 
         }
     }
     
@@ -1024,6 +1038,8 @@ var communication_distance_limit, strength_distance_limit, sensing_distance_limi
 var heaviest_objects;
 var previous_scenario;
 
+const alls = ["All (local)","All (global)"];
+
 function reset(config_options){
 
 
@@ -1031,17 +1047,22 @@ function reset(config_options){
     tutorial_mode = false;
     completed_survey = false;
     
-    document.getElementById("agent_name").innerText = "Agent " + client_id;
+    
+    var sensor_parameters;
     for(ob_idx = 0; ob_idx < map_config['all_robots'].length; ob_idx++){ //Remove self
         if(map_config['all_robots'][ob_idx][0] === client_id){
+            sensor_parameters = map_config["sensor_parameters"][ob_idx];
             map_config['all_robots'].splice(ob_idx,1);
             break;
         }
     }
     
+    document.getElementById("agent_name").innerText = "Agent " + client_id;
+    document.getElementById("agent_sensor").innerText = "P.B: " + String((sensor_parameters[1]*100).toFixed(2)) + "% P.D: " + String((sensor_parameters[2]*100).toFixed(2)) + "%";
+    
     heaviest_objects = [];
     
-    communication_distance_limit = removeTags(String(map_config['communication_distance_limit']));
+    //communication_distance_limit = removeTags(String(map_config['communication_distance_limit']));
     
     strength_distance_limit = removeTags(String(map_config['strength_distance_limit']));
     
@@ -1137,28 +1158,33 @@ function reset(config_options){
     chat.innerHTML = '';
     
     
-    var div_element = document.createElement("div");
-    div_element.setAttribute("class", "wrapper");
-    var input_element = document.createElement("input");
-    input_element.setAttribute("type", "checkbox");
-    input_element.setAttribute("id", "All");
-    input_element.setAttribute("name", "neighbors");
-    input_element.setAttribute("value", "All");
-    input_element.setAttribute("checked", true);
-    input_element.addEventListener('click', function (e) {
-            selectOnlyThis(e,this.id,'neighbors');
-    });
-    var value_order = 0;
-    input_element.setAttribute("value_order", value_order);
-    var label_element = document.createElement("label");
-    label_element.setAttribute("for", "All");
-    label_element.style.color = "black";
-    label_element.appendChild(document.createTextNode("All"));
     
-    
-    div_element.appendChild(input_element);	
-    div_element.appendChild(label_element);
-    neighbor_info_div.appendChild(div_element);
+    for (all_type of alls){
+        var div_element = document.createElement("div");
+        div_element.setAttribute("class", "wrapper");
+        var input_element = document.createElement("input");
+        input_element.setAttribute("type", "checkbox");
+        input_element.setAttribute("id", all_type);
+        input_element.setAttribute("name", "neighbors");
+        input_element.setAttribute("value", all_type);
+        if(all_type == "All (local)"){
+            input_element.setAttribute("checked", true);
+        }
+        input_element.addEventListener('click', function (e) {
+                selectOnlyThis(e,this.id,'neighbors');
+        });
+        var value_order = 0;
+        input_element.setAttribute("value_order", value_order);
+        var label_element = document.createElement("label");
+        label_element.setAttribute("for", all_type);
+        label_element.style.color = "black";
+        label_element.appendChild(document.createTextNode(all_type));
+        
+        
+        div_element.appendChild(input_element);	
+        div_element.appendChild(label_element);
+        neighbor_info_div.appendChild(div_element);
+    }
 
     for(um_idx in map_config['all_robots']){
     
@@ -1570,12 +1596,12 @@ socket.on("watcher", (robot_id_r, config_options, yaml_doc) => {
 });
 
 simulator_timer  = -1;
-
+var human_location = [];
 socket.on("human_output", (location, item_info, neighbors_info, timer, disable) => {
 
 
     simulator_timer = timer;
-
+    human_location = location;
 
     if(disable){
         document.getElementById("command_text").disabled = true;
@@ -2212,9 +2238,9 @@ function findCheckedRadio(radio_elements,final_string,pattern){
                 }
 				
 			} else if(pattern == 'agent'){
-				if(i > 0){
+				if(i > alls.length-1){
 				    
-				    var second_string = document.getElementById(neighbors_list_store[i-1][0] + '_entry').children[0].rows[1].cells[0].textContent;
+				    var second_string = document.getElementById(neighbors_list_store[i-alls.length][0] + '_entry').children[0].rows[1].cells[0].textContent;
 				    
 				    var remove_distance = second_string.match(/\(Distance: .+\) /)
 				    
@@ -2223,7 +2249,7 @@ function findCheckedRadio(radio_elements,final_string,pattern){
 				        second_string = second_string.replace("time ", "")
 				        second_string = second_string.replace("location ", "")
 				    }
-				    command_string = document.getElementById(neighbors_list_store[i-1][0] + '_entry').children[0].rows[0].cells[0].textContent + " " + second_string;
+				    command_string = document.getElementById(neighbors_list_store[i-alls.length][0] + '_entry').children[0].rows[0].cells[0].textContent + " " + second_string;
 					
 					match_results = final_string.matchAll(/\[(\w+)\]/g);
 					
@@ -2479,32 +2505,51 @@ function sendCommand() {
 	    }
 	    
 	    var agents = document.getElementsByName('neighbors');
-	    var command_string;
+	    var command_string = [];
 	    for(i = 0; i < agents.length; i++) {
 		    if(agents[i].checked){
-			    command_string = agents[i].value;
-			    break;
+			    command_string.push(agents[i].value);
+			    //break;
 		    }
 	    }
 	    
-	    neighbors_dict = {}
-	    
+	    var neighbors_dict = {};
+	    var message_array = {"whole": final_string};
 	    
 	    for(nl_idx in neighbors_list_store){
-		        if(neighbors_list_store[nl_idx][5]){ //If it's closeby
-		            var human_or_robot = 0;
-		            if(! neighbors_list_store[nl_idx][1]){
-		                human_or_robot = "human";
-		            } else{
-		                human_or_robot = "ai";
-		            }
-		            neighbors_dict[neighbors_list_store[nl_idx][0]] = human_or_robot;
-		        }
-		    }
+	        
+	        var x = Math.pow(neighbors_list_store[nl_idx][2] - human_location[0],2);
+            var y = Math.pow(neighbors_list_store[nl_idx][2] - human_location[2],2);
+            
+            var distance = Math.sqrt(x+y);
+            
+            var communication_distance = map_config['communication_distance_limit'];
+            
+            /*
+            if(team_strategy["communication_range"][neighbors_list_store[nl_idx][0]]){
+                communication_distance = team_strategy["communication_range"][neighbors_list_store[nl_idx][0]];
+            }
+            */
+            
+	        if(distance < communication_distance){//(neighbors_list_store[nl_idx][5]){ //If it's closeby
+	            
+	            message_array[neighbors_list_store[nl_idx][0]] = final_string;
+	        
+	            var human_or_robot = 0;
+	            if(! neighbors_list_store[nl_idx][1]){
+	                human_or_robot = "human";
+	            } else{
+	                human_or_robot = "ai";
+	            }
+	            neighbors_dict[neighbors_list_store[nl_idx][0]] = human_or_robot;
+	        }
+	    }
 	    
-	    /*
-	    if(command_string === "All"){
+	    
+	    if(command_string.includes("All (global)")){
 		    for(nl_idx in neighbors_list_store){
+		        message_array[neighbors_list_store[nl_idx][0]] = final_string;
+		        /*
 		        if(neighbors_list_store[nl_idx][5]){ //If it's closeby
 		            var human_or_robot = 0;
 		            if(! neighbors_list_store[nl_idx][1]){
@@ -2514,13 +2559,18 @@ function sendCommand() {
 		            }
 		            neighbors_dict[neighbors_list_store[nl_idx][0]] = human_or_robot;
 		        }
+		        */
 		    }
+	    } else if(command_string.includes("All (local)")){
+	        ;
 	    } else{
 	    
-	        var robot_id = command_string.split(" ")[0];
+	        //var robot_id = command_string.split(" ");
 
 	        
-	        for(nl_idx in neighbors_list_store){
+	        for(agent of command_string){
+	            message_array[agent] = final_string;
+	            /*
 	            if(neighbors_list_store[nl_idx][0] === robot_id && neighbors_list_store[nl_idx][5]){
 	                	    
             	    if(! neighbors_list_store[nl_idx][1]){
@@ -2531,17 +2581,19 @@ function sendCommand() {
 	                
 	                break;
 	            }
+	            */
+	            
 	        }
 	        
 	        
 
 	        
-	        neighbors_dict[robot_id] = human_or_robot;
+	        //neighbors_dict[robot_id] = human_or_robot;
 	    }
-	    */
 	    
 	    
-	    socket.emit("message", final_string, simulator_timer, neighbors_dict);
+	    
+	    socket.emit("message", message_array, simulator_timer, neighbors_dict);
 	}
 }
 
@@ -2559,6 +2611,7 @@ socket.on("message", (message, timestamp, id) => {
 	
 	var yes, no;
 	
+	/*
     for (const idreg in message_patterns_regex["regex"]) {
         var mregex = new RegExp(message_patterns_regex["regex"][idreg]);
         let mregex_match = mregex.exec(message);
@@ -2692,6 +2745,35 @@ socket.on("message", (message, timestamp, id) => {
             }
         }
     }
+    */
+    
+    var agent_command = document.getElementById('agent_command');
+    for (const idreg in cnl_filters["regex"]) {
+        var mregex = new RegExp(cnl_filters["regex"][idreg]);
+        let mregex_match = mregex.exec(message);
+        if(mregex_match){
+            switch(idreg){
+                case 'order_cancelled':
+                    if(mregex_match[1] == client_id){
+                        agent_command.textContent = "";
+                    }
+                
+                    break;
+                case 'order_collect_object_team':
+                    if(mregex_match[1] == client_id || mregex_match[2].includes(client_id)){
+                        agent_command.textContent = "Current command: " + mregex_match[0];
+                    }
+                
+                    break;
+                default:
+                    if(mregex_match[1] == client_id){
+                        agent_command.textContent = "Current command: " + mregex_match[0];
+                    }
+                
+            }
+        }
+    }
+        
 
     newMessage(message, id, yes, no);
 

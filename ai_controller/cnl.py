@@ -584,6 +584,10 @@ class MessagePattern:
     def order_sense_room_empty(room):
         return "Room " + str(room) + " is empty. "
     
+    @staticmethod
+    def order_sense_room_empty_alt():
+        return "Room is empty. "
+    
     @staticmethod    
     def order_sense_room_empty_regex():
         return "Room (\d+) is empty"   

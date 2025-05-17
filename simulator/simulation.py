@@ -1309,9 +1309,56 @@ class Simulation(Controller):
                                          "position": {"x": xn, "y": 0.01, "z": zn},
                                          "scale": 0.2,
                                          "shape":"circle"})
+                                         
+            
+            limits = [[4,y] for y in np.arange(6,14,0.5)] + [[x,6] for x in np.arange(0,3,0.5)] + [[6,y] for y in np.arange(14,16,0.5)] + [[x,14] for x in np.arange(4,6,0.5)] + [[6,y] for y in np.arange(0,3,0.5)] + [[14,y] for y in np.arange(3,6,0.5)] + [[14,y] for y in np.arange(10,14,0.5)] + [[17,y] for y in np.arange(6,10,0.5)] + [[x,6] for x in np.arange(14,17,0.5)]
+            
+            for loc in limits:
+                real_limits = [loc[0]-self.scenario_size/2+cell_size*0.5,loc[1]-self.scenario_size/2+cell_size*0.5]
+                    
+                commands.append({"$type": "add_position_marker",
+                                         "position": {"x": real_limits[0], "y": 0.01, "z": real_limits[1]},
+                                         "scale": 0.2,
+                                         "shape":"circle",
+                                         "color": {"r": 0, "g": 0, "b": 0, "a": 1}})  
+            
+            
+            signs = [["images/zero.png",{"x": 14, "y": 2, "z": 12},{"x": 0, "y": 90, "z": 0}],
+                                ["images/one.png",{"x": 5, "y": 2, "z": 15},{"x": 0, "y": 315, "z": 0}],
+                                ["images/two.png",{"x": 1, "y": 2, "z": 10},{"x": 0, "y": 270, "z": 0}],
+                                ["images/three.png",{"x": 2, "y": 2, "z": 2},{"x": 0, "y": 225, "z": 0}],
+                                ["images/four.png",{"x": 10, "y": 2, "z": 1},{"x": 0, "y": 180, "z": 0}],
+                                ["images/five.png",{"x": 16, "y": 2, "z": 4},{"x": 0, "y": 135, "z": 0}],
+                                ["images/six.png",{"x": 9, "y": 2, "z": 9.8},{"x": 0, "y": 0, "z": 0}],
+                                ["images/seven.png",{"x": 17, "y": 2, "z": 8},{"x": 0, "y": 90, "z": 0}],
+                                ["images/main.png",{"x": 10, "y": 2, "z": 18},{"x": 0, "y": 0, "z": 0}]]
+                                
+            
+            for s in signs:
+            
+                s[1]["x"] = s[1]["x"]-self.scenario_size/2+cell_size*0.5
+                s[1]["z"] = s[1]["z"]-self.scenario_size/2+cell_size*0.5
+            
+                input_image_path = s[0]
+                # Open the image and encode it to base 64.
+                with open(input_image_path, "rb") as f:
+                    image = b64encode(f.read()).decode("utf-8")
+                # Get the image size.
+                size = Image.open(input_image_path).size
+                quad_id = self.get_unique_id()
+                commands.extend([{"$type": "create_textured_quad",
+                    "position": s[1],
+                    "size": {"x": 2, "y": 1},
+                    "euler_angles": s[2],
+                    "id": quad_id},
+                    {"$type": "set_textured_quad",
+                    "id": quad_id,
+                    "dimensions": {"x": size[0], "y": size[1]},
+                    "image": image}])
+            
             self.wall_edges = [[wall['x']+wall_width-self.scenario_size/2,wall['y']+wall_width-self.scenario_size/2] for wall in [wall0_1[0],wall1_1[0],wall1_2[0],wall1_2[-1],wall2_1[-1],wall2_2[-1], wall3_1[-1],wall3_2[-1], wall4_1[-1]]]
             
-            
+            '''
             room_centers = [[r[0]+wall_width-self.scenario_size/2,r[1]+wall_width-self.scenario_size/2] for r in [[16,12],[4,16],[3,3],[10,3],[15,4]]]
             room_angles = [90,45,90,45,45]
             
@@ -1333,7 +1380,7 @@ class Simulation(Controller):
                                      "shape":"sphere",
                                      "color": {"r": 0, "g": 0, "b": 1, "a": 1}})    
                             
-           
+           '''
                   
         commands.append({"$type": "send_framerate", "frequency": "always"})                             
                                      
@@ -1859,14 +1906,15 @@ class Simulation(Controller):
                 self.rooms = {}
                 self.rooms_limits = {}
 
-                self.rooms[0] = [[x,y] for x in range(17,19) for y in range(7,10)]
-                self.rooms[1] = [[x,y] for x in range(15,19) for y in range(11,19)]
-                self.rooms[2] = [[x,y] for x in range(1,6) for y in range(15,19)]
+                
+                self.rooms[0] = [[x,y] for x in range(15,19) for y in range(11,19)]
+                self.rooms[1] = [[x,y] for x in range(1,6) for y in range(15,19)]
+                self.rooms[2] = [[x,y] for x in range(1,5) for y in range(7,14)]
                 self.rooms[3] = [[x,y] for x in range(1,6) for y in range(1,6)]
                 self.rooms[4] = [[x,y] for x in range(7,14) for y in range(1,6)]
                 self.rooms[5] = [[x,y] for x in range(15,19) for y in range(1,6)]
-                self.rooms[6] = [[x,y] for x in range(1,5) for y in range(7,14)]
-                self.rooms[7] = [[x,y] for x in range(5,17) for y in range(7,10)]
+                self.rooms[6] = [[x,y] for x in range(5,17) for y in range(7,10)]
+                self.rooms[7] = [[x,y] for x in range(17,19) for y in range(7,10)]
                 
                 map_variations = [[[x,6] for x in range(1,3)],[[x,6] for x in range(15,17)]]
                 
@@ -1874,7 +1922,7 @@ class Simulation(Controller):
                     self.rooms_limits[r_key] = [[loc[0]-self.scenario_size/2-cell_size*0.5,loc[1]-self.scenario_size/2-cell_size*0.5] if loc_idx < len(self.rooms[r_key])-1 else [loc[0]-self.scenario_size/2+cell_size*1.5,loc[1]-self.scenario_size/2+cell_size*1.5] for loc_idx,loc in enumerate(self.rooms[r_key])]
                     self.rooms[r_key] = [[loc[0]-self.scenario_size/2+cell_size*0.5,loc[1]-self.scenario_size/2+cell_size*0.5] for loc in self.rooms[r_key]]
                 
-                room_capacity = {0:3,1:10,2:5,3:5,4:5,5:7,6:0,7:0}
+                room_capacity = {0:10,1:5,2:0,3:5,4:7,5:5,6:0,7:3}
                 actual_room_capacity = {r_key:0 for r_key in self.rooms.keys()}
                 
                 #possible_ranges = [np.arange(max_coord-3,max_coord+0.5,0.5),np.arange(max_coord-3,max_coord+0.5,0.5)]
@@ -3336,6 +3384,8 @@ class Simulation(Controller):
                                         messages.append(self.info_message_ui(all_magnebots, robot_ids[sort_indices[sidx]], "Penalty! Benign object disposed!", "red"))
                     
                         if self.danger_level[object_id] == 2 and self.object_names_translate[object_id] not in all_magnebots[all_idx].stats.dangerous_objects_in_goal:
+                        
+                            
                             all_magnebots[all_idx].stats.dangerous_objects_in_goal.append(self.object_names_translate[object_id])
                             
                             if all_magnebots[all_idx].ui_elements:
@@ -3581,6 +3631,7 @@ class Simulation(Controller):
         goal_counter = 0
         sim_elapsed_time = 0
         disabled_robots = []
+        dropped_objects = []
         
         
         keys_time_unheld = [0]*len(self.user_magnebots_ids)
@@ -4190,11 +4241,15 @@ class Simulation(Controller):
                                 
                                     if sidx < len(sort_indices):
                                         all_magnebots[robot_ids[sort_indices[sidx]]].stats.dropped_outside_goal.append(self.object_names_translate[grasped_object])
+                                        robot_id = self.robot_names_translate[str(all_magnebots[robot_ids[sort_indices[sidx]]].robot_id)]
+                                        dropped_objects.append((robot_id,self.object_names_translate[grasped_object]))
                                         
                                         if all_magnebots[robot_ids[sort_indices[sidx]]].ui_elements: 
                                             messages.append(self.info_message_ui(all_magnebots, robot_ids[sort_indices[sidx]], "Penalty! Object accidentaly dropped!", "red"))
                             
                                 all_magnebots[idx].stats.dropped_outside_goal.append(self.object_names_translate[grasped_object])
+                                robot_id = self.robot_names_translate[str(all_magnebots[all_idx].robot_id)]
+                                dropped_objects.append((robot_id,self.object_names_translate[grasped_object]))
                                 
                                 if all_magnebots[idx].ui_elements:
                                     messages.append(self.info_message_ui(all_magnebots, idx, "Penalty! Object accidentaly dropped!", "red"))
@@ -4612,7 +4667,7 @@ class Simulation(Controller):
                             
                 
                 if not self.local and not all_magnebots[idx].last_output:
-                    self.sio.emit('human_output', (all_idx, all_magnebots[idx].dynamic.transform.position.tolist(), item_info, all_magnebots[all_idx].company, self.timer, all_magnebots[idx].disabled))
+                    self.sio.emit('human_output', (all_idx, all_magnebots[idx].dynamic.transform.position.tolist(), item_info, all_magnebots[all_idx].company, self.timer, all_magnebots[idx].disabled,dropped_objects))
                     if all_magnebots[idx].disabled:
                         all_magnebots[idx].last_output = True
                     
@@ -4677,13 +4732,13 @@ class Simulation(Controller):
                     if not self.local and not all_magnebots[all_idx].last_output:
                         #if any(extra_status):
                         #    print("Sending extra status")
-                        self.sio.emit('ai_output', (all_idx, json_numpy.dumps(limited_map), reduced_metadata, objects_held, item_info, ai_status, extra_status, all_magnebots[all_idx].strength, self.timer, all_magnebots[all_idx].disabled, [all_magnebots[all_idx].dynamic.transform.position.tolist(), QuaternionUtils.quaternion_to_euler_angles(all_magnebots[all_idx].dynamic.transform.rotation).tolist()]))
+                        self.sio.emit('ai_output', (all_idx, json_numpy.dumps(limited_map), reduced_metadata, objects_held, item_info, ai_status, extra_status, all_magnebots[all_idx].strength, self.timer, all_magnebots[all_idx].disabled, [all_magnebots[all_idx].dynamic.transform.position.tolist(), QuaternionUtils.quaternion_to_euler_angles(all_magnebots[all_idx].dynamic.transform.rotation).tolist()],dropped_objects))
                         if all_magnebots[all_idx].disabled:
                             all_magnebots[all_idx].last_output = True
 
                 idx += 1
             
-            
+            dropped_objects = [] 
             
             #If timer expires end simulation, else keep going
             if self.timer_limit and self.timer_limit-self.timer <= 0:
@@ -4709,7 +4764,8 @@ class Simulation(Controller):
                 self.real_timer = new_time
 
 
- 
+
+            
 
             #Reset world
             if self.reset:
@@ -4742,6 +4798,7 @@ class Simulation(Controller):
                 print("Reset complete")
                 sim_elapsed_time = 0
                 disabled_robots = []
+                dropped_objects = []
    
             elif self.reset_partial:
                 self.partial_reset()

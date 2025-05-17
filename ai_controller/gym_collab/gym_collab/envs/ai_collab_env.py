@@ -72,6 +72,8 @@ class AICollabEnv(gym.Env):
         self.truncated = False
         self.log_name = ""
         
+        self.communication_distance = {}
+        
         if webcam:
             self.cap = cv2.VideoCapture(video_index) 
         else:
@@ -117,10 +119,11 @@ class AICollabEnv(gym.Env):
 
         # Receiving simulator's robot id
         @self.sio.event
-        def watcher_ai(robot_id_r, occupancy_map_config, log_name):
+        def watcher_ai(robot_id_r, occupancy_map_config, log_name, team_strategy):
 
             print("Received id", robot_id_r)
             self.robot_id = robot_id_r
+            self.communication_distance = team_strategy["communication_range"]
 
             if self.use_occupancy:  # When using only occupancy maps, run the main processing function here
                 self.map_config = occupancy_map_config
@@ -136,6 +139,7 @@ class AICollabEnv(gym.Env):
                 #asyncio.run(self.main_ai())
                 self.gym_setup()
                 self.setup_ready = True
+                
                 
             self.delete = False
             
@@ -244,7 +248,7 @@ class AICollabEnv(gym.Env):
 
         @self.sio.event
         def ai_output(object_type_coords_map, object_attributes_id, objects_held,
-                     sensing_results, ai_status, extra_status, strength, timer, disable, location):
+                     sensing_results, ai_status, extra_status, strength, timer, disable, location, dropped_objects):
 
 
 
@@ -282,7 +286,8 @@ class AICollabEnv(gym.Env):
                 strength,
                 timer,
                 frame,
-                location)
+                location,
+                dropped_objects)
                 
                 
             self.truncated = disable
@@ -488,7 +493,7 @@ class AICollabEnv(gym.Env):
                 "item": spaces.Discrete(self.map_config['num_objects']),
                 # Allow for 0
                 "robot": spaces.Discrete(len(self.map_config['all_robots']) + 3, start=-2),
-                "message" : spaces.Text(min_length=0,max_length=100),
+                "message" : spaces.Sequence(spaces.Text(min_length=0,max_length=100)),
                 "num_cells_move": spaces.Discrete(map_size),
             }
         )
@@ -596,7 +601,7 @@ class AICollabEnv(gym.Env):
                        "num_items": len(self.object_info),
                        "item_output": sensing_output["item_output"],
                        "neighbors_output": sensing_output["neighbors_output"],
-                       "num_messages": len(self.messages),
+                       "num_messages": len(sensing_output["messages"]),
                        "strength": sensing_output["strength"]}  # Occupancy map
 
         info = {}
@@ -609,6 +614,7 @@ class AICollabEnv(gym.Env):
         info['frame'] = world_state[8]
         info["status"] = world_state[4]
         info["real_location"] = world_state[9]
+        info["dropped_objects"] = world_state[10]
         
         #print(self.object_info)
         
@@ -969,6 +975,39 @@ class AICollabEnv(gym.Env):
     
         self.object_info = object_info
         self.object_key_to_index = object_to_key
+        
+        
+    def get_neighboring_agents(self, receiver_type, ego_location):
+
+        neighbors_dict = {}
+        for r_idx,robot_data in enumerate(self.neighbors_info):
+                    
+            communication_distance = self.map_config['communication_distance_limit']
+            
+            '''
+            if self.communication_distance:
+                if self.communication_distance[robot_data[0]] > self.communication_distance[self.robot_id]:
+                    communication_distance = self.communication_distance[robot_data[0]]
+                else:
+                    communication_distance = self.communication_distance[self.robot_id]
+            '''
+            
+            if robot_data[4] >= 0 and not (robot_data[2] == -1 and robot_data[3] == -1) and np.linalg.norm((np.array([robot_data[2],robot_data[3]]) - np.array(ego_location))*self.map_config['cell_size']) < communication_distance:
+                if not robot_data[1]:
+                    robot_type = "human"
+                else:
+                    robot_type = "ai"
+                    
+                if not receiver_type:
+                    neighbors_dict[robot_data[0]] = robot_type
+                elif receiver_type == -1 and robot_type == "ai":
+                    neighbors_dict[robot_data[0]] = robot_type
+                elif receiver_type == -2 and robot_type == "human":
+                    neighbors_dict[robot_data[0]] = robot_type
+
+
+            
+        return neighbors_dict
 
     # Only works for occupancy maps not centered in magnebot
 
@@ -1244,31 +1283,32 @@ class AICollabEnv(gym.Env):
             
                 neighbors_dict = {}
                 
+                
                 if complete_action["robot"] > 0:
 
                     robot_data = self.neighbors_info[complete_action["robot"] - 1]
                     
-                    if robot_data[4] >= 0 and not (robot_data[2] == -1 and robot_data[3] == -1) and np.linalg.norm((np.array([robot_data[2],robot_data[3]]) - np.array(ego_location))*self.map_config['cell_size']) < self.map_config['communication_distance_limit']:
+                    communication_distance = self.map_config['communication_distance_limit']
+                    #if self.communication_distance:
+                    #    communication_distance = self.communication_distance[robot_data[0]]
+
+                    
+                    if robot_data[4] >= 0 and not (robot_data[2] == -1 and robot_data[3] == -1) and np.linalg.norm((np.array([robot_data[2],robot_data[3]]) - np.array(ego_location))*self.map_config['cell_size']) < communication_distance:
                         neighbors_dict = {
                             robot_data[0]: "human" if not robot_data[1] else "ai"}
                 else:
                     #print(complete_action["message"], self.neighbors_info, occupancy_map, ego_location)
-                    for robot_data in self.neighbors_info:
-                        if robot_data[4] >= 0 and not (robot_data[2] == -1 and robot_data[3] == -1) and np.linalg.norm((np.array([robot_data[2],robot_data[3]]) - np.array(ego_location))*self.map_config['cell_size']) < self.map_config['communication_distance_limit']:
-                            if not robot_data[1]:
-                                robot_type = "human"
-                            else:
-                                robot_type = "ai"
-                                
-                            if not complete_action["robot"]:
-                                neighbors_dict[robot_data[0]] = robot_type
-                            elif complete_action["robot"] == -1 and robot_type == "ai":
-                                neighbors_dict[robot_data[0]] = robot_type
-                            elif complete_action["robot"] == -2 and robot_type == "human":
-                                neighbors_dict[robot_data[0]] = robot_type
-
+                    
+                    neighbors_dict = self.get_neighboring_agents(complete_action["robot"], ego_location)
+                    
+                    message_dict = {}
+                    for r_idx,robot_data in enumerate(self.neighbors_info):
+                        message_dict[robot_data[0]] = complete_action["message"][r_idx]
+                    message_dict["whole"] = complete_action["message"][-1]
+                    
+                        
                 self.sio.emit(
-                    "message", (complete_action["message"], timer, neighbors_dict))
+                    "message", (message_dict, timer, neighbors_dict))
 
                 terminated[1] = True
 
@@ -1666,8 +1706,20 @@ class AICollabEnv(gym.Env):
             free_coords = np.concatenate((free_coords1, free_coords2, free_coords3)).squeeze()
         '''
         if str(room) in self.map_config['rooms'].keys():
-            coord1 = self.convert_to_grid_coordinates(list(np.array(self.map_config['rooms'][str(room)][0]) + np.array([self.map_config['cell_size'],self.map_config['cell_size']])))
-            coord2 = self.convert_to_grid_coordinates(list(np.array(self.map_config['rooms'][str(room)][-1]) - np.array([self.map_config['cell_size'],self.map_config['cell_size']])))
+        
+            
+            room1_coord = np.array(self.map_config['rooms'][str(room)][0])
+            room2_coord = np.array(self.map_config['rooms'][str(room)][-1])
+            
+            adjusted_room1_coord = room1_coord + np.array([self.map_config['cell_size'],self.map_config['cell_size']])
+            adjusted_room2_coord = room2_coord - np.array([self.map_config['cell_size'],self.map_config['cell_size']])
+            
+            if adjusted_room1_coord[1] <= adjusted_room2_coord[1] or adjusted_room1_coord[0] <= adjusted_room2_coord[0]:
+                adjusted_room1_coord = room1_coord
+                adjusted_room2_coord = room2_coord
+        
+            coord1 = self.convert_to_grid_coordinates(list(adjusted_room1_coord))
+            coord2 = self.convert_to_grid_coordinates(list(adjusted_room2_coord))
             
             new_array = robo_map[coord1[0]:coord2[0]+1,coord1[1]:coord2[1]+1]
             
@@ -1723,14 +1775,25 @@ class AICollabEnv(gym.Env):
             in_room = False
             rooms = self.map_config['rooms']
             for r in rooms.keys():
-                if (constrained and location[0] >= rooms[r][0][0]+self.map_config['cell_size'] and location[1] >= rooms[r][0][1]+self.map_config['cell_size'] and location[0] <= rooms[r][-1][0]-self.map_config['cell_size'] and location[1] <= rooms[r][-1][1]-self.map_config['cell_size']) or (not constrained and location[0] >= rooms[r][0][0]-self.map_config['cell_size'] and location[1] >= rooms[r][0][1]-self.map_config['cell_size'] and location[0] <= rooms[r][-1][0]+self.map_config['cell_size'] and location[1] <= rooms[r][-1][1]+self.map_config['cell_size']):
+            
+                room1_coord = np.array(rooms[r][0])
+                room2_coord = np.array(rooms[r][-1])
+                
+                adjusted_room1_coord = room1_coord + np.array([self.map_config['cell_size'],self.map_config['cell_size']])
+                adjusted_room2_coord = room2_coord - np.array([self.map_config['cell_size'],self.map_config['cell_size']])
+                
+                if adjusted_room1_coord[1] <= adjusted_room2_coord[1] or adjusted_room1_coord[0] <= adjusted_room2_coord[0]:
+                    adjusted_room1_coord = room1_coord
+                    adjusted_room2_coord = room2_coord
+            
+                if (constrained and location[0] >= adjusted_room1_coord[0] and location[1] >= adjusted_room1_coord[1] and location[0] <= adjusted_room2_coord[0] and location[1] <= adjusted_room2_coord[1]) or (not constrained and location[0] >= rooms[r][0][0]-self.map_config['cell_size'] and location[1] >= rooms[r][0][1]-self.map_config['cell_size'] and location[0] <= rooms[r][-1][0]+self.map_config['cell_size'] and location[1] <= rooms[r][-1][1]+self.map_config['cell_size']):
                     room = "room " + str(r)
                     in_room = True
                     break
                 
             
             if not in_room:
-                if location[0] >= rooms['6'][-1][0] and location[1] >= rooms['1'][0][1] and location[0] <= rooms['1'][-1][0]:
+                if location[0] >= rooms['2'][-1][0] and location[1] >= rooms['0'][0][1] and location[0] <= rooms['0'][-1][0]:
                     room = "main area"
                     
         
