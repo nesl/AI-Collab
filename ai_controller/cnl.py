@@ -550,6 +550,9 @@ class MessagePattern:
     def order_sense(robot_id, object_id, location, convert_to_real_coordinates):
    
         real_location = convert_to_real_coordinates(location)
+        
+        if not real_location:
+            pdb.set_trace()
    
         return str(robot_id) + ", sense object " + str(object_id) + " at location (" + str(real_location[0]) + "," + str(real_location[1]) + "). "
     

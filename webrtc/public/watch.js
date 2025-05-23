@@ -35,7 +35,7 @@ function loadXMLDoc() {
 }
 
 var cnl_filters = {"normal":{},"regex":{}};
-var cnl_filter_names = ["Order sense room","Order collect object","Order collect object team","Order cancelled","Order sense object"];
+var cnl_filter_names = ["Order sense room","Order collect object","Order collect object team","Order cancelled","Order sense object", "Thanks"];
 function set_cnl(){
     const cnl_entries_doc = document.getElementById("cnl");
     const cnl_xml = xmlDoc.getElementsByTagName("cnl")[0];
@@ -46,7 +46,7 @@ function set_cnl(){
     
         cnl_name = cnl_entries[z].getAttribute("name");
         
-        if((only_cnl && cnl_name != "Title") || cnl_name == "Agent to message" || cnl_name == "Object to message" || cnl_name == "Order complete" || cnl_name == "Room empty"){
+        if((only_cnl && cnl_name != "Title") || cnl_name == "Agent to message" || cnl_name == "Object to message" || cnl_name == "Order complete" || cnl_name == "Room empty" || cnl_name == "Thanks"){
         
             if(! cnl_entries[z].getAttribute("hide")){
                 var div_cnl = document.createElement('div');
@@ -330,6 +330,7 @@ socket.on("reset_announcement", () => {
 });
 
 var waiting_text_from_ai = [];
+var last_agent_sent_message = [];
 socket.on("text_processing", (state,client_id) => {
     
     //check here
@@ -358,8 +359,11 @@ socket.on("text_processing", (state,client_id) => {
             }
         }
         
-        if(nearby){
+        if(nearby || last_agent_sent_message.includes(client_id)){ //processing response will not disappear if agent moves before the response comes
             var txt;
+            
+            last_agent_sent_message.splice(last_agent_sent_message.indexOf(client_id), 1);
+            
             if(! waiting_text_from_ai.includes(client_id)){
                 waiting_text_from_ai.push(client_id);
                 txt = waiting_text_from_ai.join(", ") + " processing response...";
@@ -2570,6 +2574,9 @@ function sendCommand() {
 	        
 	        for(agent of command_string){
 	            message_array[agent] = final_string;
+	            if(! last_agent_sent_message.includes(agent)){
+	                last_agent_sent_message.push(agent);
+	            }
 	            /*
 	            if(neighbors_list_store[nl_idx][0] === robot_id && neighbors_list_store[nl_idx][5]){
 	                	    
@@ -2754,6 +2761,7 @@ socket.on("message", (message, timestamp, id) => {
         if(mregex_match){
             switch(idreg){
                 case 'order_cancelled':
+                case 'thanks':
                     if(mregex_match[1] == client_id){
                         agent_command.textContent = "";
                     }
@@ -2761,13 +2769,13 @@ socket.on("message", (message, timestamp, id) => {
                     break;
                 case 'order_collect_object_team':
                     if(mregex_match[1] == client_id || mregex_match[2].includes(client_id)){
-                        agent_command.textContent = "Current command: " + mregex_match[0];
+                        agent_command.textContent = "Current order: " + mregex_match[0];
                     }
                 
                     break;
                 default:
                     if(mregex_match[1] == client_id){
-                        agent_command.textContent = "Current command: " + mregex_match[0];
+                        agent_command.textContent = "Current order: " + mregex_match[0];
                     }
                 
             }
