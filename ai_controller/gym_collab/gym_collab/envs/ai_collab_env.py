@@ -203,7 +203,7 @@ class AICollabEnv(gym.Env):
         self.messages = []
 
         @self.sio.event
-        def message(message, timestamp, source_agent_id):
+        def message(message, timestamp, source_agent_id, robot_state):
 
             """
             # Special case for receiving data update
@@ -223,6 +223,16 @@ class AICollabEnv(gym.Env):
             else:
             """
             
+            self.update_neighbors_info(
+                                        source_agent_id, timestamp, robot_state[0], False, True)
+                                        
+            
+            for carried_object_id in robot_state[1].keys():
+                #print("carried object id", robot_state[1][carried_object_id], carried_object_id)
+                self.update_objects_info(
+                                    carried_object_id, timestamp, {}, robot_state[1][carried_object_id], 0, True)
+            
+            
             #Whenever we get a message saying an object exists, we just make sure that is reflected here
             if re.search(MessagePattern.item_regex_partial(),message):
                 for rematch in re.finditer(MessagePattern.item_regex_partial(),message):
@@ -239,7 +249,7 @@ class AICollabEnv(gym.Env):
                         self.update_objects_info(
                                     object_id, timer, {}, object_location, weight, True)
                     
-            self.messages.append((source_agent_id, message, timestamp))
+            self.messages.append((source_agent_id, message, timestamp, robot_state))
 
             #print("message", message, source_agent_id)
 
@@ -799,7 +809,7 @@ class AICollabEnv(gym.Env):
         '''
         self.goal_coords = [(x,y) for x,x_coord in enumerate(map_coordinates) for y,y_coord in enumerate(map_coordinates) if any(np.linalg.norm(np.array([x_coord,y_coord]) - np.array(goal[1])) <= goal[0] for goal in self.map_config['goal_radius'])]
         
-
+        self.reduced_goal_coords = [(x,y) for x,x_coord in enumerate(map_coordinates) for y,y_coord in enumerate(map_coordinates) if any(np.linalg.norm(np.array([x_coord,y_coord]) - np.array(goal[1])) <= goal[0]-1 for goal in self.map_config['goal_radius'])]
         
         """
         goal_radius = int(self.map_config['goal_radius']/self.map_config['cell_size'])-1 #Square against circle
@@ -1025,6 +1035,7 @@ class AICollabEnv(gym.Env):
         extra_status = observations[5]
         strength = observations[6]
         timer = observations[7]
+        global_location = observations[9]
         terminated = [False, False]
         truncated = [False, False]
         state = internal_state[0]
@@ -1306,9 +1317,21 @@ class AICollabEnv(gym.Env):
                         message_dict[robot_data[0]] = complete_action["message"][r_idx]
                     message_dict["whole"] = complete_action["message"][-1]
                     
+                    
+                objects_held_location = {}
+                
+                
+                for oh in objects_held:
+                    if oh:
+                        ob_idx = self.object_key_to_index[oh]
+                        real_coords = self.convert_to_real_coordinates(self.object_info[ob_idx][3:5])
+                        if real_coords:
+                            objects_held_location[oh] = real_coords
+                
+                robot_state = ([global_location[0][0],global_location[0][2]], objects_held_location)
                         
                 self.sio.emit(
-                    "message", (message_dict, timer, neighbors_dict))
+                    "message", (message_dict, timer, neighbors_dict, robot_state))
 
                 terminated[1] = True
 
@@ -1576,7 +1599,8 @@ class AICollabEnv(gym.Env):
 
                 if ob[5] < timer:  # If data is fresh
                 
-                    self.object_info[ob_idx][1] = int(weight)
+                    if weight > 0:
+                        self.object_info[ob_idx][1] = int(weight)
                     self.object_info[ob_idx][3] = float(position[0])
                     self.object_info[ob_idx][4] = float(position[1])
                     self.object_info[ob_idx][5] = float(timer)

@@ -483,12 +483,12 @@ function sendCommand() {
 	    }
 	    
 	    
-	    socket.emit("message", final_string, 0, neighbors_dict);
+	    socket.emit("message", final_string, 0, neighbors_dict, []);
 	}
 }
 
 
-socket.on("message", (message, timestamp, id) => {
+socket.on("message", (message, timestamp, id, robot_state) => {
 	console.log("Received message");
 	newMessage(message, id);
 

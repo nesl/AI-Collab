@@ -100,8 +100,14 @@ class OptimizedControl:
         self.previous_plan = {}
         self.self_messages = []
         self.new_rooms = {}
+        self.all_rooms = {}
         self.optimization_metrics = []
         self.providing_plan = []
+        self.legacy_plan = {}
+        self.waiting_for_response = False
+        self.time_last_suggestion_interval = 60 #60
+        self.time_last_suggestion = time.time()-self.time_last_suggestion_interval*random.random()
+        
         
         self.profiling = {'sensing':[],'check_item': [], 'moving_straight':[],'moving_turn':[],'moving_180_turn':[], 'previous_action':[], 'current_time': 0, 'previous_ego_location': []}
         
@@ -116,6 +122,7 @@ class OptimizedControl:
         
         
         self.extended_goal_coords = env.goal_coords.copy()
+
         #self.extended_goal_coords.extend([(g[0]+op[0],g[1]+op[1]) for g in env.goal_coords for op in [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,-1],[1,-1],[-1,1]] if [g[0]+op[0],g[1]+op[1]] not in env.goal_coords])
         
         self.ending_locations = [[x,y] for x in range(8,13) for y in range(15,19)] #ending locations
@@ -171,14 +178,35 @@ class OptimizedControl:
         def top_insert(self, message, recipient):
             
             if not (isinstance(recipient,str) and recipient == self.robot_id):
-                self.message.insert(0,message)
-                self.recipient.insert(0,recipient)
+                if isinstance(recipient,list):
+                    new_recipient_list = []
+                    for r in recipient:
+                        if r != self.robot_id:
+                            new_recipient_list.append(r)
+                    
+                    if new_recipient_list:
+                        self.message.insert(0,message)
+                        self.recipient.insert(0,new_recipient_list)
+                else:     
+                    self.message.insert(0,message)
+                    self.recipient.insert(0,recipient)
             
         def insert(self, message, recipient):
         
             if not (isinstance(recipient,str) and recipient == self.robot_id):
-                self.message.append(message)
-                self.recipient.append(recipient)
+                
+                if isinstance(recipient,list):
+                    new_recipient_list = []
+                    for r in recipient:
+                        if r != self.robot_id:
+                            new_recipient_list.append(r)
+                    
+                    if new_recipient_list:
+                        self.message.append(message)
+                        self.recipient.append(new_recipient_list)
+                else:         
+                    self.message.append(message)
+                    self.recipient.append(recipient)
             
         def clear(self):
             self.message = []
@@ -293,6 +321,14 @@ class OptimizedControl:
             elif "go_to_meeting_point" in function_str:
                 function_description = "I'm going to the meeting point. "
                 
+                
+            elif "ask_for_help_to_carry" in function_str:
+                arguments = function_str.split(",")
+                argument = eval(arguments[0][arguments[0].find("(") + 1:])
+                
+                function_description = "I'm going to ask for help to carry object " + str(argument) + ". "
+                
+                
             elif "ask_for_help" in function_str:
                 arguments = function_str.split(",")
                 argument = eval(arguments[0][arguments[0].find("(") + 1:])
@@ -300,12 +336,6 @@ class OptimizedControl:
                 
                 function_description = "I'm going to ask agent " + str(argument2) + " for help to carry object " + str(argument) + ". "
                 
-            elif "ask_for_help_to_carry" in function_str:
-                arguments = function_str.split(",")
-                argument = eval(arguments[0][arguments[0].find("(") + 1:])
-                
-                function_description = "I'm going to ask for help to carry object " + str(argument) + ". "
-             
             elif "ask_for_sensing" in function_str:   
 
                 arguments = function_str.split(",")
@@ -320,7 +350,7 @@ class OptimizedControl:
         
         except:
             print("Error description")
-            #pdb.set_trace()
+            pdb.set_trace()
             
             
         return function_description
@@ -467,7 +497,11 @@ class OptimizedControl:
                         self.leader_id = rm[0]
 
 
-            if re.search(MessagePattern.carry_help_regex(),rm[1]):
+            if re.search(MessagePattern.carry_help_regex(),rm[1]) or re.search(MessagePattern.carry_help_participant_affirm_regex(),rm[1]):
+            
+                if re.search(MessagePattern.carry_help_participant_affirm_regex(),rm[1]):
+                    rs = re.search(MessagePattern.carry_help_participant_affirm_regex(),rm[1])
+                    rm[1] = rm[1].replace(rs.group(), MessagePattern.carry_help(rs.group(1),1))
             
                 rematch = re.search(MessagePattern.carry_help_regex(),rm[1])
                 
@@ -476,9 +510,10 @@ class OptimizedControl:
                 #Calculate utility. When to collaborate? -> When to accept or offer collaboration? -> Collaboration score of others and expectation of such collaboration score
                 #Finish other strategies
                 
-        
-                              
-                self.other_agents[agent_idx].observations.append("Asked me to help carry object " + rematch.group(2))
+                try:
+                    self.other_agents[agent_idx].observations.append("Asked me to help carry object " + rematch.group(2))
+                except:
+                    pdb.set_trace()
                 
                 #if self.team_structure["role"][self.env.robot_id] != "sensing": 
                 self.action_index,_ = self.movement.message_processing_carry_help(rm, robotState, self.action_index, self.message_text)
@@ -706,20 +741,27 @@ class OptimizedControl:
                 else:
                     self.other_agents[agent_idx].observations.append("Waited for " + rematch.group(1) + " to pass")
                 
-            if MessagePattern.move_request(self.env.robot_id) in rm[1]:
+                
+            if re.search(MessagePattern.move_request_regex(),rm[1]) or re.search(MessagePattern.move_request_alt_regex(),rm[1]):
                 template_match = True
                 
+                receivers = []
+                for rematch in re.finditer(MessagePattern.move_request_regex(),rm[1]):
+                    receivers.append(rematch.group(1))
                 
-                self.action_index,_ = self.movement.message_processing_move_request(rm, robotState, info, self.action_index, self.message_text, self.other_agents, self.helping_type == self.HelpType.sensing)
-                
-            if re.search(MessagePattern.move_request_regex(),rm[1]):
-                template_match = True
-                rematch = re.search(MessagePattern.move_request_regex(),rm[1])
-                
-                if rematch.group(1) == str(self.env.robot_id):
+                for rematch in re.finditer(MessagePattern.move_request_alt_regex(),rm[1]):
+                    receivers.extend(eval(rematch.group(1)))
+                    
+                    
+                if str(self.env.robot_id) in receivers:
                     self.other_agents[agent_idx].observations.append("Asked me to move")
+                    self.action_index,_ = self.movement.message_processing_move_request(rm, robotState, info, self.action_index, self.message_text, self.other_agents, self.helping_type == self.HelpType.sensing)
                 else:
                     self.other_agents[agent_idx].observations.append("Asked " + rematch.group(1) + " to move")
+                
+
+                
+                
                     
             if re.search(MessagePattern.sensing_help_regex(),rm[1]): #"What do you know about object " in rm[1]:
                 rematch = re.search(MessagePattern.sensing_help_regex(),rm[1])
@@ -870,7 +912,7 @@ class OptimizedControl:
                     if rematch.group(1) == str(self.message_info[1]):
                         self.message_info[0] = True
         
-            if re.search(MessagePattern.order_collect_regex(),rm[1]):
+            if robotState.get("agents", "type", info['robot_key_to_index'][rm[0]]) and re.search(MessagePattern.order_collect_regex(),rm[1]):
             
                 template_match = True
             
@@ -924,7 +966,7 @@ class OptimizedControl:
                             else:
                                  self.message_text.insert(MessagePattern.order_not_obey(rm[0]),rm[0])
                                 
-            if re.search(MessagePattern.order_sense_regex(),rm[1]):
+            if robotState.get("agents", "type", info['robot_key_to_index'][rm[0]]) and re.search(MessagePattern.order_sense_regex(),rm[1]):
             
                 template_match = True
             
@@ -961,7 +1003,7 @@ class OptimizedControl:
                             else:
                                  self.message_text.insert(MessagePattern.order_not_obey(rm[0]),rm[0])
             
-            if re.search(MessagePattern.order_sense_room_regex(),rm[1]):
+            if robotState.get("agents", "type", info['robot_key_to_index'][rm[0]]) and re.search(MessagePattern.order_sense_room_regex(),rm[1]):
             
                 template_match = True
             
@@ -1075,7 +1117,7 @@ class OptimizedControl:
                             else:
                                  self.message_text.insert(MessagePattern.order_not_obey(rm[0]),rm[0])
                         
-            if re.search(MessagePattern.order_collect_group_regex(),rm[1]):
+            if robotState.get("agents", "type", info['robot_key_to_index'][rm[0]]) and re.search(MessagePattern.order_collect_group_regex(),rm[1]):
             
                 template_match = True
                 
@@ -1132,6 +1174,8 @@ class OptimizedControl:
                                         self.action_index = self.movement.State.follow
                                         
                                         self.order_status = self.OrderStatus.ongoing
+                                        
+                                        print("TEAMMATE HERE", self.movement.help_status_info)
                                     
                                     self.leader_id = rm[0]
                                     self.message_text.insert(MessagePattern.order_response(rm[0], "collect"),rm[0])
@@ -1233,6 +1277,7 @@ class OptimizedControl:
                                        
                     if (self.team_structure["hierarchy"][rm[0]] == "obey" or (self.team_structure["hierarchy"][self.env.robot_id] == "order" and self.env.robot_id == rm[0])): 
                         
+                        room_num = ""
                         if rematch:
                             room_num = str(rematch.group(1))
                         elif self.plan and rm[0] in self.plan and "ROOM" in self.plan[rm[0]][0]:
@@ -1289,6 +1334,8 @@ class OptimizedControl:
                                             success = sum(results)/len(results)
                                         except:
                                             pdb.set_trace()
+                                    elif room not in self.new_rooms.keys(): #room is empty
+                                        success = 1
                                     else:
                                         danger_statuses = robotState.get_object_in_room("danger_status", ["room " + room,rm[0]])
                                         success = 0
@@ -1499,12 +1546,21 @@ class OptimizedControl:
                 self.other_agents[robot_idx].finished = False
 
 
-            if re.search(MessagePattern.come_closer_regex(),rm[1]):
+            if re.search(MessagePattern.come_closer_regex(),rm[1]) or re.search(MessagePattern.come_closer_alt_regex(),rm[1]):
                 template_match = True
             
-                rematch = re.search(MessagePattern.come_closer_regex(),rm[1])
+                receivers = []
+                for rematch in re.finditer(MessagePattern.come_closer_regex(),rm[1]):
+                    receivers.append(rematch.group(1))
                 
-                if rematch.group(1) == str(self.env.robot_id):
+                for rematch in re.finditer(MessagePattern.come_closer_alt_regex(),rm[1]):
+                    receivers.extend(eval(rematch.group(1)))
+                    
+                #rematch = re.search(MessagePattern.come_closer_regex(),rm[1])
+                
+                    
+                
+                if str(self.env.robot_id) in receivers:
                     if self.action_index == self.movement.State.wait_random:
                         self.action_index = self.movement.last_action_index
                         self.pending_location = []
@@ -1513,6 +1569,33 @@ class OptimizedControl:
             if re.search(MessagePattern.sensing_ask_help_incorrect_regex(),rm[1]):
                 template_match = True    
                 
+            if re.search(MessagePattern.ask_for_object_regex(),rm[1]):
+                template_match = True 
+            
+                for rematch in re.finditer(MessagePattern.ask_for_object_regex(),rm[1]):
+                    
+                    if rematch.group(1) in info['object_key_to_index'].keys():
+                        object_idx = info['object_key_to_index'][rematch.group(1)]
+                        object_location = robotState.get("objects", "last_seen_location", object_idx)
+                        if not (object_location[0] == -1 and object_location[1] == -1):
+                            self.message_text.insert(MessagePattern.item(robotState,object_idx,rematch.group(1), info, self.env.robot_id, self.env.convert_to_real_coordinates),rm[0])
+                    else:
+                        pdb.set_trace()
+                        
+            if re.search(MessagePattern.updates_regex(),rm[1]):
+                template_match = True 
+            
+                for rematch in re.finditer(MessagePattern.updates_regex(),rm[1]):
+                    
+                    if rematch.group(1) == self.env.robot_id:
+                        self.message_text.insert(MessagePattern.report_progress(),rm[0])
+            
+            if robotState.get("agents", "type", info['robot_key_to_index'][rm[0]]) and MessagePattern.plan_evaluation_bad() in rm[1]:
+            
+                template_match = True
+                
+                if "hierarchy" in self.team_structure and self.team_structure["hierarchy"][self.env.robot_id] == "obey":
+                    self.time_last_suggestion = time.time()
             
             #template_match = True #CNL only
             
@@ -1523,7 +1606,7 @@ class OptimizedControl:
                 continue
             
             #print(not template_match, not robotState.get("agents", "type", info['robot_key_to_index'][rm[0]]), rm[1])
-            if "hierarchy" in self.team_structure and self.team_structure["hierarchy"][self.env.robot_id] == "order" and not template_match and not robotState.get("agents", "type", info['robot_key_to_index'][rm[0]]): #Human sent a message, we need to translate it. We put this condition at the end so that humans can also send messages that conform to the templates
+            if not template_match and not robotState.get("agents", "type", info['robot_key_to_index'][rm[0]]): #Human sent a message, we need to translate it. We put this condition at the end so that humans can also send messages that conform to the templates
             
                 if 'RESET' in rm[1]:
                     self.message_history = []
@@ -1543,11 +1626,14 @@ class OptimizedControl:
                         self.human_to_ai_text.summarize_messages(self.message_history,robotState,info)
                         self.message_history = []
                 
-                if "hierarchy" in self.team_structure and self.team_structure["hierarchy"][self.env.robot_id] == "order":
+                if "hierarchy" in self.team_structure and (self.team_structure["hierarchy"][self.env.robot_id] == "order" or self.team_structure["hierarchy"][self.env.robot_id] == "obey"):
                     strategy_query = True
                 else:
                     strategy_query = False
 
+                if self.waiting_for_response:
+                    pass
+                    
                 translated_message,message_to_user,functions = self.human_to_ai_text.convert_to_ai(rm[0], rm[1], info, robotState, list(self.message_history)[-20:], True, asking_for_help, strategy_query, self.plan)
                 '''
                 try:
@@ -1583,6 +1669,7 @@ class OptimizedControl:
                             
                         #cancel eveything, make sure to drop all objects maybe?
                         print("GOT FUNCTIONS",functions)
+                        #pdb.set_trace()
                         
                         """
                         if not ("hierarchy" in self.team_structure and self.team_structure["hierarchy"][self.env.robot_id] == "obey"):
@@ -1622,20 +1709,22 @@ class OptimizedControl:
                             self.functions_executed = True
                         """
                         
-                        if "hierarchy" in self.team_structure and self.team_structure["hierarchy"][self.env.robot_id] == "order":
+                        skip_states = []
+                        skip_states2 = []
+                        plan_similarities = []
+                        if "hierarchy" in self.team_structure:
                         
                             carry_functions = set()
-                            plan_similarities = []
                             for agent_key in functions.keys():
                                 if "carry" in functions[agent_key][0]:
                                     carry_functions.add(functions[agent_key][0])
                                 
-                                if functions[agent_key][0] == self.plan[agent_key][0]:
+                                if agent_key in self.plan and self.plan[agent_key] and functions[agent_key][0] == self.plan[agent_key][0]:
                                     plan_similarities.append(True)
                                 else:
                                     plan_similarities.append(False)
                                    
-                            if not all(plan_similarities): 
+                            if self.team_structure["hierarchy"][self.env.robot_id] == "order" and not all(plan_similarities): 
                                 skip_states = []
                                 skip_states2 = []
                                 for sp in self.plan.keys():
@@ -1643,94 +1732,184 @@ class OptimizedControl:
                                         skip_states.append([self.plan[sp][0],sp])
                                         if self.plan[sp][0] not in carry_functions:
                                             skip_states2.append([self.plan[sp][0],sp])
+                 
+                        
+                        obeying = "hierarchy" in self.team_structure and self.team_structure["hierarchy"][self.env.robot_id] == "obey"
+                        objective_explanation = ""
+                        
+                        time_limit_suggestion = (time.time() - self.time_last_suggestion) < self.time_last_suggestion_interval
+                        
+                        if obeying:
+                            add_functions = {}
+                            for f in functions.keys():
+                                if "leader" in functions[f]:
+                                    led = functions[f].split("_")[3]
+                                    if led not in functions.keys():
+                                        add_functions[led] = functions[f]
+                                        
+                            for af in add_functions.keys():
+                                functions[af] = add_functions[af]
+                        
+                        
+                        if not all(plan_similarities) and (not (obeying and self.env.robot_id not in functions.keys()) or (obeying and not time_limit_suggestion)):
+          
+                            self.update_planner(robotState,skip_states)
                             
-                                self.update_planner(robotState,skip_states)
-                                
-                                any_feasible_action = False
-                                objective_explanation = ""
-                                final_function_descriptions = ""
-                                for agent_key in functions.keys():
-                                    for agent_function in functions[agent_key]:
-                                        if "sense" in agent_function or "carry" in agent_function:
-                                        
-                                            '''
-                                            skip_states = []
-                                            for sp in self.plan.keys():
-                                                if sp != rm[0]:
-                                                    skip_states.append([self.plan[sp][0],sp])
-                                            '''     
-                                            
-                                            feasible_action = False
-                                            explanation = ""
-                                            
-                                            function_description = ""
-                                            
-                                            if "sense" in agent_function:
-                                            
-                                                ob_room = agent_function.split("_")[1]
-                                                
-                                                if "ROOM" not in agent_function and ob_room not in self.planner.rooms["extra"]:
-                                                    room_num = str(-1)
-                                                    for r_key in self.planner.rooms.keys():
-                                                        if ob_room in self.planner.rooms[r_key]:
-                                                            room_num = r_key
-                                                            break
-                                                    agent_function = "sense_ROOM" + room_num
-                                                
-                                                new_ob_room = agent_function.split("_")[1]
-                                                
-                                                if "ROOM" in agent_function:
-                                                    function_description = "Agent " + agent_key + " should sense room " + agent_function.split("ROOM")[1] + ". "
-                                                else:
-                                                    function_description = "Agent " + agent_key + " should sense object " + agent_function.split("_")[1] + ". "
-                                                    
-                                                if not ("ROOM" in agent_function and agent_function.split("ROOM")[1] not in self.planner.rooms.keys()) and (rm[0],new_ob_room) not in self.planner.sensed_clusters and agent_function in self.planner.nodes:
-                                                    feasible_action = True
-                                                elif (rm[0],new_ob_room) in self.planner.sensed_clusters:
-                                                    explanation = "We have already sensed that object/area " + new_ob_room + ". "
-                                                elif "ROOM" in agent_function and agent_function.split("ROOM")[1] not in self.planner.rooms.keys():
-                                                    if "ROOM" not in ob_room:
-                                                        explanation = "I have no knowledge about object " + ob_room + ". "
-                                                    else:
-                                                        explanation = "Room " + ob_room.split("ROOM")[1] + " doesn't seem to exist. "
-                                                    
-                                                
-                                            elif "carry" in agent_function:
-                                                object_id = agent_function.split("_")[1]
-                                                
-                                                function_description = "Agent " + agent_key + " should carry object " + object_id + ". "
-                                                
-                                                if object_id not in self.planner.objects_to_carry:
-                                                    explanation = "We still don't have enough certainty over object " + object_id + ", so far it is " + str(round(self.planner.belief[object_id]*100,2)) + "% of being dangerous. "
-                                                elif object_id in self.planner.already_carried:
-                                                    explanation = "We have already disposed of object " + object_id + ". "
-                                                elif agent_function in self.planner.nodes:
-                                                    if self.planner.object_weights[object_id] > 1:
-                                                        if len(self.planner.agents) - len(skip_states2) >= self.planner.object_weights[object_id]:
-                                                            feasible_action = True
-                                                    else:
-                                                        feasible_action = True
-                                                else:
-                                                    explanation = "We don't have any information about object " + object_id + ". "
-                                            
-                                            objective_explanation += explanation
-                                            
-                                            final_function_descriptions += function_description
-                                            
-                                            if not feasible_action:
-                                                break
-                                            else:
-                                                skip_states2.append([agent_function,agent_key])
-                                                any_feasible_action = True
-                                                
-                                                break
+                            any_feasible_action = False
+                            
+                            final_function_descriptions = ""
+                            leader = ""
+                            
+                            agent_function_leader = {}
+                            for agent_key in functions.keys():
+                                for agent_function in functions[agent_key]:
+                                    if "sense" in agent_function or "carry" in agent_function:
                                     
-                                
-                                
+                                        '''
+                                        skip_states = []
+                                        for sp in self.plan.keys():
+                                            if sp != rm[0]:
+                                                skip_states.append([self.plan[sp][0],sp])
+                                        '''     
                                         
+                                        feasible_action = False
+                                        explanation = ""
+                                        leader = ""
+                                        function_description = ""
+                                        
+                                        if "sense" in agent_function:
+                                        
+                                            ob_room = agent_function.split("_")[1]
+                                            
+                                            if "ROOM" not in agent_function and ob_room not in self.planner.rooms["extra"]:
+                                                room_num = str(-1)
+                                                for r_key in self.planner.rooms.keys():
+                                                    if ob_room in self.planner.rooms[r_key]:
+                                                        room_num = r_key
+                                                        break
+                                                agent_function = "sense_ROOM" + room_num
+                                            
+                                            new_ob_room = agent_function.split("_")[1]
+                                            
+                                            if "ROOM" in agent_function:
+                                                function_description = "Agent " + agent_key + " should sense room " + agent_function.split("ROOM")[1] #+ ". "
+                                            else:
+                                                function_description = "Agent " + agent_key + " should sense object " + agent_function.split("_")[1] #+ ". "
+                                                
+                                            if not ("ROOM" in agent_function and agent_function.split("ROOM")[1] not in self.planner.rooms.keys()) and (rm[0],new_ob_room) not in self.planner.sensed_clusters and agent_function in self.planner.nodes:
+                                                feasible_action = True
+                                            elif (rm[0],new_ob_room) in self.planner.sensed_clusters:
+                                                explanation = "We have already sensed that object/area " + new_ob_room + ". "
+                                                if obeying:
+                                                    feasible_action = True
+                                            elif "ROOM" in agent_function and agent_function.split("ROOM")[1] not in self.planner.rooms.keys():
+                                                if "ROOM" not in ob_room:
+                                                    explanation = "I have no knowledge about object " + ob_room + ". "
+                                                else:
+                                                    explanation = "Room " + ob_room.split("ROOM")[1] + " doesn't seem to exist. "
+                                        
+                                        elif "carry" in agent_function:
+                                            object_id = agent_function.split("_")[1]
+                                            
+                                            function_description = "Agent " + agent_key + " should carry object " + object_id #+ ". "
+                                            
+                                            ob_location = []
+                                            if object_id in info['object_key_to_index'].keys():
+                                                object_idx = info['object_key_to_index'][object_id]
+                                                ob_location = robotState.get("objects", "last_seen_location", object_idx)
+                                            
+                                            if "leader" in agent_function: #TODO
+                                            
+                                                leader = agent_function.split("_")[3]
+                                            
+                                                agent_function = "carry_" + object_id
+                                                
+                                                agent_function_leader[leader] = "carry_" + object_id
+                                                    
+                                                if not ob_location or (leader == self.env.robot_id and ob_location[0] == -1 and ob_location[1] == -1):
+                                                    explanation = "I don't know where that object is. "
+                                                elif obeying:
+                                                    feasible_action = True
+                                            elif object_id not in self.planner.objects_to_carry:
+                                                if not ob_location or (ob_location[0] == -1 and ob_location[1] == -1):
+                                                    explanation = "I don't know where that object is. "
+                                                else:
+                                                    explanation = "We still don't have enough certainty over object " + object_id + ", so far it is " + str(round(self.planner.belief[object_id]*100,2)) + "% of being dangerous. "
+                                                        
+                                                    if obeying:
+                                                        feasible_action = True
+                                            elif object_id in self.planner.already_carried:
+                                                explanation = "We have already disposed of object " + object_id + ". "
+                                                if obeying:
+                                                    feasible_action = True
+                                            
+                                            elif agent_function in self.planner.nodes:
+                                                if self.planner.object_weights[object_id] > 1:
+                                                    if not obeying and len(self.planner.agents) - len(skip_states2) >= self.planner.object_weights[object_id]:
+                                                        feasible_action = True
+                                                    elif obeying:
+                                                        explanation = "Who is going to be the leader when carrying object " + object_id + ". "
+                                                        
+                                                else:
+                                                    feasible_action = True
+                                            else:
+                                                pdb.set_trace()
+                                                explanation = "We don't have any information about object " + object_id + ". "
+                                                
+                                        
+                                        if explanation in objective_explanation:
+                                            explanation = ""
+                                        
+                                        objective_explanation += explanation
+                                        
+                                        if final_function_descriptions:
+                                            final_function_descriptions += ", "
+                                        
+                                        final_function_descriptions += function_description
+                                        
+                                        if not feasible_action:
+                                            break
+                                        else:
+                                            skip_states2.append([agent_function,agent_key, leader])
+                                            any_feasible_action = True
+                                            
+                                            break
+                                
+                            
+                            
+                            for skp2 in skip_states2:
+                                if skp2[1] in agent_function_leader.keys():
+                                    del agent_function_leader[skp2[1]]
+                            
+                            for afl in agent_function_leader.keys():
+                                skip_states2.append([agent_function_leader[afl],afl, afl])
+                            
+                            plan_description = ""
+
+
+                            if not (obeying and time_limit_suggestion):
+                            
+                                self.time_last_suggestion = time.time()
+                            
+                                obeying_present = False
+                                if obeying:
+                                    proposed_plan,proposed_objectives = self.planner.replan([], pretend=True)
+                                    plan_description = self.get_plan_description(proposed_plan)
+                                    if any(a[1] == self.env.robot_id for a in skip_states2):
+                                        obeying_present = True
+                                    
                                 if any_feasible_action:
                                 
                                     #skip_states.append([functions[0],rm[0]])
+                                    
+                                    if obeying:
+                                        to_carry = []
+                                        for sk in skip_states2:
+                                            if "carry" in sk[0] and sk[0].split("_")[1] not in to_carry and sk[0].split("_")[1] not in self.planner.objects_to_carry:
+                                                to_carry.append(sk[0].split("_")[1])
+                                        if to_carry:
+                                            self.update_planner(robotState,skip_states, objects_to_carry=to_carry)
+                                    
                                     plan2,objectives = self.planner.replan(skip_states2, pretend=True)
                                     
                                     if plan2:
@@ -1738,66 +1917,137 @@ class OptimizedControl:
                                         previous_overall_objective = 0
                                         overall_per_objective = []
                                         
+                                        if obeying:
+                                            optimization_metrics_comparison = proposed_objectives
+                                        else:
+                                            optimization_metrics_comparison = self.optimization_metrics
+                                        
+                                        ignored_objectives = ['completeness','reliability','agent utilization']
                                         for objc_idx in range(len(objectives[0])):
-                                            #if objectives[2][objc_idx] != 'completeness':
-                                            overall_objective += objectives[0][objc_idx]*objectives[1][objc_idx]
-                                            previous_overall_objective += self.optimization_metrics[0][objc_idx]*self.optimization_metrics[1][objc_idx]
-                                            overall_per_objective.append(self.optimization_metrics[0][objc_idx] >= objectives[0][objc_idx])
-                                            explanation = ""
+                                        
+                                            if obeying and objectives[2][objc_idx] not in ignored_objectives:
                                             
-                                            name = objectives[2][objc_idx]
-                                            
-                                            if name == 'distance to travel':
-                                                if overall_per_objective[-1]:
-                                                    explanation = "There is a reduction on the overall distance traveled by all agents. "
+                                                overall_objective += objectives[0][objc_idx]*objectives[1][objc_idx]
+                                                previous_overall_objective += optimization_metrics_comparison[0][objc_idx]*optimization_metrics_comparison[1][objc_idx]
+                                                
+                                                if obeying:
+                                                    overall_per_objective.append(optimization_metrics_comparison[0][objc_idx] > objectives[0][objc_idx])
                                                 else:
-                                                    explanation = "There is no reduction on the overall distance traveled by all agents. "
-                                            elif name == 'uncertainty reduction':
-                                                if overall_per_objective[-1]:
-                                                    explanation = "There is a reduction on the uncertainty of objects' danger status. "
-                                                else:
-                                                    explanation = "There is no reduction on the uncertainty of objects' danger status. "
-                                            elif name == 'reliability':
-                                                if overall_per_objective[-1]:
-                                                    explanation = "There is a reduction on the utilization of unrealiable agents. "
-                                                else:
-                                                    explanation = "There is no reduction on the utilization of unrealiable agents. "
-                                            elif name == "completeness":
-                                                if overall_per_objective[-1]:
-                                                    explanation = "There is a increase in the completeness of the plan. "
-                                                else:
-                                                    explanation = "There is a decrease in the completeness of the plan. "
+                                                    overall_per_objective.append(optimization_metrics_comparison[0][objc_idx] >= objectives[0][objc_idx])
                                                     
-                                            objective_explanation += explanation
+                                                explanation = ""
+                                                
+                                                name = objectives[2][objc_idx]
+                                                
+                                                if name == 'distance to travel':
+                                                    if overall_per_objective[-1]:
+                                                        explanation = "You are reducing how much agents need to move. "
+                                                    else:
+                                                        explanation = "You are making agents move too much. "
+                                                elif name == 'uncertainty reduction':
+                                                    if overall_per_objective[-1]:
+                                                        explanation = "You are helping reduce uncertainty over objects' danger status. "
+                                                    else:
+                                                        explanation = "You are not helping reduce uncertainty over objects' danger status. "
+                                                elif name == 'reliability':
+                                                    if overall_per_objective[-1]:
+                                                        explanation = "There is a reduction on the utilization of unrealiable agents. "
+                                                    else:
+                                                        explanation = "There is no reduction on the utilization of unrealiable agents. "
+                                                elif name == "completeness":
+                                                    if overall_per_objective[-1]:
+                                                        explanation = "There is a increase in the completeness of the plan. "
+                                                    else:
+                                                        explanation = "There is a decrease in the completeness of the plan. "
+                                                
+                                                elif name == "agent utilization":
+                                                    if overall_per_objective[-1]:
+                                                        explanation = "There is a increase in the agent utilization of the plan. "
+                                                    else:
+                                                        explanation = "There is a decrease in the agent utilization of the plan. "
+                                                        
+                                                objective_explanation += explanation
                                                     
                                         
                                         print(overall_objective, previous_overall_objective, overall_per_objective)
-                                        if sum(overall_per_objective) >= 2:
-                                            objective_explanation = "Your plan seems good: " + final_function_descriptions + objective_explanation + "Let's do that. "
-                                            self.providing_plan,self.optimization_metrics = plan2,objectives
-                                            self.agent_requesting_order[rm[0]] = True
-                                            
-                                            for p in plan2:
-                                                self.planner.set_monitoring(p[0],p[1][0][0],skip_states)
+                                        if sum(overall_per_objective) >= len(overall_per_objective)/2:
+                                        
+                                            if not obeying:
+                                                objective_explanation = "Your plan seems good: [" + final_function_descriptions + "]. " + objective_explanation + "Let's do that. "
+                                                self.providing_plan,self.optimization_metrics = plan2,objectives
+                                                self.agent_requesting_order[rm[0]] = True
                                                 
+                                                for p in plan2:
+                                                    self.planner.set_monitoring(p[0],p[1][0][0],skip_states)
+                                            else:
+                                                objective_explanation = self.human_to_ai_text.noop
+                                            
+                                       
+                                            
                                             
                                         else:
-                                            objective_explanation = "Your plan doesn't seem good: " + final_function_descriptions + objective_explanation + "Let's stick with the previous plan. "
+                                            if not obeying:
+                                                objective_explanation = MessagePattern.plan_evaluation_bad() + "[" + final_function_descriptions + "]. " + objective_explanation + "Let's stick with the previous plan. "
+                                            else:
+                                                
+                                                if self.env.robot_id not in functions.keys():
+                                                    extra_explanation = ""
+                                                else:
+                                                    extra_explanation = "I will follow your orders, although "
+                                                
+                                                objective_explanation = MessagePattern.plan_evaluation_bad() + "[" + final_function_descriptions + "]. " + objective_explanation + extra_explanation + "I think you may consider a better plan: [" + plan_description + "] "
                                     else:
-                                        objective_explanation = "Your plan doesn't seem good: " + final_function_descriptions + explanation + "Let's stick with the previous plan. " 
+                                        if not obeying:
+                                            objective_explanation = MessagePattern.plan_evaluation_bad() + "[" + final_function_descriptions + "]. " + explanation + "Let's stick with the previous plan. "
+                                        else:
+                                            if self.env.robot_id not in functions.keys():
+                                                extra_explanation = ""
+                                            else:
+                                                extra_explanation = "I will follow your orders, although "
+                                            objective_explanation = MessagePattern.plan_evaluation_bad() + "[" + final_function_descriptions + "]. " + objective_explanation + extra_explanation + "I think you may consider a better plan: [" + plan_description + "] "
                             
+                                    if obeying and obeying_present and not (self.env.robot_id in self.plan and self.plan[self.env.robot_id] and self.plan[self.env.robot_id][0] == functions[self.env.robot_id][0]):                                
+                                        self.movement.cancel_cooperation(self.State.decision_state,self.message_text)
+                                        self.action_function = ""
+                                        self.action_index = self.State.decision_state
+                                        self.functions_executed = True
+                                        self.functions_to_execute = self.commands_to_functions(functions, skip_states2, rm[0], robotState, info)
+                                        self.plan = functions
+                            
+                                elif obeying and not obeying_present:
+                                    objective_explanation = MessagePattern.plan_evaluation_bad() + "[" + final_function_descriptions + "]. " + objective_explanation
                                 else:
-                                    objective_explanation = "Your plan doesn't seem good: " + final_function_descriptions + explanation + "Let's stick with the previous plan. " 
-                                
-                                
-                                
                                     
-                            else:
-                                objective_explanation = "We are already doing the plan you are proposing! "
-                               
-                            translated_message = objective_explanation
+                                    if not obeying:
+                                        objective_explanation = MessagePattern.plan_evaluation_bad() + "[" + final_function_descriptions + "]. " + explanation + "Let's stick with the previous plan. "
+                                    else:
+                                        objective_explanation = MessagePattern.plan_evaluation_bad() + "[" + final_function_descriptions + "]. " + objective_explanation + "I cannot follow your orders. "
+                                    
                                 
-                            message_to_user = True 
+                                
+                            elif obeying and self.env.robot_id in functions.keys() and not (self.env.robot_id in self.plan and self.plan[self.env.robot_id] and self.plan[self.env.robot_id][0] == functions[self.env.robot_id][0]):
+                                self.movement.cancel_cooperation(self.State.decision_state,self.message_text)
+                                self.action_function = ""
+                                self.action_index = self.State.decision_state
+                                self.functions_executed = True
+                                self.functions_to_execute = self.commands_to_functions(functions, skip_states2, rm[0], robotState, info)
+                                self.plan = functions
+                                
+                                if not objective_explanation:
+                                    objective_explanation = self.human_to_ai_text.noop
+                            else:
+                                if not objective_explanation:
+                                    objective_explanation = self.human_to_ai_text.noop
+                                
+                        elif obeying and self.env.robot_id not in functions.keys():
+                            print("Plan not targeted towards me")
+                            objective_explanation = self.human_to_ai_text.noop
+                        elif not obeying:
+                            objective_explanation = "We are already doing the plan you are proposing! "
+                           
+                        translated_message = objective_explanation
+                            
+                        message_to_user = True 
                             
                 self.env.sio.emit("text_processing", (False))
                     
@@ -1825,6 +2075,125 @@ class OptimizedControl:
                 
         if tmp_message_history:
             self.message_history.extend(tmp_message_history)
+    
+    
+    def commands_to_functions(self, functions, keys_leaders, sender, robotState, info):
+        command = functions[self.env.robot_id][0]
+        
+        function_to_execute = []
+        
+        self.order_status = self.OrderStatus.ongoing
+        self.leader_id = sender
+        
+        if "carry" in command:
+        
+            object_id = command.split("_")[1]
+            
+            object_weight = 0
+            if object_id in info['object_key_to_index'].keys():
+                object_idx = info['object_key_to_index'][object_id]
+                object_weight = robotState.get("objects", "weight", object_idx)
+            
+            teammates = []
+            leader = ""
+            for kl in keys_leaders:
+                if "carry_" + object_id in kl[0]:
+                    if kl[1] != self.env.robot_id:
+                        teammates.append(kl[1])
+                    else:
+                        leader = kl[2]
+                        if leader != self.env.robot_id:
+                            teammates.append(kl[1])
+            
+            #assert object_weight >= 1
+            
+            if object_weight > 1 or (not object_weight and leader and leader != self.env.robot_id):
+                if leader:
+                    '''
+                    teammates = []
+                    for ag in functions.keys():
+                        if functions[ag][0] == command and ag != leader:
+                            teammates.append(ag)
+                    '''
+                    if leader == self.env.robot_id:
+                        if len(teammates)+1 >= object_weight:
+                            self.movement.help_status = self.movement.HelpState.being_helped
+                            self.movement.help_status_info[2] = []
+                            self.movement.help_status_info[0] = []
+                            self.movement.help_status_info[6] = []
+                            self.movement.help_status_info[1] = time.time()
+                            
+                            self.movement.help_status_info[0].extend(teammates)
+                            
+                            match_pattern,m_idx = self.message_text.search(MessagePattern.location_regex())
+                                            
+                            if match_pattern and not match_pattern.group(7):
+                                self.message_text.message[m_idx] = self.message_text.message[m_idx].replace(match_pattern.group(), match_pattern.group() + " Helping " + self.env.robot_id + ". ")
+
+                            self.message_text.insert(MessagePattern.order_response(sender, "collect") + "I will lead this operation. ",sender)
+                            function_to_execute.append("collect_object(" + object_id + ")")
+                            
+
+                        else:
+                            self.message_text.insert("Not enough agents are helping me, I'm asking for help. ",sender)
+                            function_to_execute.append("ask_for_help_to_carry(\"" + object_id + "\")")
+                            function_to_execute.append("collect_object(" + object_id + ")")
+                    else:
+                        self.movement.help_status = self.movement.HelpState.helping
+                                        
+                        self.movement.help_status_info[0] = [leader]
+                        
+                        teammates_sub = teammates.copy()
+                        try:
+                            teammates_sub.remove(self.env.robot_id)
+                        except:
+                            pdb.set_trace()
+                        
+                        self.movement.help_status_info[6].extend(teammates_sub)
+                        
+                        self.action_index = self.movement.State.follow
+                        
+                        print("TEAMMATE HERE 2", self.movement.help_status_info)
+                    
+                        self.message_text.insert(MessagePattern.order_response(sender, "collect") + "I will follow your lead, " + leader + ". ",sender)
+                else:
+                    function_to_execute.append("ask_for_help_to_carry(\"" + object_id + "\")")
+                
+                    function_to_execute.append("collect_object(" + object_id + ")")
+            
+            else:
+                function_to_execute.append("collect_object(" + object_id + ")")
+        elif "sense" in command:
+            if "ROOM" in command:
+                function_to_execute.append("sense_room(\"" + command.split("ROOM")[1] + "\")")
+            else:
+                function_to_execute.append("sense_object(" + command.split("_")[1] + ",[])")
+                
+                
+        return function_to_execute
+        
+    def get_plan_description(self, plan):
+        description = ""
+        for p in plan:
+        
+            if description:
+                description += ", "
+                
+            description += p[0] + " should "
+            action = p[1][0][0]
+            
+            if "carry" in action:
+                object_id = action.split("_")[1]
+                description += "carry object " + object_id
+                
+            elif "sense" in action:
+                description += "sense "
+                if "ROOM" in action:
+                    description += "room " + action.split("ROOM")[1]
+                else:
+                    description += "object " + action.split("_")[1]
+                    
+        return description
     
     def accept_help(self, robot_id, robotState, info):
         if self.movement.help_status == self.movement.HelpState.asking or self.movement.help_status == self.movement.HelpState.being_helped:
@@ -1898,8 +2267,24 @@ class OptimizedControl:
     def identify_room(self, robotState, info):
         for idx in range(len(self.other_agents)):
             other_robot_location = robotState.get("agents", "last_seen_location", idx)
-            room_num = self.env.get_room(other_robot_location,True,constrained=False).replace("room ", "")
-            if room_num and not self.other_agents[idx].rooms or room_num != self.other_agents[idx].rooms[-1]:
+            
+            robot_id = self.env.map_config['all_robots'][idx][0]
+            other_robot_time = robotState.get("agents", "last_seen_time", idx)
+            
+            robot_location_known = True
+            
+            if "hierarchy" in self.team_structure and self.team_structure["hierarchy"][self.env.robot_id] == "order" and (other_robot_location[0] == -1 and other_robot_location[1] == -1 or info['time'] - other_robot_time >= 60):
+                
+                if info['time'] - self.last_update_message_sent[robot_id] >= 60:
+                    self.message_text.insert(MessagePattern.updates(robot_id),robot_id)#just once every minute
+                    self.last_update_message_sent[robot_id] = info['time']
+                robot_location_known = False
+            elif "hierarchy" in self.team_structure and self.team_structure["hierarchy"][self.env.robot_id] == "obey" and (other_robot_location[0] == -1 and other_robot_location[1] == -1):
+                robot_location_known = False
+            else:
+                room_num = self.env.get_room(other_robot_location,True,constrained=False).replace("room ", "")
+            
+            if robot_location_known and ((room_num and not self.other_agents[idx].rooms) or (self.other_agents[idx].rooms and room_num != self.other_agents[idx].rooms[-1])):
                 self.other_agents[idx].rooms.append(room_num)
                 robot_id = list(info['robot_key_to_index'].keys())[list(info['robot_key_to_index'].values()).index(idx)]
                 if self.planner and self.planner.path_monitoring[robot_id] and not self.planner.path_monitoring[robot_id].init_state:
@@ -1909,7 +2294,7 @@ class OptimizedControl:
                     if moving_result == 1:
                         self.message_text.insert(MessagePattern.not_following_order(robot_id),robot_id)
                         
-                        if robot_id in self.plan and self.plan[robot_id]:
+                        if self.team_structure["hierarchy"][self.env.robot_id] == "order" and robot_id in self.plan and self.plan[robot_id]:
                             if "sense" in self.plan[robot_id][0]:
                                 if "ROOM" in self.plan[robot_id][0]:
                                     self.message_text.insert("You should go towards room " + self.planner.path_monitoring[robot_id].goal + ". ",robot_id)
@@ -1925,7 +2310,10 @@ class OptimizedControl:
                         sanction_limit = 1
                         if self.planner.path_monitoring[robot_id].consecutive_increases - self.planner.path_monitoring[robot_id].consecutive_increases_limit >= sanction_limit:
                             try:
-                                self.planner.path_monitoring[robot_id].update_reliability(self.planner.node_type[self.plan[robot_id][0]], 0)
+                                if robot_id in self.plan.keys():
+                                    self.planner.path_monitoring[robot_id].update_reliability(self.planner.node_type[self.plan[robot_id][0]], 0)
+                                elif robot_id in self.legacy_plan.keys():
+                                    self.planner.path_monitoring[robot_id].update_reliability(self.planner.node_type[self.legacy_plan[robot_id][0]], 0)
                             except:
                                 pdb.set_trace()
                             
@@ -1934,7 +2322,8 @@ class OptimizedControl:
                             self.planner.path_monitoring[robot_id].set('goal area', self.planner.occMap, self.planner.original_room_locations)
                             self.planner.path_monitoring[robot_id].moving_finished = True
                         
-            print("ROOM", idx, self.other_agents[idx].rooms[-1])
+            if self.other_agents[idx].rooms:
+                print("ROOM", idx, self.other_agents[idx].rooms[-1])
 
     def control(self,messages, robotState, info, next_observation):
         #print("Messages", messages)
@@ -1954,8 +2343,8 @@ class OptimizedControl:
         self.identify_room(robotState, info)
         
         if self.team_structure["hierarchy"][self.env.robot_id] == "obey":
-            if robotState.dropped_objects:
-                pdb.set_trace()
+            #if robotState.dropped_objects:
+            #    pdb.set_trace()
             for od in robotState.dropped_objects:
                 for agent_od in od:
                     self.planner.path_monitoring[agent_od[0]].update_reliability("carry_heavy", 0)
@@ -2571,7 +2960,7 @@ class OptimizedControl:
    
                     g_coord = []
                     while True:
-                        g_coord = random.choice(self.env.goal_coords)
+                        g_coord = random.choice(self.env.reduced_goal_coords)
                         if not self.occMap[g_coord[0],g_coord[1]]:
                             self.target_location = g_coord
                             break
@@ -2588,12 +2977,15 @@ class OptimizedControl:
                 action["action"],self.action_index = self.movement.cancel_cooperation(self.State.decision_state,self.message_text,message=MessagePattern.carry_help_finish())
                 finished = True
                 self.object_of_interest = ""
+                print("PROBLEM 2", combinations_found)
             elif not ("hierarchy" in self.team_structure and self.team_structure["hierarchy"][self.env.robot_id] == "obey") and time.time() - self.movement.help_status_info[1] > self.help_time_limit2: #time.time() - self.movement.asked_time > self.help_time_limit2:                           
                 action["action"],self.action_index = self.movement.cancel_cooperation(self.State.decision_state,self.message_text,message=MessagePattern.carry_help_complain())
                 finished = True
                 self.object_of_interest = ""
+                print("PROBLEM 3")
             else:
                 action["action"] = Action.get_occupancy_map.value 
+                print("PROBLEM 4")
                 
         elif self.top_action_sequence == 2:
 
@@ -3520,7 +3912,10 @@ class OptimizedControl:
             if isinstance(all_messages[1][m_idx],list):
                 if all_messages[1][m_idx]:
                     for a in all_messages[1][m_idx]:
-                        messages[agents.index(a)] += all_messages[0][m_idx]
+                        try:
+                            messages[agents.index(a)] += all_messages[0][m_idx]
+                        except:
+                            pdb.set_trace()
      
             else:
                 if all_messages[1][m_idx] == "ai":
@@ -3599,6 +3994,7 @@ class OptimizedControl:
                 else:
                     self.held_objects = [str(object_id)]
                     robotState.set("agents", "carrying_object", robotState.get_num_robots(), str(object_id), info["time"])
+                    print("carrying objects", self.held_objects)
             else:
                 ob_idx = info["object_key_to_index"][str(object_id)]
                 location = robotState.get("objects", "last_seen_location", ob_idx) #robotState.items[ob_idx]["item_location"]
@@ -3910,7 +4306,10 @@ class OptimizedControl:
                             most_recent = this_time
                     """
                     
-                    print('info PROVIDED:', self.other_agents[info['robot_key_to_index'][str(self.leader_id)]].items_info_provided, self.order_status_info[1])
+                    try:
+                        print('info PROVIDED:', self.other_agents[info['robot_key_to_index'][str(self.leader_id)]].items_info_provided, self.order_status_info[1])
+                    except:
+                        pdb.set_trace()
                     objects_reported = []
                     for ob in self.order_status_info[1]:
                     
@@ -3958,7 +4357,7 @@ class OptimizedControl:
         return function_output
     
 
-    def update_planner(self, robotState, skip_states):
+    def update_planner(self, robotState, skip_states, objects_to_carry=[]):
         agents = []
         objects = []
         
@@ -3978,8 +4377,7 @@ class OptimizedControl:
             
            
             ob_location = robotState.get("objects", "last_seen_location", ob[1]) #robotState.cursor.execute("""SELECT aoe.last_seen_location, MAX(aoe.last_seen_time) FROM agent_object_estimates aoe INNER JOIN objects o ON aoe.object_id = o.object_id WHERE o.idx = ?;""", (ob[1],)).fetchall()[0][0] #robotState.get("object_estimates", "last_seen_location", (ob[1] ,robotState.get_num_robots())) #robotState.get("objects", "last_seen_location", ob[1])
-            if not ob_location or (ob_location[0] == -1 and ob_location[1] == -1): #Error here when agents move object and then drop it but don't report their location
-                pdb.set_trace()
+            
             locations[key] = ob_location
             object_weights[key] = ob[2]
             carried_by = robotState.get("objects", "carried_by", ob[1])
@@ -3990,7 +4388,13 @@ class OptimizedControl:
                         mark_carried.append(ob_location)
                 except:
                     pdb.set_trace()
+            else:
+                if not ob_location or (ob_location[0] == -1 and ob_location[1] == -1): #Error here when agents move object and then drop it but don't report their location
+                    del object_weights[key]
+                    del locations[key]
+                    objects.remove(key)
                     
+                    self.message_text.insert(MessagePattern.ask_for_object(key),"all")
                     
                         
                     
@@ -3999,7 +4403,7 @@ class OptimizedControl:
         
             #if ag[0] != self.env.robot_id:
         
-            agents.append(ag[0])
+            
             
             if ag[0] != self.env.robot_id:
                 ag_location = robotState.get("agents", "last_seen_location", ag[1])
@@ -4019,6 +4423,12 @@ class OptimizedControl:
                 agents_type[ag[0]] = "ai"
             else:
                 agents_type[ag[0]] = "human"
+                
+            
+            if not ag_location or (ag_location[0] == -1 and ag_location[1] == -1):
+                self.message_text.insert(MessagePattern.ask_for_agent(ag[0]),"all")
+            else:
+                agents.append(ag[0])
             
 
         occMap = np.copy(robotState.latest_map)
@@ -4027,6 +4437,16 @@ class OptimizedControl:
             occMap[m[0],m[1]] = 4
         
         occMap[occMap > 2] = 0
+        
+        
+        sql_estimates = robotState.get_all_sensing_estimates()
+        estimates = []
+    
+        for e in sql_estimates:
+            estimate_value = robotState.Danger_Status[e[2]].value
+
+            if estimate_value:
+                estimates.append((str(e[0]),e[1],estimate_value-1))
 
         if not self.planner:
             rooms = self.env.map_config['rooms']
@@ -4035,20 +4455,18 @@ class OptimizedControl:
                 for l in rooms[r]:
                     room_array.append(self.env.convert_to_grid_coordinates(l))
                 self.new_rooms[r] = room_array
-            self.planner = DynamicSensorPlanner(agents, objects, locations, agents_initial_positions, pd_pb, object_weights, occMap, self.extended_goal_coords, self.new_rooms, agents_type)
+                self.all_rooms[r] = room_array
+            self.planner = DynamicSensorPlanner(agents, objects, estimates, locations, agents_initial_positions, pd_pb, object_weights, occMap, self.extended_goal_coords, self.new_rooms, agents_type, objects_to_carry)
         else:
         
-            sql_estimates = robotState.get_all_sensing_estimates()
-            estimates = []
-        
-            for e in sql_estimates:
-                estimate_value = robotState.Danger_Status[e[2]].value
-
-                if estimate_value:
-                    estimates.append((str(e[0]),e[1],estimate_value-1))
-        
-            
-            self.planner.update_state(estimates, object_weights, agents_initial_positions, locations, occMap, skip_states, self.new_rooms, being_carried)
+            #If an object is discovered in an empty room, re-add the room to new_rooms
+            rooms = robotState.get_all_object_rooms()
+            for r in rooms:
+                if r in self.all_rooms.keys() and r not in self.new_rooms.keys():
+                    self.new_rooms[r] = self.all_rooms[r]
+                    
+            print("BEING CARRIED", being_carried)
+            self.planner.update_state(agents, objects, estimates, object_weights, agents_initial_positions, locations, occMap, skip_states, self.new_rooms, being_carried, objects_to_carry)
         
         
         
@@ -4220,6 +4638,7 @@ class OptimizedControl:
             
             for agent_id in all_agents:
                 if agent_id in self.plan.keys():
+                    self.legacy_plan[agent_id] = self.plan[agent_id]
                     del self.plan[agent_id]
                     del self.previous_plan[agent_id]
         
@@ -4308,7 +4727,8 @@ class OptimizedControl:
                                 self.self_messages.append(self.self_message_create(MessagePattern.order_collect(agent_id, ob_id), robotState, info))
                             else:
                                 self.message_text.insert(MessagePattern.item(robotState,idx,ob_id, info, self.env.robot_id, self.env.convert_to_real_coordinates),agent_id)
-                                self.message_text.insert(MessagePattern.order_collect(agent_id, ob_id),agent_id)
+                                self.message_text.insert(MessagePattern.order_collect(agent_id, ob_id),"all")
+                                self.message_text.insert("I'm collecting object " + str(ob_id),"all")
                             robo_idx = info['robot_key_to_index'][agent_id]
                             robotState.set("agents", "team", int(robo_idx), str([int(robo_idx)]), info["time"])
                         
@@ -4330,7 +4750,7 @@ class OptimizedControl:
                                 if agent_id == self.env.robot_id:
                                     self.self_messages.append(self.self_message_create(MessagePattern.order_sense_multiple(agent_id, self.planner.clusters[int(cluster_num)]['objects'], ob_locations, self.env.convert_to_real_coordinates), robotState, info))
                                 else:
-                                    self.message_text.insert(MessagePattern.order_sense_multiple(agent_id, self.planner.clusters[int(cluster_num)]['objects'], ob_locations, self.env.convert_to_real_coordinates),agent_id)
+                                    self.message_text.insert(MessagePattern.order_sense_multiple(agent_id, self.planner.clusters[int(cluster_num)]['objects'], ob_locations, self.env.convert_to_real_coordinates),"all")
                             except:
                                 pdb.set_trace()
                         
@@ -4343,7 +4763,8 @@ class OptimizedControl:
                                 self.self_messages.append(self.self_message_create(MessagePattern.order_sense_room(agent_id, str(room)), robotState, info))
                             else:
                                 #self.message_text += MessagePattern.order_sense(agent_id, 99, location, self.env.convert_to_real_coordinates)
-                                self.message_text.insert(MessagePattern.order_sense_room(agent_id, str(room)),agent_id)
+                                self.message_text.insert(MessagePattern.order_sense_room(agent_id, str(room)),"all")
+                                self.message_text.insert("I'm sensing room " + str(room),"all")
                         else:
                             #pdb.set_trace()
                             ob_id = self.plan[agent_id][0].split("_")[1]
@@ -4352,14 +4773,15 @@ class OptimizedControl:
                             if agent_id == self.env.robot_id:
                                 self.self_messages.append(self.self_message_create(MessagePattern.order_sense(agent_id, ob_id, location, self.env.convert_to_real_coordinates), robotState, info))
                             else:
-                                self.message_text.insert(MessagePattern.order_sense(agent_id, ob_id, location, self.env.convert_to_real_coordinates),agent_id)
+                                self.message_text.insert(MessagePattern.order_sense(agent_id, ob_id, location, self.env.convert_to_real_coordinates),"all")
+                                self.message_text.insert("I'm sensing object " + str(ob_id),"all")
                         
                     elif 'REGION' in self.plan[agent_id][0]:
                         location = self.planner.locations[self.plan[agent_id][0]]
                         if agent_id == self.env.robot_id:
                             self.self_messages.append(self.self_message_create(MessagePattern.order_explore(agent_id, location, self.env.convert_to_real_coordinates), robotState, info))
                         else:
-                            self.message_text.insert(MessagePattern.order_explore(agent_id, location, self.env.convert_to_real_coordinates),agent_id)
+                            self.message_text.insert(MessagePattern.order_explore(agent_id, location, self.env.convert_to_real_coordinates),"all")
                         
               
             
@@ -4381,12 +4803,16 @@ class OptimizedControl:
                 robot_id = self.carry_agents[ob][0]
                 robo_idx = info['robot_key_to_index'][robot_id]
                 other_robots_ids = self.carry_agents[ob][1:]
+                
+                ob_id = self.plan[robot_id][0].split("_")[1]
+                idx = info['object_key_to_index'][ob_id]
             
                 if not other_robots_ids:
                     pdb.set_trace()
             
                 self.message_text.insert(MessagePattern.agent(robot_id, int(robo_idx), robotState, self.env.convert_to_real_coordinates),other_robots_ids)
-                self.message_text.insert(MessagePattern.order_collect_group(robot_id, other_robots_ids, ob),[robot_id,*other_robots_ids])
+                self.message_text.insert(MessagePattern.item(robotState,idx,ob_id, info, self.env.robot_id, self.env.convert_to_real_coordinates),[robot_id,*other_robots_ids])
+                self.message_text.insert(MessagePattern.order_collect_group(robot_id, other_robots_ids, ob),"all")
                 
                 if robot_id == self.env.robot_id or self.env.robot_id in other_robots_ids:
                     self.self_messages.append(self.self_message_create(MessagePattern.order_collect_group(robot_id, other_robots_ids, ob), robotState, info))

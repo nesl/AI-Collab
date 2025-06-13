@@ -204,6 +204,14 @@ class MessagePattern:
         return "Where is agent (\w+)"
         
     @staticmethod
+    def ask_for_object(robot_id):
+        return "Where is object " + str(robot_id) + "? "
+        
+    @staticmethod
+    def ask_for_object_regex():
+        return "Where is object (\w+)"
+        
+    @staticmethod
     def agent_not_found(robot_id):
         return "I don't know where is agent " + str(robot_id) + ". "
         
@@ -318,6 +326,14 @@ class MessagePattern:
     @staticmethod
     def come_closer_regex():
         return "Come closer (\w+)"    
+        
+    @staticmethod
+    def come_closer_alt(robot_ids):
+        return "Come closer [" + ",".join(robot_ids) + "]. "
+        
+    @staticmethod
+    def come_closer_alt_regex():
+        return "Come closer (\[\w+(,\w+)*\])"  
         
     @staticmethod
     def carry_help_participant_reject(robot_id):
@@ -452,6 +468,15 @@ class MessagePattern:
     @staticmethod
     def move_request_regex():
         return "Hey (\w+), I need you to move"
+        
+        
+    @staticmethod
+    def move_request_alt(robot_ids):
+        return "Hey [" + ",".join(robot_ids) + "], I need you to move. " 
+        
+    @staticmethod
+    def move_request_alt_regex():
+        return "Hey (\[\w+(,\w+)*\]), I need you to move"
         
     @staticmethod
     def move_order(robot_id, location, convert_to_real_coordinates):
@@ -659,6 +684,10 @@ class MessagePattern:
         return "I will follow your orders to (\w+), (\w+)"
         
     @staticmethod
+    def plan_evaluation_bad():
+        return "Your plan doesn't seem good: "
+        
+    @staticmethod
     def order_response_negative(robot_id, leader_id):
         return "I cannot help you right now " + str(robot_id) + ", I'm following the orders of " + str(leader_id) + ". "
         
@@ -697,6 +726,19 @@ class MessagePattern:
     @staticmethod
     def finish_reject_regex():
         return "Wait, let's not end participation yet"
+        
+    
+    @staticmethod
+    def updates(robot_id):
+        return "Any updates, " + str(robot_id) + "? "
+    
+    @staticmethod
+    def updates_regex():
+        return "Any updates, (\w+)"
+        
+    @staticmethod
+    def report_progress():
+        return "Still working on it. "
         
     @staticmethod
     def parse_sensing_message(rematch, rm, robotState, info, other_agents, convert_to_grid_coordinates, convert_to_real_coordinates):    

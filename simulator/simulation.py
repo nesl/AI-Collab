@@ -34,6 +34,7 @@ from subprocess import Popen
 from enum import Enum
 import math
 import string
+from collections import deque
 
 
 
@@ -193,6 +194,7 @@ class Enhanced_Magnebot(Magnebot):
         self.grasping_time = 0
         self.past_status = ActionStatus.ongoing
         self.view_radius = 0
+        self.visibility_matrix = []
         self.centered_view = 0
         self.resetting_arm = False
         self.key_pressed = ''
@@ -336,7 +338,7 @@ class Simulation(Controller):
         
         self.communicate([])
         
-
+        #self.label_components(self.static_occupancy_map.occupancy_map, 6)
 
         out_of_bounds = np.where(self.static_occupancy_map.occupancy_map == 2)
         self.static_occupancy_map.occupancy_map[out_of_bounds[0],out_of_bounds[1]] = -1
@@ -349,7 +351,6 @@ class Simulation(Controller):
         print(self.static_occupancy_map.occupancy_map)
         #print(self.static_occupancy_map.occupancy_map[:20,:20])
         
-
         
         self.ai_original_spawn_positions = []#[{"x": -2, "y": 0, "z": 1.1},{"x": -2, "y": 0, "z": 2.1}, {"x": -2, "y": 0, "z": 3.1}, {"x": -3, "y": 0, "z": 0.1}, {"x": -2, "y": 0, "z": 0.1},{"x": -2, "y": 0, "z": -1.1}, {"x": -2, "y": 0, "z": -2.1},{"x": -2, "y": 0, "z": -3.1},{"x": -3, "y": 0, "z": -1.1},{"x": -3, "y": 0, "z": -2.1}, {"x": -3, "y": 0, "z": 1.1}, {"x": -3, "y": 0, "z": 2.1}, {"x": -3.5, "y": 0, "z": 0.5}, {"x": -3.5, "y": 0, "z": 1.5}, {"x": -3.5, "y": 0, "z": 2.5}, {"x": -3.5, "y": 0, "z": 3.5}, {"x": -3.5, "y": 0, "z": -2.5}, {"x": -3.5, "y": 0, "z": -3.5}]
         self.user_original_spawn_positions = []#[{"x": 0, "y": 0, "z": 1.1},{"x": 0, "y": 0, "z": 2.1}, {"x": 0, "y": 0, "z": 3.1}, {"x": 1, "y": 0, "z": 0.1}, {"x": 0, "y": 0, "z": 0.1},{"x": 0, "y": 0, "z": -1.1}, {"x": 0, "y": 0, "z": -2.1},{"x": 0, "y": 0, "z": -3.1},{"x": 1, "y": 0, "z": -3.1},{"x": 1, "y": 0, "z": -2.1}]
@@ -586,6 +587,15 @@ class Simulation(Controller):
                     self.ai_magnebots[ai_agent_idx].view_radius = int(view_radius)
                     self.ai_magnebots[ai_agent_idx].centered_view = int(centered)
                     self.ai_magnebots[ai_agent_idx].skip_frames = int(skip_frames)
+
+                    for aim_idx,aim in enumerate(self.ai_magnebots):
+                        if aim_idx != ai_agent_idx and aim.view_radius == int(view_radius) and aim.visibility_matrix:
+                            self.ai_magnebots[ai_agent_idx].visibility_matrix = aim.visibility_matrix
+                            break
+
+                    if not self.ai_magnebots[ai_agent_idx].visibility_matrix:
+                        self.ai_magnebots[ai_agent_idx].visibility_matrix = self.label_components(self.static_occupancy_map.occupancy_map, int(view_radius))
+                    
                    
                 #Reset environment
                 @self.sio.event 
@@ -707,6 +717,65 @@ class Simulation(Controller):
         
         
         return extra_config
+        
+        
+    def label_components(self, occupancy_map, view_radius):
+        """
+        Label each free cell (0) in the occupancy_map with a unique component ID.
+        Returns a 2D array of the same dimensions, where each cell contains:
+          - -1 if it is an obstacle (1 in the occupancy map)
+          - a non-negative integer indicating its connected component ID otherwise.
+        """
+        rows = occupancy_map.shape[0]
+        cols = occupancy_map.shape[1]
+        
+        current_label = 0
+
+        component_maps = []
+        
+        for i in range(rows):
+            component_maps.append([])
+            for j in range(cols):
+                # If this cell is free (0) and unlabeled, run a BFS from here.
+                component_id = []
+                x_min = max(0,i-view_radius)
+                y_min = max(0,j-view_radius)
+                x_max = min(occupancy_map.shape[0]-1,i+view_radius)
+                y_max = min(occupancy_map.shape[1]-1,j+view_radius)
+                
+                if occupancy_map[i][j] == 0:
+                
+                    sub_occupancy_map = occupancy_map[x_min:x_max+1,y_min:y_max+1]
+                    
+                    sub_rows = sub_occupancy_map.shape[0]
+                    sub_cols = sub_occupancy_map.shape[1]
+                
+                    sub_i = i - x_min
+                    sub_j = j - y_min
+                    #component_id = [[-2] * sub_cols for _ in range(sub_rows)]
+                    component_id = np.ones_like(sub_occupancy_map)*(-2)
+                    m_ids = np.where(sub_occupancy_map == 1)
+                    if m_ids[0].size:
+                        component_id[m_ids] = 1
+                    component_id = component_id.tolist()
+                    queue = deque([(sub_i, sub_j)])
+                    component_id[sub_i][sub_j] = current_label
+                    while queue:
+                        x, y = queue.popleft()
+                        for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                            nx, ny = x + dx, y + dy
+                            if 0 <= nx < sub_rows and 0 <= ny < sub_cols:
+                                # If neighbor is free and still unlabeled, label it
+                                if sub_occupancy_map[nx][ny] == 0 and component_id[nx][ny] == -2:
+                                    component_id[nx][ny] = current_label
+                                    queue.append((nx, ny))
+                                elif sub_occupancy_map[nx][ny] == 1 and component_id[nx][ny] == -2:
+                                    component_id[nx][ny] = current_label
+            
+
+                component_maps[-1].append(component_id)
+        return component_maps
+
 
     def send_init_data(self):
         #Occupancy map info
@@ -1918,8 +1987,17 @@ class Simulation(Controller):
                 
                 map_variations = [[[x,6] for x in range(1,3)],[[x,6] for x in range(15,17)]]
                 
+                room7_constraint = [[17,y] for y in range(7,10)] #we cannot have three objects in line
+                room7_constraint = [[loc[0]-self.scenario_size/2+cell_size*0.5,loc[1]-self.scenario_size/2+cell_size*0.5] for loc in room7_constraint]
+                
+                
                 for r_key in self.rooms.keys():
-                    self.rooms_limits[r_key] = [[loc[0]-self.scenario_size/2-cell_size*0.5,loc[1]-self.scenario_size/2-cell_size*0.5] if loc_idx < len(self.rooms[r_key])-1 else [loc[0]-self.scenario_size/2+cell_size*1.5,loc[1]-self.scenario_size/2+cell_size*1.5] for loc_idx,loc in enumerate(self.rooms[r_key])]
+                    if r_key == 6:
+                        multipliers = [0.5,0.5,1.2,1.5]
+                    else:
+                        multipliers = [0.5,0.5,1.5,1.5]
+                        
+                    self.rooms_limits[r_key] = [[loc[0]-self.scenario_size/2-cell_size*multipliers[0],loc[1]-self.scenario_size/2-cell_size*multipliers[1]] if loc_idx < len(self.rooms[r_key])-1 else [loc[0]-self.scenario_size/2+cell_size*multipliers[2],loc[1]-self.scenario_size/2+cell_size*multipliers[3]] for loc_idx,loc in enumerate(self.rooms[r_key])] #Slight modification from 0.5 to 1
                     self.rooms[r_key] = [[loc[0]-self.scenario_size/2+cell_size*0.5,loc[1]-self.scenario_size/2+cell_size*0.5] for loc in self.rooms[r_key]]
                 
                 room_capacity = {0:10,1:5,2:0,3:5,4:7,5:5,6:0,7:3}
@@ -2086,6 +2164,10 @@ class Simulation(Controller):
                                     grid_location = self.convert_to_grid_coordinates(chosen_locations[fc][-1].tolist(), min_pos, cell_size)
                                     occMap[grid_location[0],grid_location[1]] = 1
                                     
+                                    if r_key == 7 and sum(locs in possible_locations_temp for locs in room7_constraint) == 1:
+                                        for locs in room7_constraint:
+                                            if locs in possible_locations_temp:
+                                                possible_locations_temp.remove(locs)
                                     
                                     
                                     '''
@@ -3036,7 +3118,7 @@ class Simulation(Controller):
                         object_room = r
                         break
             
-                print(object_room, ego_room)
+                #print(object_room, ego_room)
                 if np.linalg.norm(self.object_manager.transforms[o].position -
                         ego_magnebot.dynamic.transform.position) < int(self.cfg['sensing_radius']) and not any(doIntersect([self.object_manager.transforms[o].position[0],self.object_manager.transforms[o].position[2]],[ego_magnebot.dynamic.transform.position[0],ego_magnebot.dynamic.transform.position[2]],[self.walls[w_idx][0][0],self.walls[w_idx][0][1]],[self.walls[w_idx][-1][0],self.walls[w_idx][-1][1]]) for w_idx in range(len(self.walls))) and ego_room == object_room:
                         
@@ -3179,6 +3261,7 @@ class Simulation(Controller):
                 limited_map = np.zeros((view_radius*2+1,view_radius*2+1)) #+1 as we separately count the row/column where the magnebot is currently in
                 #limited_map[:,:] = self.static_occupancy_map.occupancy_map[x_min:x_max+1,y_min:y_max+1]
                 limited_map[:,:] = self.object_type_coords_map[x_min:x_max+1,y_min:y_max+1]
+                
                 objects_locations = np.where(limited_map > 1)
                 reduced_metadata = {}
                 limited_map[x-x_min,y-y_min] = 5
@@ -3192,6 +3275,13 @@ class Simulation(Controller):
                 limited_map[[0,limited_map.shape[0]-1],:] = -1
                 limited_map[:,[0,limited_map.shape[1]-1]] = -1
                 limited_map[x_min:x_max+1,y_min:y_max+1] = self.object_type_coords_map[x_min:x_max+1,y_min:y_max+1]
+                
+                if self.ai_magnebots[m_idx].visibility_matrix and self.ai_magnebots[m_idx].visibility_matrix[x][y]:
+                    m = np.array(self.ai_magnebots[m_idx].visibility_matrix[x][y])
+                    m_inds = np.where(m == -2)  
+                    if m_inds[0].size:
+                        limited_map[x_min:x_max+1,y_min:y_max+1][m_inds] = -2
+                
                 objects_locations = np.where(limited_map > 1)
                 
                 reduced_metadata = {}
@@ -3315,21 +3405,21 @@ class Simulation(Controller):
             
         return limited_map, reduced_metadata
         
-    def get_objects_held_state(self, magnebot_id):
+    def get_objects_held_state(self, all_magnebots, all_ids, magnebot_id):
     
         #Check the objects held in each arm
         objects_held = [0,0]
-        m_idx = self.ai_magnebots_ids.index(magnebot_id)
+        m_idx = all_ids.index(magnebot_id)
         
         if magnebot_id in self.objects_held_status_request:
             self.objects_held_status_request.remove(magnebot_id)
             
         for arm_idx, arm in enumerate([Arm.left,Arm.right]):
             
-            if self.ai_magnebots[m_idx].dynamic.held[arm].size > 0:
-                objects_held[arm_idx] = self.object_names_translate[int(self.ai_magnebots[m_idx].dynamic.held[arm][0])]
+            if all_magnebots[m_idx].dynamic.held[arm].size > 0:
+                objects_held[arm_idx] = self.object_names_translate[int(all_magnebots[m_idx].dynamic.held[arm][0])]
 
-                
+        #print("objects_held", objects_held, type(objects_held[0]))
         return objects_held
     
     
@@ -4666,8 +4756,11 @@ class Simulation(Controller):
                     self.track_objects_carried(all_magnebots, all_idx, item_info, messages)
                             
                 
+                objects_held = self.get_objects_held_state(all_magnebots, all_ids, magnebot_id)
+                
                 if not self.local and not all_magnebots[idx].last_output:
-                    self.sio.emit('human_output', (all_idx, all_magnebots[idx].dynamic.transform.position.tolist(), item_info, all_magnebots[all_idx].company, self.timer, all_magnebots[idx].disabled,dropped_objects))
+                
+                    self.sio.emit('human_output', (all_idx, all_magnebots[idx].dynamic.transform.position.tolist(), item_info, all_magnebots[all_idx].company, self.timer, all_magnebots[idx].disabled,dropped_objects, objects_held))
                     if all_magnebots[idx].disabled:
                         all_magnebots[idx].last_output = True
                     
@@ -4703,7 +4796,7 @@ class Simulation(Controller):
                     if magnebot_id in self.objects_held_status_request:
                         extra_status[2] = 1
                     
-                    objects_held = self.get_objects_held_state(magnebot_id)
+                    objects_held = self.get_objects_held_state(all_magnebots, all_ids, magnebot_id)
                     
                     
                     

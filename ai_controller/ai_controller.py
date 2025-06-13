@@ -532,7 +532,26 @@ class RobotState:
                 
         
         return output
-    
+        
+    def get_all_object_rooms(self):
+        rooms = set()
+        if self.args.sql:
+            objects = self.get_all_objects()
+            propert = "last_seen_room"
+            try:
+                for idx in range(len(objects)):
+                    if not self.get("objects","last_seen_time",idx):
+                        row = self.cursor.execute("SELECT aoe." + propert + " FROM agent_object_estimates aoe INNER JOIN objects o ON o.object_id = aoe.object_id INNER JOIN agents a ON a.agent_id = aoe.agent_id WHERE o.idx = ? AND a.idx = ?;", (idx ,self.get_num_robots(),)).fetchall()
+                    else:
+                        row = self.cursor.execute("SELECT " + propert + " FROM agent_object_estimates aoe INNER JOIN objects o ON o.object_id = aoe.object_id WHERE last_seen_time = (SELECT MAX(aoe.last_seen_time) FROM agent_object_estimates aoe INNER JOIN objects o ON o.object_id = aoe.object_id WHERE o.idx = ?) AND o.idx = ?;", (idx,idx,)).fetchall()
+                    
+                    row = row[0][0]
+                    
+                    rooms.add(row)
+            except:
+                pdb.set_trace() 
+        return rooms
+        
     def get(self, database, propert, idx):
     
         
@@ -696,8 +715,11 @@ class RobotState:
                 room = self.env.get_room(robot_location,False)
                 #print("neighbor", neighbor_output["neighbor_time"][0], self.cursor.execute("SELECT * FROM agent_object_estimates aoe INNER JOIN objects o ON o.object_id = aoe.object_id ;""", ).fetchall())
                 
+                last_location = robotState.get("agents", "last_seen_location", robot_idx)
+                
                 self.cursor.execute("""UPDATE agents SET last_seen_location = ?, last_seen_time = ?, last_seen_room = ? WHERE idx = ?;""", (str(robot_location), float(neighbor_output["neighbor_time"][0]), room, robot_idx,))
                 
+                '''
                 ego_location = np.where(self.latest_map == 5)
                 view_radius = int(self.args.view_radius)
                 max_x = ego_location[0][0] + view_radius
@@ -707,9 +729,18 @@ class RobotState:
                 
                 if ((grid_location[0] < min_x or grid_location[0] > max_x) or (grid_location[1] < min_y or grid_location[1] > max_y)) and tuple(grid_location) not in self.saved_locations.keys():
                     self.saved_locations[tuple(grid_location)] = self.latest_map[grid_location[0], grid_location[1]]
+                '''
+                
+                
+                
                 
                 if self.latest_map[grid_location[0], grid_location[1]] != 5:
                     self.latest_map[grid_location[0], grid_location[1]] = 3
+                    
+                    
+                    
+                    if not (last_location[0] == -1 and last_location[1] == -1) and not (last_location[0] == grid_location[0] and last_location[1] == grid_location[1]) and not (last_location[0] >= view_limits[0][0] and last_location[0] <= view_limits[0][1] and last_location[1] >= view_limits[1][0] and last_location[1] <= view_limits[1][1]):
+                        self.latest_map[last_location[0], last_location[1]] = -2
                     
             self.sqliteConnection.commit()
         else:
@@ -827,12 +858,19 @@ class RobotState:
             pdb.set_trace()
         if self.items[item_idx]["item_time"][0] <= item_output["item_time"][0]:
         
+            old_location = []
+            if not (self.items[item_idx]["item_location"][0] == -1 and self.items[item_idx]["item_location"][1] == -1) and not (self.items[item_idx]["item_location"][0] == int(item_output["item_location"][0]) and self.items[item_idx]["item_location"][1] == int(item_output["item_location"][1])) and not (self.items[item_idx]["item_location"][0] >= view_limits[0][0] and self.items[item_idx]["item_location"][0] <= view_limits[0][1] and self.items[item_idx]["item_location"][1] >= view_limits[1][0] and self.items[item_idx]["item_location"][1] <= view_limits[1][1]):
+                old_location = list(self.items[item_idx]["item_location"]).copy()
+        
             self.items[item_idx]["item_location"] = [int(item_output["item_location"][0]),int(item_output["item_location"][1])]
             self.items[item_idx]["item_time"] = item_output["item_time"]
             
             if self.latest_map[self.items[item_idx]["item_location"][0], self.items[item_idx]["item_location"][1]] != 5 and self.latest_map[self.items[item_idx]["item_location"][0], self.items[item_idx]["item_location"][1]] != 3 and self.latest_map[self.items[item_idx]["item_location"][0], self.items[item_idx]["item_location"][1]] != 4:
                 self.latest_map[self.items[item_idx]["item_location"][0], self.items[item_idx]["item_location"][1]] = 2
                 #print("changing object location")
+            
+            if old_location:
+                self.latest_map[old_location[0], old_location[1]] = -2 #See if this works, after an object is taken, asume there is nothing there anymore
             
         if item_output["item_weight"]:
             self.items[item_idx]["item_weight"] = item_output["item_weight"]
@@ -955,6 +993,8 @@ while True:
     last_high_action = action["action"]
     
     fell_down = 0
+    
+    view_limits = []
     
     
     while not done:
@@ -1202,7 +1242,16 @@ while True:
                     min_y = max(ego_location[1][0] - view_radius, 0)
                     
                     previous_robo_map = np.copy(robotState.latest_map)
-                    robotState.latest_map[min_x:max_x+1,min_y:max_y+1]= next_observation["frame"][min_x:max_x+1,min_y:max_y+1]
+                    
+                    limited_map = next_observation["frame"][min_x:max_x+1,min_y:max_y+1]
+                    
+                    m_ids = np.where(limited_map != -2)
+                    
+                    if m_ids[0].size:
+                        robotState.latest_map[min_x:max_x+1,min_y:max_y+1][m_ids] = limited_map[m_ids]
+                    #robotState.latest_map[min_x:max_x+1,min_y:max_y+1]= next_observation["frame"][min_x:max_x+1,min_y:max_y+1]
+                    
+                    view_limits = [[min_x,max_x],[min_y,max_y]]
                     
                     walls = np.where(next_observation["frame"] == 1)
                     
@@ -1283,6 +1332,21 @@ while True:
                 elif Action(last_action[1]) == Action.get_messages:
                     #print("Message arrived", info['messages'])
                     messages = info['messages']
+                    
+                    for m in messages:
+                        
+                        location = env.convert_to_grid_coordinates(m[3][0])
+                        if location:
+                            template_robot_info = {"neighbor_type": -1, "neighbor_location": np.array(location, dtype=np.int16), "neighbor_time": np.array([m[2]], dtype=np.int16), "neighbor_disabled": 0}
+                            robot_idx = info["robot_key_to_index"][m[0]]
+                            robotState.update_robots(template_robot_info, robot_idx)
+                        
+                        for carried_object_loc in m[3][1].keys():
+                            location = env.convert_to_grid_coordinates(m[3][1][carried_object_loc])
+                            if location:
+                                template_item_info = {'item_weight': 0, 'item_danger_level': 0, 'item_danger_confidence': np.array([0.]), 'item_location': np.array(location, dtype=np.int16), 'item_time': np.array([m[2]], dtype=np.int16), "carried_by": m[0]}
+                                ob_key = info["object_key_to_index"][carried_object_loc]
+                                robotState.update_items(template_item_info, carried_object_loc, ob_key, -1)
                     
                 
             '''

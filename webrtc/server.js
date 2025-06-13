@@ -412,8 +412,8 @@ io.sockets.on("connection", socket => { //When a client connects
   });
   
   
-  socket.on("human_output", (idx, location, item_info, neighbors_info, timer, disable, dropped_objects) => {
-    socket.to(all_ids[idx]).emit("human_output", location, item_info, neighbors_info, timer, disable);
+  socket.on("human_output", (idx, location, item_info, neighbors_info, timer, disable, dropped_objects, objects_held) => {
+    socket.to(all_ids[idx]).emit("human_output", location, item_info, neighbors_info, timer, disable, objects_held);
     
     if(command_line_options.log && Object.keys(item_info).length > 0){ //(timer - past_timer > 1 || Object.keys(item_info).length > 0)){
         fs.appendFile(dir + dateTime + '.txt', String(timer.toFixed(2)) +',' + '3' + ',' + socket_to_simulator_id(all_ids[idx]) + ',' + JSON.stringify(item_info) + '\n', err => {}); //+ ',' + JSON.stringify(neighbors_info) + '\n', err => {});
@@ -482,7 +482,7 @@ io.sockets.on("connection", socket => { //When a client connects
   });
   
   
-  socket.on("message", (message, timestamp, neighbors_list) => { //Forwarding messages between robots
+  socket.on("message", (message, timestamp, neighbors_list, robot_state) => { //Forwarding messages between robots
 
     /*
     var neighbor_keys = Object.keys(neighbors_list);
@@ -508,7 +508,7 @@ io.sockets.on("connection", socket => { //When a client connects
     
         if(Object.keys(neighbors_list).length == 0){
             for (let id_idx = 0; id_idx < clients_ids.length; id_idx++) {
-                socket.to(clients_ids[id_idx]).emit("message", message, timestamp, "ADMIN");
+                socket.to(clients_ids[id_idx]).emit("message", message, timestamp, "ADMIN", []);
             }
         } else{
             for (const [key, value] of Object.entries(neighbors_list)) {
@@ -516,7 +516,7 @@ io.sockets.on("connection", socket => { //When a client connects
 		            let c = clients_ids[user_ids_list.indexOf(key)]; 
 		            
 			        //console.log(c)
-			        socket.to(c).emit("message", message, timestamp, "ADMIN");
+			        socket.to(c).emit("message", message, timestamp, "ADMIN", []);
 		            
 		        }
             }
@@ -524,7 +524,7 @@ io.sockets.on("connection", socket => { //When a client connects
     } else{
     
         let whole_message = message["whole"];
-        socket.to(broadcaster).emit("message", whole_message, timestamp, source_id);
+        socket.to(broadcaster).emit("message", whole_message, timestamp, source_id, robot_state);
         
         //message = filter.clean(message); //censor
     
@@ -548,15 +548,18 @@ io.sockets.on("connection", socket => { //When a client connects
 		        //console.log(neighbors_list)
 		        
 		        var keys_neighbors = '"';
+		        var debug_message = '';
 		        
 		        if (command_line_options.messageLoop){
-			        socket.emit("message", message, timestamp, source_id); //Emit message to itself
+			        socket.emit("message", message, timestamp, source_id, robot_state); //Emit message to itself
 		        }
 		        
-		        console.log(timestamp,source_id,message);
+		        //console.log(timestamp,source_id,message);
 		        for (const [key, value] of Object.entries(message)) {
 		            //console.log(key)
 		            //console.log(value)
+		            
+		            debug_message += key + ": " + value
 		            
 		            if(key != "whole" && ! disable_list.includes(key) && value){
 		                //console.log("not disabled 3")
@@ -567,15 +570,17 @@ io.sockets.on("connection", socket => { //When a client connects
 				        if(user_ids_list.includes(key)){
 				            let c = clients_ids[user_ids_list.indexOf(key)]; 
 				            
-					        socket.to(c).emit("message", value, timestamp, source_id);
+					        socket.to(c).emit("message", value, timestamp, source_id, robot_state);
 				            
 				        } else if(ai_ids_list.includes(key)){
 				            let c = ai_ids[ai_ids_list.indexOf(key)];
-				            socket.to(c).emit('message', value, timestamp, source_id);
+				            socket.to(c).emit('message', value, timestamp, source_id, robot_state);
 				        }
 			        }
 		            
 		        }
+		        
+		        console.log(timestamp,source_id,debug_message);
 		        
 		        keys_neighbors += '"';
 		        
