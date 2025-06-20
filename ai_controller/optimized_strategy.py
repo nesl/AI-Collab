@@ -106,9 +106,9 @@ class UndirectedGraph:
 
 class RobotMonitor:
 
-    def __init__(self,agent_type,graph,goal_area,rooms):
+    def __init__(self,agent_id, agents_type,graph,goal_area,rooms):
 
-        self.agent_type = agent_type
+        self.agent_type = agents_type[agent_id]
         self.base_learning_rate = 0.01
         self.decay = False
         self.times = {'sensing':1.39, 'check_item':0.12,'move_straight':2.32,'turn':2.79,'turn_180':3.51}
@@ -118,8 +118,13 @@ class RobotMonitor:
         self.rooms = rooms
         self.consecutive_increases_limit = 1
         self.init_state = True
+        self.initial_reliability = 0.7
         
-        self.reliability = {r:0.7 for r in ['sense', 'carry', 'carry_heavy']}
+        self.reliability = {r:self.initial_reliability for r in ['sense', 'carry', 'carry_heavy']}
+        
+        for ag in agents_type.keys():
+            if agents_type[ag] == "human":
+                self.reliability['carry_heavy_' + ag] = self.initial_reliability
         
     def predict_actions(self,curr_pos, path, node):
         next_pos = curr_pos
@@ -352,6 +357,18 @@ class DynamicSensorPlanner:
         self.cluster_number = 0
         self.clusters = {}
         self.agents_type = agents_type
+        self.human_agents_combinations = []
+        
+        human_agents = []
+        for ag in self.agents_type.keys():
+            if self.agents_type[ag] == "human":
+                human_agents.append(ag)
+                
+        for L in range(1,len(human_agents) + 1):
+            for subset in itertools.combinations(human_agents, L):
+                self.human_agents_combinations.append(subset)
+        
+        
         #self.goal_area = goal_coords[int(len(goal_coords)/2)]
         
         self.g = UndirectedGraph()
@@ -376,7 +393,7 @@ class DynamicSensorPlanner:
         self.rooms["extra"] = []
         self.locations = self.objects_in_rooms(locations, [])
         
-        self.path_monitoring = {a:RobotMonitor(self.agents_type[a],self.g,locations['SAFE'],self.rooms) for a in self.agents}
+        self.path_monitoring = {a:RobotMonitor(a, self.agents_type,self.g,locations['SAFE'],self.rooms) for a in self.agents}
         
         #self.locations = self.recluster(locations)
         #self.locations.update(self.create_exploration_regions())
@@ -490,7 +507,7 @@ class DynamicSensorPlanner:
         #return ['HOME'] + [a + o for a in ['sense_', 'carry_', 'SAFE'] for o in self.objects] + ['REGION' + str(r) for r in self.regions_to_explore]
         #return ['HOME'] + ['sense_' + o for o in self.objects] + [a + o for a in ['carry_', 'SAFE'] for o in self.objects if o in self.objects_to_carry] + ['REGION' + str(r) for r in self.regions_to_explore]
         #return ['HOME'] + ['sense_' + 'CLUSTER' + str(c_key) for c_key in self.clusters.keys()] + [a + o for a in ['carry_', 'SAFE'] for o in self.objects if o in self.objects_to_carry] + ['REGION' + str(r) for r in self.regions_to_explore]
-        return ['HOME'] + ['sense_' + 'ROOM' + str(c_key) for c_key in self.room_locations.keys()] + ['sense_' + o for o in self.rooms['extra']] + [a + o for a in ['carry_', 'SAFE'] for o in self.objects if o in self.objects_to_carry] + ['REGION' + str(r) for r in self.regions_to_explore]
+        return ['HOME'] + ['sense_' + 'ROOM' + str(c_key) for c_key in self.room_locations.keys()] + ['sense_' + o for o in self.rooms['extra']] + [a + o for a in ['carry_', 'SAFE'] for o in self.objects if o in self.objects_to_carry] + ['REGION' + str(r) for r in self.regions_to_explore] #+ [a + o + "_" + '_'.join(ags) for a in ['carry_', 'SAFE'] for ags in self.human_agents_combinations for o in self.objects_to_carry if self.object_weights[o] > 1]
     
     def euclidean(self, a, b):
         return np.sqrt((a[0]-b[0])**2 + (a[1]-b[1])**2)
@@ -735,7 +752,7 @@ class DynamicSensorPlanner:
         if len(agents) > len(self.path_monitoring.keys()):
             for a in agents:
                 if a not in self.path_monitoring.keys():
-                    self.path_monitoring[a] = RobotMonitor(self.agents_type[a],self.g,object_locations['SAFE'],self.rooms)
+                    self.path_monitoring[a] = RobotMonitor(a, self.agents_type,self.g,object_locations['SAFE'],self.rooms)
                     
         self.agents = agents
         
@@ -1054,6 +1071,8 @@ class DynamicSensorPlanner:
             )
         '''
 
+
+        carrying_heavy_objects_nodes = {}
         
         for j in self.nodes:
         
@@ -1110,6 +1129,7 @@ class DynamicSensorPlanner:
                     )
                     
                     
+                    
                     for i in self.agents:
                     
                         if self.object_weights[object_id] > 1:
@@ -1128,6 +1148,13 @@ class DynamicSensorPlanner:
                                 (assign[i, f"carry_{object_id}"] == 1) >> (max_dist[object_id] >= total_d),
                                 f"MaxDist_{j}_{i}"
                             )
+                            
+                            '''
+                            if object_id not in carrying_heavy_objects_nodes.keys():
+                                carrying_heavy_objects_nodes[object_id] = []
+
+                            carrying_heavy_objects_nodes[object_id].append(j)
+                            '''
                         
                         model.addConstr(
                             assign[i,j] == assign[i,'SAFE'+object_id], f"Force_SAFE_{j}_{i}"
@@ -1149,6 +1176,14 @@ class DynamicSensorPlanner:
                     gp.quicksum(assign[i,j] for i in self.agents) <= 1, f"Explore_{j}_{i}"
                 )
 
+        '''
+        for cho in carrying_heavy_objects_nodes.keys():
+            if len(carrying_heavy_objects_nodes[cho]) > 1:
+                for i in self.agents:
+                    model.addConstr(
+                        gp.quicksum(assign[i,j] for j in carrying_heavy_objects_nodes[cho]) <= 1, f"Carry_exclusivity_{j}"
+                    )
+        '''
         # Linking assignment to travel
         for i in self.agents:
             for j in self.nodes:
@@ -1235,17 +1270,20 @@ class DynamicSensorPlanner:
                 )
 
         # ================== Solve & Results ==================
-        model.Params.TimeLimit = 10
+        model.Params.TimeLimit = 5
         model.optimize()
 
         objectives = []
 
         # Print routes with order
-        if model.status == GRB.OPTIMAL or model.status == GRB.TIME_LIMIT:
+        if (model.status == GRB.OPTIMAL or model.status == GRB.TIME_LIMIT) and model.solCount:
         
             for s in range(model.NumObj):
                 model.params.ObjNumber = s
-                print(f"Total objective: {s} {model.ObjNVal:.2f}")
+                try:
+                    print(f"Total objective: {s} {model.ObjNVal:.2f}")
+                except:
+                    pdb.set_trace()
                 objectives.append(model.ObjNVal)
             
             print(self.LLR)

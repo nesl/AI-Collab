@@ -1450,6 +1450,17 @@ while True:
                                     action["robot"] = -1
                             
                             del action["message_ai"]
+                            
+                        elif action["action"] == Action.send_message.value and "message_queue" in action:
+                            if any(action["message_queue"]):
+                                
+                                if any(action["message"]):
+                                    high_level_action_finished = False
+                                    message_queue.append(action["message_queue"])
+                                else:
+                                    action["message"] = action["message_queue"]
+                            
+                            del action["message_queue"]
                         
                         if args.control == "optimized":
                             if action["action"] <= Action.move_right.value and action["action"] >= Action.move_up.value:

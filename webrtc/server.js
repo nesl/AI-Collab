@@ -559,7 +559,7 @@ io.sockets.on("connection", socket => { //When a client connects
 		            //console.log(key)
 		            //console.log(value)
 		            
-		            debug_message += key + ": " + value
+		            debug_message += key + ": " + value + " ";
 		            
 		            if(key != "whole" && ! disable_list.includes(key) && value){
 		                //console.log("not disabled 3")

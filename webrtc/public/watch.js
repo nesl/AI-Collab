@@ -1659,6 +1659,7 @@ socket.on("human_output", (location, item_info, neighbors_info, timer, disable, 
             object_html.style.borderWidth = "thin";
         }
         
+        update_create_object_tooltip(object_key);
         
         
     });
@@ -2664,26 +2665,26 @@ socket.on("message", (message, timestamp, id, robot_state) => {
 	
 	update_neighbors_info(id, timestamp, robot_state[0], false);
 	
+	for(ob_idx = 0; ob_idx < neighbors_list_store.length; ob_idx++){
+	    if(id == neighbors_list_store[ob_idx][0]){ 
+	    
+	        var x = Math.pow(neighbors_list_store[ob_idx][2] - human_location[0],2);
+            var y = Math.pow(neighbors_list_store[ob_idx][3] - human_location[2],2);
+        
+            var distance = Math.sqrt(x+y);
+	    
+	        const divmod_results = divmod(neighbors_list_store[ob_idx][4], 60);
+            const divmod_results2 = divmod(divmod_results[1],1);
+            
+            const text_node = document.getElementById(neighbors_list_store[ob_idx][0] + '_entry');
+            
+            text_node.children[0].rows[1].cells[0].textContent = "Last seen in location (" + removeTags(String(neighbors_list_store[ob_idx][2].toFixed(1))) + "," + removeTags(String(neighbors_list_store[ob_idx][3].toFixed(1))) + ") (Distance: "+ String(distance.toFixed(1)) +" m) at time " + removeTags(pad(String(divmod_results[0]),2) + ":" + pad(String(divmod_results2[0]),2));
+	    }
+    }
+	
 	Object.keys(robot_state[1]).forEach(function(object_key) {
 
         update_objects_info(object_key, timestamp, [], robot_state[1][object_key], 0, false)
-        
-        for(ob_idx = 0; ob_idx < object_list_store.length; ob_idx++){
- 		    if(object_key == object_list_store[ob_idx][0]){ 
- 		    
- 		        var x = Math.pow(neighbors_list_store[ob_idx][2] - human_location[0],2);
-                var y = Math.pow(neighbors_list_store[ob_idx][3] - human_location[2],2);
-            
-                var distance = Math.sqrt(x+y);
- 		    
- 		        const divmod_results = divmod(neighbors_list_store[ob_idx][4], 60);
-                const divmod_results2 = divmod(divmod_results[1],1);
-                
-                const text_node = document.getElementById(neighbors_list_store[ob_idx][0] + '_entry');
-                
-                text_node.children[0].rows[1].cells[0].textContent = "Last seen in location (" + removeTags(String(neighbors_list_store[ob_idx][2].toFixed(1))) + "," + removeTags(String(neighbors_list_store[ob_idx][3].toFixed(1))) + ") (Distance: "+ String(distance.toFixed(1)) +" m) at time " + removeTags(pad(String(divmod_results[0]),2) + ":" + pad(String(divmod_results2[0]),2));
- 		    }
-        }
         
     });
 
@@ -2875,9 +2876,10 @@ socket.on("message", (message, timestamp, id, robot_state) => {
                     
                         break;
                     case 'item_multiple':
-                        var danger_statuses = eval(mregex_match[6]);
-                        var probs = eval(mregex_match[8]);
-                        var froms = eval(mregex_match[10]);
+                        
+                        var danger_statuses = mregex_match[6].substr(mregex_match[6].indexOf("[")+1,mregex_match[6].indexOf("]")-1).split(",");
+                        var probs = eval(mregex_match[8].replaceAll("%",""));
+                        var froms = mregex_match[10].substr(mregex_match[6].indexOf("[")+1,mregex_match[10].indexOf("]")-1).split(",");
                     
                         for(f_idx = 0; f_idx < froms.length; f_idx++){
                             add_external_estimates(object_id, froms[f_idx], danger_statuses[f_idx], probs[f_idx]);
@@ -2887,21 +2889,7 @@ socket.on("message", (message, timestamp, id, robot_state) => {
                     
                 }
                 
-                var object_tooltip = document.getElementById(object_id + "_tooltip");
-                
-                if(object_tooltip){
-                    object_tooltip.textContent = multiple_item_process(object_id);
-                } else{
-                    var object_element = document.getElementById(object_id);
-                    object_element.classList.add("tooltip");
-                    if(object_element){
-                        var span_cnl = document.createElement('span');
-                        span_cnl.classList.add("tooltiptext");
-                        span_cnl.textContent = multiple_item_process(object_id);
-                        span_cnl.setAttribute("id", object_id + "_tooltip");
-                        object_element.appendChild(span_cnl);
-                    }
-                }
+                update_create_object_tooltip(object_id);
                 
             }
         }
@@ -2923,6 +2911,30 @@ socket.on("message", (message, timestamp, id, robot_state) => {
 	}
 	*/
 });
+
+function update_create_object_tooltip(object_id){
+
+    var object_tooltip = document.getElementById(object_id + "_object_tooltip");
+                
+    if(object_tooltip){
+        object_tooltip.textContent = multiple_item_process(object_id);
+    } else{
+        var object_element = document.getElementById("label_" + object_id);
+        if(object_element){
+        
+            const multiple_items = multiple_item_process(object_id);
+        
+            if(multiple_items){
+                object_element.classList.add("tooltip");
+                var span_cnl = document.createElement('span');
+                span_cnl.classList.add("tooltiptext_object");
+                span_cnl.innerHTML = multiple_items;
+                span_cnl.setAttribute("id", object_id + "_object_tooltip");
+                object_element.appendChild(span_cnl);
+            }
+        }
+    }
+}
 
 function add_external_estimates(object_id, id, danger_status, prob){
 
@@ -2953,9 +2965,9 @@ function multiple_item_process(object_id){
             for(ob_idx = 0; ob_idx < extra_info_estimates[object_id].length; ob_idx++){  
             
                 if(info_str){
-                    info_str += '\n'
+                    info_str += '<br>'
                 }
-                info_str += "From " + extra_info_estimates[object_id][ob_idx][0] + ": " + extra_info_estimates[object_id][ob_idx][1] + ", Prob. Correct: " + extra_info_estimates[object_id][ob_idx][2].toString();
+                info_str += "From " + extra_info_estimates[object_id][ob_idx][0] + ": " + extra_info_estimates[object_id][ob_idx][1] + ", Prob. Correct: " + extra_info_estimates[object_id][ob_idx][2].toString() + "%";
         
             }
         }
