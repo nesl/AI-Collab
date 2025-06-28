@@ -61,6 +61,7 @@ parser.add_argument('--video-index', type=int, default=0, help='index of the fir
 parser.add_argument('--config', type=str, default='team_structure.yaml', help='Path to team structure configuration file')
 parser.add_argument('--sql', default=True, action="store_true", help='Use SQL for message parsing')
 parser.add_argument('--no-reset', default=False, action="store_true", help='Continue without waiting for reset')
+parser.add_argument('--log', default=False, action="store_true", help='Log data')
 #parser.add_argument('--communication-distance', type=int, default=5, help='local communication distance limit')
 #parser.add_argument("--openai", action='store_true', help="Use openai.")
 #parser.add_argument("--llm", action='store_true', help="Use LLM.")
@@ -304,7 +305,7 @@ class RobotState:
                         sensor_parameters = env.neighbors_sensor_parameters[n]
                         robot_type = env.neighbors_info[n][1]
                         
-                    self.cursor.execute('''INSERT INTO agents (agent_id, idx, last_seen_location, last_seen_time, type, carrying_object, disabled, sensor_benign, sensor_dangerous,collaborative_score,collaborative_score_of_me, team, current_state,last_seen_room,attitude) VALUES (?, ?, "[]", 0, ?, "None", -1, ?, ?, 10, 10, "[]", '', '','')''', (robot_id2, n, robot_type, sensor_parameters[0],sensor_parameters[1]))  
+                    self.cursor.execute('''INSERT INTO agents (agent_id, idx, last_seen_location, last_seen_time, type, carrying_object, disabled, sensor_benign, sensor_dangerous,collaborative_score,collaborative_score_of_me, team, current_state,last_seen_room,attitude) VALUES (?, ?, "[]", 0, ?, NULL, -1, ?, ?, 10, 10, "[]", '', '','')''', (robot_id2, n, robot_type, sensor_parameters[0],sensor_parameters[1]))  
                     
             else:
                 item_idx = 0            
@@ -883,10 +884,19 @@ class RobotState:
         
             if not item_output["carried_by"]:
                 value = None
+                agent = self.get("objects", "carried_by", item_idx)
+                object_carried = None
             else:
                 value = item_output["carried_by"]
+                agent = value
+                object_carried = item_id
+                
+                
                 
             self.cursor.execute("""UPDATE objects SET carried_by = ? WHERE object_id = ?;""", (value, item_id,)) 
+            
+            if agent:            
+                self.cursor.execute("""UPDATE agents SET carrying_object = ? WHERE agent_id = ?;""", (object_carried, agent,))
         
         if information_change:
             #print(item_output)
@@ -1189,8 +1199,8 @@ while True:
                 for ob_idx,ob in enumerate(objects):
                     if not ob[2]:
                         location = robotState.items[ob_idx]["item_location"]
-                        time = robotState.items[ob_idx]["item_time"][0]
-                        new_object_info.append([str(ob[0]),ob[2],{}, location[0], location[1], time])
+                        time_observed = robotState.items[ob_idx]["item_time"][0]
+                        new_object_info.append([str(ob[0]),ob[2],{}, location[0], location[1], time_observed])
                     else:
                         not_found = True
                         for ob2 in env.object_info:

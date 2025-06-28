@@ -7,7 +7,8 @@ from sklearn.cluster import DBSCAN
 import math
 from collections import deque, defaultdict
 import time
-
+import json
+import os
 
 def calculateHValue(current,dest):
 
@@ -106,7 +107,7 @@ class UndirectedGraph:
 
 class RobotMonitor:
 
-    def __init__(self,agent_id, agents_type,graph,goal_area,rooms):
+    def __init__(self,agent_id, agents_type,graph,goal_area,rooms,log_file=None):
 
         self.agent_type = agents_type[agent_id]
         self.base_learning_rate = 0.01
@@ -119,13 +120,30 @@ class RobotMonitor:
         self.consecutive_increases_limit = 1
         self.init_state = True
         self.initial_reliability = 0.7
+        self.agent_id = agent_id
+        self.agents_type = agents_type
+        self.goal = ''
+        self.object_carried = ''
         
-        self.reliability = {r:self.initial_reliability for r in ['sense', 'carry', 'carry_heavy']}
+        self.log_file = log_file
         
-        for ag in agents_type.keys():
-            if agents_type[ag] == "human":
-                self.reliability['carry_heavy_' + ag] = self.initial_reliability
+        self.reliability = {r:self.initial_reliability for r in ['sense', 'carry', 'carry_heavy_AI']}
         
+        human_agents = []
+        for ag in self.agents_type.keys():
+            if self.agents_type[ag] == "human" and ag != agent_id:
+                human_agents.append(ag)
+        
+        human_agents.sort()
+        human_agents_combinations = []    
+        for L in range(1,len(human_agents) + 1):
+            for subset in itertools.combinations(human_agents, L):
+                human_agents_combinations.append(subset)
+        
+        for ag in human_agents_combinations:
+            if self.agents_type[agent_id] == "human":
+                self.reliability['carry_heavy_' + '_'.join(ag)] = self.initial_reliability
+            self.reliability['carry_heavy_AI_' + '_'.join(ag)] = self.initial_reliability
     def predict_actions(self,curr_pos, path, node):
         next_pos = curr_pos
         last_direction = 0
@@ -172,8 +190,12 @@ class RobotMonitor:
                     actions['check_item'] += 1
         elif "carry" in node:
             try:
-                return_path = findPath(np.array(path[-1]),np.array(self.goal_area),self.occMap)
-                all_actions = self.predict_actions(path[-1], return_path, '')
+                if not path: #Too close to destination
+                    return_path = findPath(np.array(curr_pos),np.array(self.goal_area),self.occMap)
+                    all_actions = self.predict_actions(curr_pos, return_path, '')
+                else:
+                    return_path = findPath(np.array(path[-1]),np.array(self.goal_area),self.occMap)
+                    all_actions = self.predict_actions(path[-1], return_path, '')
             
                 for a in all_actions.keys():
                     actions[a] += all_actions[a]
@@ -196,15 +218,48 @@ class RobotMonitor:
     
         self.predicted_actions = self.predict_actions(curr_pos, path, node)
         
-    def update_reliability(self, task, success):
+    def update_reliability(self, task, success, team=[], current_time=0):
     
         #alpha_success = 1.1
         #alpha_fail = 0.9
         lambda_param = 0.2
         #pdb.set_trace()
         
+        if team and task == "carry_heavy":
         
-        self.reliability[task] = max(min((1-lambda_param)*self.reliability[task] + lambda_param * success, 1), 0)  # Cap at 1
+            AI_team = []
+            human_team = []
+            for t in team.keys():
+                if self.agent_id in team[t]:
+                    for agent in team[t]:
+                        if self.agents_type[agent] == "ai" and agent not in AI_team:
+                            AI_team.append(agent)
+                        elif agent not in human_team:
+                            human_team.append(agent)
+                    break
+        
+            if self.agents_type[self.agent_id] == "human":
+                human_team.remove(self.agent_id)
+                
+                if human_team and AI_team:
+                    human_team.sort()
+                    task = 'carry_heavy_AI_' + '_'.join(human_team)
+                elif human_team:
+                    human_team.sort()
+                    task = 'carry_heavy_' + '_'.join(human_team)
+                else:
+                    task = 'carry_heavy_AI'
+            else:
+                if human_team:
+                    human_team.sort()
+                    task = 'carry_heavy_AI_' + '_'.join(human_team)
+                else:
+                    task = 'carry_heavy_AI'
+
+        try:
+            self.reliability[task] = max(min((1-lambda_param)*self.reliability[task] + lambda_param * success, 1), 0)  # Cap at 1
+        except:
+            pdb.set_trace()
         '''
         if success:
             self.reliability[task] = min(self.reliability[task] * alpha_success, 1)  # Cap at 1
@@ -212,7 +267,13 @@ class RobotMonitor:
             self.reliability[task] *= alpha_fail  # No floor (can approach 0)
         '''
         
-    def update_model(self, actual_time, time_factor):
+        if self.log_file: 
+            try:
+                self.log_file.write(str(round(current_time,2))+",0," + self.agent_id + "," + json.dumps(self.reliability) + '\n')
+            except:
+                pdb.set_trace()
+        
+    def update_model(self, actual_time, time_factor, current_time=0):
     
         if self.decay:
             eta = self.base_learning_rate / (1 + self.updates)
@@ -232,6 +293,12 @@ class RobotMonitor:
             self.times[f] += eta * error * self.predicted_actions[f]
         
         self.updates += 1
+        
+        if self.log_file: 
+            try:
+                self.log_file.write(str(round(current_time,2))+",1," + self.agent_id + "," + json.dumps(self.times) + '\n')
+            except:
+                pdb.set_trace()
         
     def set(self, goal, occMap, room_locations):
         
@@ -297,7 +364,7 @@ class RobotMonitor:
                     queue.append(neighbor)
         return distances
     
-    def move_to(self, new_node):
+    def move_to(self, new_node, current_time=0):
         if self.current_node is None:
             print(f"Robot starts at {new_node}")
             self.current_node = new_node
@@ -317,7 +384,7 @@ class RobotMonitor:
         if new_dist > current_dist:
             self.consecutive_increases += 1
             if self.consecutive_increases >= self.consecutive_increases_limit:
-                print(f"⚠️ Warning: Detected {self.consecutive_increases} consecutive steps away from goal")
+                print(f"⚠️ Warning: Detected {self.consecutive_increases} consecutive steps away from goal", self.agent_id)
                 return_value = 1
             else:
                 print(f"📢 Notice: Distance increased (+{new_dist - current_dist})")
@@ -329,14 +396,20 @@ class RobotMonitor:
         
         if self.current_node == self.goal and not self.moving_finished:
             return_value = 2
-            self.update_model(time.time()-self.initial_time, "moving")
+            self.update_model(time.time()-self.initial_time, "moving", current_time=current_time)
             self.initial_time = time.time()
             self.moving_finished = True
+        
+        if self.log_file: 
+            try:
+                self.log_file.write(str(round(current_time,2))+",2," + self.agent_id + "," + str(return_value) + '\n')
+            except:
+                pdb.set_trace()
         
         return return_value
 
 class DynamicSensorPlanner:
-    def __init__(self, agents, objects, object_beliefs, locations, agent_home, PD_PB_params, object_weights, occMap, goal_coords, room_locations, agents_type, objects_to_carry=[]):
+    def __init__(self, agent_id, agents, objects, object_beliefs, locations, agent_home, PD_PB_params, object_weights, occMap, goal_coords, room_locations, agents_type, objects_to_carry=[], log_name=""):
         self.agents = agents
         self.objects = objects
         self.PD_PB = PD_PB_params  # Dict: {agent: (PD, PB)}
@@ -393,7 +466,21 @@ class DynamicSensorPlanner:
         self.rooms["extra"] = []
         self.locations = self.objects_in_rooms(locations, [])
         
-        self.path_monitoring = {a:RobotMonitor(a, self.agents_type,self.g,locations['SAFE'],self.rooms) for a in self.agents}
+        
+        log_file_monitor = None
+        
+        if log_name:
+            log_dir = './log/'
+            if not os.path.exists(log_dir):
+                os.makedirs(log_dir)
+            
+            self.log_state_f = open(log_dir + log_name + '_' + agent_id + '_strategy.txt', "a")
+            self.log = True
+            log_file_monitor = open(log_dir + log_name + '_' + agent_id + '_monitor.txt', "a")
+        else:
+            self.log = False
+        
+        self.path_monitoring = {a:RobotMonitor(a, self.agents_type,self.g,locations['SAFE'],self.rooms,log_file_monitor) for a in self.agents}
         
         #self.locations = self.recluster(locations)
         #self.locations.update(self.create_exploration_regions())
@@ -415,6 +502,12 @@ class DynamicSensorPlanner:
         
         for ob in object_beliefs:
             if ob not in self.past_beliefs:
+                if ob[1] not in self.LLR.keys():
+                    PD, PB = self.PD_PB[ob[1]]
+                    self.LLR[ob[1]] = {
+                        1: np.log(PD / (1 - PB)),  # LLR for Y=1
+                        0: np.log((1 - PD) / PB)    # LLR for Y=0
+                    }
                 self.update_belief(ob[0], ob[1], ob[2])
                 self.past_beliefs.append(ob)
         
@@ -429,7 +522,6 @@ class DynamicSensorPlanner:
         self.group_belief = {'ROOM'+str(label): self.prior_belief for label in self.room_numbers}  # Initial belief
         #self.group_tau = {'ROOM'+str(label): (self.tau_initial * len(self.rooms[label])) if label < len(self.room_locations) else self.tau_initial for label in self.room_numbers}  # Threshold scaled by group size
         self.group_tau = {'ROOM'+str(label): self.tau_initial for label in self.room_numbers}  # Threshold scaled by group size
-        
         
          
         self.update_positions(agent_home,[])
@@ -724,7 +816,10 @@ class DynamicSensorPlanner:
         self.belief[object_j] = posterior
         
         # Update remaining confidence threshold
-        self.tau_current[object_j] -= self.LLR[agent_i][report_Y]
+        try:
+            self.tau_current[object_j] -= self.LLR[agent_i][report_Y]
+        except:
+            pdb.set_trace()
         self.tau_current[object_j] = max(0, self.tau_current[object_j])  # Threshold ≥ 0
         self.sensed_objects.append((agent_i,object_j))
         
@@ -753,7 +848,17 @@ class DynamicSensorPlanner:
             for a in agents:
                 if a not in self.path_monitoring.keys():
                     self.path_monitoring[a] = RobotMonitor(a, self.agents_type,self.g,object_locations['SAFE'],self.rooms)
-                    
+        
+        
+        if len(agents) > len(self.LLR.keys()):      
+            for i in self.agents:
+                if i not in self.LLR.keys():
+                    PD, PB = self.PD_PB[i]
+                    self.LLR[i] = {
+                        1: np.log(PD / (1 - PB)),  # LLR for Y=1
+                        0: np.log((1 - PD) / PB)    # LLR for Y=0
+                    }
+                 
         self.agents = agents
         
         self.object_weights = object_weights
@@ -794,6 +899,13 @@ class DynamicSensorPlanner:
         
         for ob in object_beliefs:
             if ob not in self.past_beliefs:
+                if ob[1] not in self.LLR.keys():
+                    PD, PB = self.PD_PB[ob[1]]
+                    self.LLR[ob[1]] = {
+                        1: np.log(PD / (1 - PB)),  # LLR for Y=1
+                        0: np.log((1 - PD) / PB)    # LLR for Y=0
+                    }
+                    
                 self.update_belief(ob[0], ob[1], ob[2])
                 self.past_beliefs.append(ob)
             
@@ -853,6 +965,9 @@ class DynamicSensorPlanner:
                     self.objects.remove(ol_key)
                 except:
                     pdb.set_trace()
+                    
+                if ol_key in self.objects_to_carry:
+                    self.objects_to_carry.remove(ol_key)
             
         #self.locations.update(self.create_exploration_regions())
             
@@ -947,11 +1062,14 @@ class DynamicSensorPlanner:
                 print(time.time() - init_time)        
         
 
-    def replan(self,skip_state=[],pretend=False):
+    def replan(self,skip_state=[],pretend=False, current_time=0):
     
         print("SKIP STATE", skip_state)
     
         model = gp.Model("FixedRoutingAssignment")
+        
+        model.setParam('Threads', 15)
+        
         M = len(self.nodes) + 1  # Upper bound for order variables
         
         # ================== Decision Variables ==================
@@ -972,11 +1090,23 @@ class DynamicSensorPlanner:
         sync_order = model.addVars([j for j in self.objects if j in self.objects_to_carry and self.object_weights[j] > 1], vtype=GRB.INTEGER, name="Sync_Carry")
         
         
+        picked = model.addVars(self.objects_to_carry, vtype=GRB.BINARY, name="PickedUp")
+        
         max_dist = model.addVars(
             [j for j in self.objects if self.object_weights[j] > 1], 
             lb=0, 
             name="MaxDist"
         )
+        
+        # Only for multi-agent carry objects:
+        group_assign = {}
+        for j in self.nodes:
+            if 'carry' in j:
+                obj_id = j.split('_')[1]
+                required_agents = self.object_weights[obj_id]
+                if required_agents > 1 and obj_id in self.objects_to_carry:
+                    for group in itertools.combinations(self.agents, required_agents):
+                        group_assign[(j, group)] = model.addVar(vtype=GRB.BINARY, name=f"GroupAssign_{j}_{'_'.join(group)}")
         
 
         # ================== Objective Function ==================
@@ -1017,10 +1147,13 @@ class DynamicSensorPlanner:
         confidence_penalty = gp.quicksum(slack[str(j)] * self.penalty_weight for j in self.clusters)
         '''
         
-        uncertainty_penalty = gp.quicksum(
-            (self.group_tau[j.split('_')[1]] - gp.quicksum(assign[i,j] * self.LLR[i][1] for i in self.agents)) * self.group_belief[j.split('_')[1]]
-            for j in self.nodes if 'sense' in j
-        )
+        try:
+            uncertainty_penalty = gp.quicksum(
+                (self.group_tau[j.split('_')[1]] - gp.quicksum(assign[i,j] * self.LLR[i][1] for i in self.agents)) * self.group_belief[j.split('_')[1]]
+                for j in self.nodes if 'sense' in j
+            )
+        except:
+            pdb.set_trace()
         #slack = model.addVars(['ROOM'+str(c) if c < len(self.room_locations) else self.rooms[len(self.room_locations)][c-len(self.room_locations)] for c in self.room_numbers], lb=0, name="Slack")  # Shortfall per object
         #confidence_penalty = gp.quicksum(slack['ROOM'+str(j)] * self.penalty_weight if j < len(self.room_locations) else slack[self.rooms[len(self.room_locations)][j-len(self.room_locations)]] * self.penalty_weight for j in self.room_numbers)
         
@@ -1030,9 +1163,61 @@ class DynamicSensorPlanner:
         slack_utilization = model.addVars([a for a in self.agents],  vtype=GRB.BINARY, name="Slack_utilization")  # Slack per agent utilization
         subutilization_penalty = gp.quicksum(slack_utilization[a] * self.penalty_weight for a in self.agents)
         
+        #not_carrying_penalty = 
         
+        #reliability_objective = gp.quicksum(assign[i,j]*(1-self.path_monitoring[i].reliability[self.node_type[j]]) for i in self.agents for j in self.nodes if 'sense' in j or 'carry' in j)
         
-        reliability_objective = gp.quicksum(assign[i,j]*(1-self.path_monitoring[i].reliability[self.node_type[j]]) for i in self.agents for j in self.nodes if 'sense' in j or 'carry' in j)
+        # 1. Individual agent reliabilities (for all sense, and carry objects requiring just one agent)
+        indiv_reliability = gp.quicksum(
+            assign[i, j] * (1 - self.path_monitoring[i].reliability[self.node_type[j]])
+            for i in self.agents for j in self.nodes
+            if (
+                ('sense' in j)
+                or ('carry' in j and self.object_weights[j.split('_')[1]] == 1)
+            )
+        )
+        
+        self.group_reliability = {}
+        for group_size in range(2, len(self.agents)+1):
+            for group in itertools.combinations(self.agents, group_size):
+                human_team = []
+                ai_team = []
+                for ag in group:
+                    if self.agents_type[ag] == "human":
+                        human_team.append(ag)
+                    else:
+                        ai_team.append(ag)
+                        
+                reliability_group_score = 0
+                
+                if human_team and ai_team:
+                    human_team.sort()
+                    
+                    node_carry = "carry_heavy_AI_" + "_".join(human_team)
+                    
+                    reliability_group_score = self.path_monitoring[ai_team[0]].reliability[node_carry]
+                elif human_team:
+                    human_monitor = human_team.pop(0)
+                    human_team.sort()
+                    
+                    node_carry = "carry_heavy_" + "_".join(human_team)
+                    reliability_group_score = self.path_monitoring[human_monitor].reliability[node_carry]
+                else:
+                    node_carry = "carry_heavy_AI"
+                    
+                    reliability_group_score = self.path_monitoring[ai_team[0]].reliability[node_carry]
+                    
+                self.group_reliability[frozenset(group)] = reliability_group_score
+
+        # 2. Group reliability (for only carry objects requiring >1 agent)
+        group_reliability = gp.quicksum(
+            group_assign[(j, group)] * (1 - self.group_reliability[frozenset(group)])
+            for j in self.nodes
+            if 'carry' in j and self.object_weights[j.split('_')[1]] > 1
+            for group in itertools.combinations(self.agents, self.object_weights[j.split('_')[1]])
+        )
+
+        reliability_objective = indiv_reliability + group_reliability
         
         
         # Collaborative travel time (max distance per object)
@@ -1050,14 +1235,20 @@ class DynamicSensorPlanner:
         except:
             pdb.set_trace()
 
+
+        completeness = gp.quicksum(picked[j] for j in self.objects_to_carry)
+
+
         
-        objective_weights = [0.1,1,1,1,1]
-        objective_names = ["distance to travel", "completeness", "uncertainty reduction", "reliability", "agent utilization"]
+        objective_weights = [0.1,1,1,1,1,10]
+        objective_names = ["distance to travel", "completeness", "uncertainty reduction", "reliability", "agent utilization", "object carrying"]
         model.setObjectiveN(inspection_time + travel_time + collaborative_travel - exploration_reward, index=0, weight=objective_weights[0])
         model.setObjectiveN(confidence_penalty, index=1, weight=objective_weights[1])
         model.setObjectiveN(uncertainty_penalty, index=2, weight=objective_weights[2])
         model.setObjectiveN(reliability_objective, index=3, weight=objective_weights[3]) 
         model.setObjectiveN(subutilization_penalty, index=4, weight=objective_weights[4]) 
+        # give it its own objective index, e.g. index=1, with whatever weight you like:
+        model.setObjectiveN(-completeness,index=5, weight=objective_weights[5])
         #Minimize agents subutilization
         #model.setObjective(inspection_time + travel_time + uncertainty_penalty + confidence_penalty + collaborative_travel, GRB.MINIMIZE)
 
@@ -1124,9 +1315,29 @@ class DynamicSensorPlanner:
                 
                 
                 if object_id in self.objects_to_carry and len(self.agents) >= self.object_weights[object_id]:
-                    model.addConstr(
-                        gp.quicksum(assign[i,j] for i in self.agents) == self.object_weights[object_id], f"Carry_{j}"
-                    )
+                
+                
+                
+                    required_agents = self.object_weights[object_id]
+                    if required_agents > 1:
+                        groups = list(itertools.combinations(self.agents, required_agents))
+                        model.addConstr(
+                            gp.quicksum(group_assign[(j, group)] for group in groups) == 1,
+                            f"OneGroupAssigned_{j}"
+                        )
+                        for group in groups:
+                            for i in self.agents:
+                                if i in group:
+                                    model.addConstr(assign[i, j] >= group_assign[(j, group)], f"GroupToAgent_{j}_{'_'.join(group)}_{i}")
+                                else:
+                                    model.addConstr(assign[i, j] <= 1 - group_assign[(j, group)], f"GroupNoAgent_{j}_{'_'.join(group)}_{i}")
+
+
+                            
+                    else:
+                        model.addConstr(
+                            gp.quicksum(assign[i,j] for i in self.agents) == self.object_weights[object_id], f"Carry_{j}"
+                        )
                     
                     
                     
@@ -1269,6 +1480,26 @@ class DynamicSensorPlanner:
                     f"FixedTravel_{ss[0]}"
                 )
 
+
+        for j in self.objects_to_carry:
+            carry_node = f"carry_{j}"
+            w = self.object_weights[j]
+            # at least w assignments if picked[j]=1
+            try:
+                model.addConstr(
+                    gp.quicksum(assign[i, carry_node] for i in self.agents)
+                    >= picked[j] * w,
+                    name=f"PickUpLB_{j}"
+                )
+                # at most w assignments if picked[j]=1
+                model.addConstr(
+                    gp.quicksum(assign[i, carry_node] for i in self.agents)
+                    <= picked[j] * w,
+                    name=f"PickUpUB_{j}"
+                )
+            except:
+                pdb.set_trace()
+
         # ================== Solve & Results ==================
         model.Params.TimeLimit = 5
         model.optimize()
@@ -1320,14 +1551,31 @@ class DynamicSensorPlanner:
                         self.set_monitoring(i, sorted_assigned[0][0], skip_state)
                         print("took", time.time() - first_time)
                         
-                
             
-            return assignments, (objectives,objective_weights,objective_names)
+            
         else:
             print("No solution found", model.status, skip_state)
+            assignments = []
+            objectives = []
+            objective_weights = []
+            objective_names = []
             #pdb.set_trace()
         
-        return [], []
+        
+        if self.log:
+            collected_info = {"nodes": self.nodes, "agents": self.agents, "objects": self.objects, "sensor_parameters": self.PD_PB, "objects_to_carry": self.objects_to_carry, "object_weights": self.object_weights, "pretend": pretend, "skip_state": skip_state, "objectives": objectives, "objective_weights": objective_weights, "objective_names": objective_names, "assignments": assignments, "group_tau": self.group_tau, "current_positions": self.current_positions, "room_locations": list(self.room_locations.keys()), "occMap": self.occMap.tolist(), "locations": self.locations, "rooms": self.rooms, "sensed_clusters": self.sensed_clusters, "sensed_objects": self.sensed_objects, "already_carried": self.already_carried, "group_belief":self.group_belief, "LLR": self.LLR, "tau_current": self.tau_current, "belief": self.belief, "past_beliefs": self.past_beliefs, "original_room_locations": list(self.original_room_locations.keys()), "reliability": [[i,self.path_monitoring[i].reliability] for i in self.path_monitoring.keys()], "activity_times": [[i,self.path_monitoring[i].times] for i in self.path_monitoring.keys()], "time":current_time} 
+            
+            try:
+                json.dumps(collected_info)
+            except:
+                pdb.set_trace()
+            self.log_state_f.write(json.dumps(collected_info)+'\n')
+        
+        
+        if assignments:
+            return assignments, (objectives,objective_weights,objective_names)
+        else:
+            return [], []
 # ================== Data Setup ==================
 
 if __name__ == "__main__":

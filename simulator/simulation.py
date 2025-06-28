@@ -669,7 +669,7 @@ class Simulation(Controller):
                     self.timer_limit = float(self.cfg['timer'])
                     self.enable_logs = True
                     
-                    
+                print(address)
                 self.sio.connect(address)
 
     def log_init_data(self):
@@ -3722,6 +3722,7 @@ class Simulation(Controller):
         sim_elapsed_time = 0
         disabled_robots = []
         dropped_objects = []
+        dropped_objects_message_counter = 0
         
         
         keys_time_unheld = [0]*len(self.user_magnebots_ids)
@@ -4332,15 +4333,18 @@ class Simulation(Controller):
                                     if sidx < len(sort_indices):
                                         all_magnebots[robot_ids[sort_indices[sidx]]].stats.dropped_outside_goal.append(self.object_names_translate[grasped_object])
                                         robot_id = self.robot_names_translate[str(all_magnebots[robot_ids[sort_indices[sidx]]].robot_id)]
-                                        dropped_objects.append((robot_id,self.object_names_translate[grasped_object]))
+                                        if (robot_id,self.object_names_translate[grasped_object]) not in dropped_objects:
+                                            dropped_objects.append((robot_id,self.object_names_translate[grasped_object]))
                                         
                                         if all_magnebots[robot_ids[sort_indices[sidx]]].ui_elements: 
                                             messages.append(self.info_message_ui(all_magnebots, robot_ids[sort_indices[sidx]], "Penalty! Object accidentaly dropped!", "red"))
                             
                                 all_magnebots[idx].stats.dropped_outside_goal.append(self.object_names_translate[grasped_object])
-                                robot_id = self.robot_names_translate[str(all_magnebots[all_idx].robot_id)]
-                                dropped_objects.append((robot_id,self.object_names_translate[grasped_object]))
+                                robot_id = self.robot_names_translate[str(all_magnebots[idx].robot_id)]
                                 
+                                if (robot_id,self.object_names_translate[grasped_object]) not in dropped_objects:
+                                    dropped_objects.append((robot_id,self.object_names_translate[grasped_object]))
+                                print("Dropped object!", dropped_objects)
                                 if all_magnebots[idx].ui_elements:
                                     messages.append(self.info_message_ui(all_magnebots, idx, "Penalty! Object accidentaly dropped!", "red"))
                             
@@ -4828,10 +4832,15 @@ class Simulation(Controller):
                         self.sio.emit('ai_output', (all_idx, json_numpy.dumps(limited_map), reduced_metadata, objects_held, item_info, ai_status, extra_status, all_magnebots[all_idx].strength, self.timer, all_magnebots[all_idx].disabled, [all_magnebots[all_idx].dynamic.transform.position.tolist(), QuaternionUtils.quaternion_to_euler_angles(all_magnebots[all_idx].dynamic.transform.rotation).tolist()],dropped_objects))
                         if all_magnebots[all_idx].disabled:
                             all_magnebots[all_idx].last_output = True
-
+    
+                        if dropped_objects:
+                            dropped_objects_message_counter += 1
+                            if dropped_objects_message_counter >= len(self.ai_magnebots_ids):
+                                dropped_objects = []
+                                dropped_objects_message_counter = 0
                 idx += 1
             
-            dropped_objects = [] 
+             
             
             #If timer expires end simulation, else keep going
             if self.timer_limit and self.timer_limit-self.timer <= 0:

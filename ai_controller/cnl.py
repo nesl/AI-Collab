@@ -694,6 +694,10 @@ class MessagePattern:
     @staticmethod
     def order_response_negative_regex():
         return "I cannot help you right now (\w+), I'm following the orders of (\w+)"
+        
+    @staticmethod
+    def order_response_same(robot_id):
+        return "I'm doing what you requested me, " + str(robot_id) + ". "
     
     @staticmethod
     def order_not_obey(robot_id):

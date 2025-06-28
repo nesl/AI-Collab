@@ -10,6 +10,78 @@ var session_ongoing = false;
 var countdown_ongoing = null;
 var countDownDate = null;
 
+
+const likertQuestions = [
+    'Generally, I trust automated agents',
+    'Automated agents help me solve many problems',
+    'I think it’s a good idea to rely on automated agents for help',
+    'I don’t trust the information I get from automated agents',
+    'Automated agents are reliable',
+    'I rely on automated agents'
+];
+
+// 2. Grab the <ul> container
+const list = document.getElementById('question_list');
+
+// 3. For each question, build and append an <li>
+likertQuestions.forEach((text, idx) => {
+    // li wrapper
+    const li = document.createElement('li');
+    li.style.marginTop = '0.8vw';
+
+    // the question text
+    const p = document.createElement('p');
+    const b = document.createElement('b');
+    p.className = 'demographics_question';
+    b.textContent = text;
+    p.appendChild(b);
+    li.appendChild(p);
+
+    // container for the radio row
+    const row = document.createElement('div');
+    Object.assign(row.style, {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '0.5vw',
+      marginTop: '0.5vw',
+      justifyContent: 'center',
+    });
+
+    // left label
+    const leftLabel = document.createElement('span');
+    leftLabel.textContent = 'Strongly Disagree';
+    row.appendChild(leftLabel);
+
+    // the 5 radio buttons
+    for (let val = 1; val <= 5; val++) {
+      const label = document.createElement('label');
+      label.style.display = 'flex';
+      label.style.alignItems = 'center';
+      label.style.gap = '0.2vw';
+
+      const input = document.createElement('input');
+      input.type = 'radio';
+      input.name = 'demographics' + String(idx+4);
+      input.value = String(val);
+
+      label.appendChild(input);
+      label.appendChild(document.createTextNode(val));
+      row.appendChild(label);
+    }
+
+    // right label
+    const rightLabel = document.createElement('span');
+    rightLabel.textContent = 'Strongly Agree';
+    row.appendChild(rightLabel);
+
+    // assemble and append
+    li.appendChild(row);
+    list.appendChild(li);
+});
+
+
+
+
 function pad(num,size) {
     var s = "00000" + num;
     return s.substr(s.length-size);
@@ -87,18 +159,22 @@ socket.on("error_message", (msg) => {
   document.getElementById('error-msg').textContent = msg;
 });
 
+
 function readyFunction(){
 
     survey_name = document.getElementById('survey_name').value;
     survey_age = document.getElementById('survey_age').value;
     
-    question1 = document.getElementById("demographics_question1").textContent;
     
-    const questions = [question1];
-    
+    var questions = ["Name", "Age"];
     var array_values = [survey_name, survey_age];
-
-    for(i = 0; i < questions.length; i++) {
+    
+    const demographicQuestionsElements = document.getElementsByClassName("demographics_question");
+    
+    for(i = 0; i < demographicQuestionsElements.length; i++) {
+    
+        questions.push(demographicQuestionsElements[i].textContent);
+    
 	    var survey_question = document.getElementsByName('demographics' + String(i+1));
 	    for(j = 0; j < survey_question.length; j++) {
 	        if(survey_question[j].checked){
@@ -112,7 +188,7 @@ function readyFunction(){
 	    }
 	}
 
-    socket.emit("redirect_session", ["Name", "Age", question1], array_values);
+    socket.emit("redirect_session", questions, array_values);
     document.getElementById('ready-btn').remove();
     
     document.getElementById('waiting-txt').textContent = "Waiting for other players...";

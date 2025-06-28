@@ -299,7 +299,7 @@ class AICollabEnv(gym.Env):
                 location,
                 dropped_objects)
                 
-                
+            
             self.truncated = disable
             
             if disable:

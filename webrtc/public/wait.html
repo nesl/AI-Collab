@@ -4,6 +4,21 @@
     <title>Waiting Room</title>
     <meta charset="UTF-8" />
     <link href="/styles.css" rel="stylesheet" />
+    <style>
+      /* Allow the page to scroll */
+      html, body {
+        height: auto !important;
+        overflow-y: auto !important;
+      }
+
+      /* Clear any floats inside the form container */
+      #question_list::after,
+      #question_list > li::after {
+        content: "";
+        display: table;
+        clear: both;
+      }
+    </style>
   </head>
   <body>
 
@@ -13,14 +28,105 @@
     <p class="ready" id="waiting-txt"></p><p class="ready" id="redirect-count"></p>
     <p class="error" id="error-msg"></p>
     
-    <div style="text-align:center; margin-top:5vw; font-size:1vw">
+    <div style="text-align:center; margin-top:5vw; font-size:1vw;">
         <hr>
         <p><b>Please fill out the next fields before you enter the session</b></p>
-        <ul style="display: inline-block; list-style: none;">
+        
+        <ul id="question_list" style="display: inline-block; list-style: none;">
+          <!-- Name -->
+          <li>
+            <b>Name</b>
+            <input type="text" id="survey_name" placeholder="Enter your name" />
+          </li>
+
+          <!-- Age -->
+          <li>
+            <b>Age</b>
+            <input type="text" id="survey_age" placeholder="Enter your age" />
+          </li>
+
+          <!-- Q1 -->
+          <li style="margin-top:0.8vw">
+            <p id="demographics_question1" class="demographics_question">
+              <b>How often do you play first-person video games on average?</b>
+            </p>
+            <div style="display:flex; justify-content:center; align-items:center; gap:2vw; margin-top:0.5vw;">
+              <label style="display:flex; align-items:center; gap:0.2vw;">
+                <input type="radio" name="demographics1" value="1" />
+                Once a month or less
+              </label>
+              <label style="display:flex; align-items:center; gap:0.2vw;">
+                <input type="radio" name="demographics1" value="2" />
+                Once a week or less
+              </label>
+              <label style="display:flex; align-items:center; gap:0.2vw;">
+                <input type="radio" name="demographics1" value="3" />
+                More than once a week
+              </label>
+            </div>
+          </li>
+
+          <!-- Q2 -->
+          <li style="margin-top:0.8vw">
+            <p id="demographics_question2" class="demographics_question">
+              <b>How many times have you interacted with the TeamCollab simulation environment in the past?</b>
+            </p>
+            <div style="display:flex; justify-content:center; align-items:center; gap:2vw; margin-top:0.5vw;">
+              <label style="display:flex; align-items:center; gap:0.2vw;">
+                <input type="radio" name="demographics2" value="1" />
+                Never (0)
+              </label>
+              <label style="display:flex; align-items:center; gap:0.2vw;">
+                <input type="radio" name="demographics2" value="2" />
+                A couple of times (1-2)
+              </label>
+              <label style="display:flex; align-items:center; gap:0.2vw;">
+                <input type="radio" name="demographics2" value="3" />
+                A good amount (&gt; 2)
+              </label>
+            </div>
+          </li>
+
+          <!-- Q3 -->
+          <li style="margin-top:0.8vw">
+            <p id="demographics_question3" class="demographics_question">
+              <b>How often do you utilize Large Language Models such as ChatGPT, Claude or similar others?</b>
+            </p>
+            <div style="display:flex; justify-content:center; align-items:center; gap:2vw; margin-top:0.5vw;">
+              <label style="display:flex; align-items:center; gap:0.2vw;">
+                <input type="radio" name="demographics3" value="1" />
+                Once a month or less
+              </label>
+              <label style="display:flex; align-items:center; gap:0.2vw;">
+                <input type="radio" name="demographics3" value="2" />
+                Once a week or less
+              </label>
+              <label style="display:flex; align-items:center; gap:0.2vw;">
+                <input type="radio" name="demographics3" value="3" />
+                More than once a week
+              </label>
+            </div>
+          </li>
+
+          <!-- Definition Paragraph -->
+          <li style="margin-top:0.8vw">
+            <p>
+              <b>An automated agent can be defined as an entity that runs by computerized
+              algorithms and that interacts with humans.</b>
+            </p>
+          </li>
+        </ul>
+        
+        <!--
+        <ul style="display: inline-block; list-style: none;" id="question_list">
             <li>Name<input type="text" id="survey_name" placeholder="Enter your name" /></li>
             <li>Age<input type="text" id="survey_age" placeholder="Enter your age" /></li>
-            <li style="margin-top:0.8vw"><p id="demographics_question1">Do you have any experience with first-person video games?</p><br><ul style="list-style: none; float: left; margin-top:0.8vw"><li style="display: inline; padding-left:50px">No<input type="radio" value="1" name="demographics1"></li><li style="display: inline; padding-left:50px">More or less<input type="radio" value="2" name="demographics1"></li><li style="display: inline; padding-left:50px">Yes, a lot<input type="radio" value="3" name="demographics1"></li></ul></li>
+            <li style="margin-top:0.8vw"><p id="demographics_question1" class="demographics_question">How often do you play first-person video games on average?</p><br><ul style="list-style: none; float: left; margin-top:0.8vw"><li style="display: inline; padding-left:50px">Once a month or less<input type="radio" value="1" name="demographics1"></li><li style="display: inline; padding-left:50px">Once a week or less<input type="radio" value="2" name="demographics1"></li><li style="display: inline; padding-left:50px">More than once a week<input type="radio" value="3" name="demographics1"></li></ul></li><br>
+            <li style="margin-top:0.8vw"><p id="demographics_question2" class="demographics_question">How many times have you interacted with the TeamCollab simulation environment in the past?</p><br><ul style="list-style: none; float: left; margin-top:0.8vw"><li style="display: inline; padding-left:50px">Never (0)<input type="radio" value="1" name="demographics2"></li><li style="display: inline; padding-left:50px">A couple of times (1-2)<input type="radio" value="2" name="demographics2"></li><li style="display: inline; padding-left:50px">A good amount (> 2)<input type="radio" value="3" name="demographics2"></li></ul></li><br>
+            <li style="margin-top:0.8vw"><p id="demographics_question3" class="demographics_question">How often do you utilize Large Language Models such as ChatGPT, Claude or similar others?</p><br><ul style="list-style: none; float: left; margin-top:0.8vw"><li style="display: inline; padding-left:50px">Once a month or less<input type="radio" value="1" name="demographics3"></li><li style="display: inline; padding-left:50px">Once a week or less<input type="radio" value="2" name="demographics3"></li><li style="display: inline; padding-left:50px">More than once a week<input type="radio" value="3" name="demographics3"></li></ul></li><br>
+            <li style="margin-top:0.8vw"><p>An automated agent can be defined as an entity that runs by computerized algorithms and that interacts with humans.</p><br></li>
         </ul>
+        -->
     </div>
     
     <script src="/socket.io/socket.io.js"></script>

@@ -120,7 +120,7 @@ var video_idx_broadcaster = 0;
 var past_timer2 = 0, last_time = 0;
 var message_sent = false;
 const disable_list = [];
-
+var objects_held_agents = {};
 var reset_count = 0;
 
 var passcode = [];
@@ -189,6 +189,14 @@ function get_waiting_time(start){
     
     return time_limit;
     
+}
+
+function arraysEqual(a, b) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
 }
 
 io.sockets.on("error", e => console.log(e));
@@ -403,6 +411,24 @@ io.sockets.on("connection", socket => { //When a client connects
   socket.on("ai_output", (idx, object_type_coords_map, object_attributes_id, objects_held, sensing_results, ai_status, extra_status, strength, timer, disable, location, dropped_objects) => {//AI output forwarding
     socket.to(all_ids[idx]).emit("ai_output", object_type_coords_map, object_attributes_id, objects_held, sensing_results, ai_status, extra_status, strength, timer, disable, location, dropped_objects);
     //Sensing actions missing
+    
+    var agent_id = socket_to_simulator_id(all_ids[idx]);
+    
+    if (!(agent_id in objects_held_agents)) {
+        objects_held_agents[agent_id] = [0, 0];
+    }
+    
+    
+    if(command_line_options.log && (Object.keys(sensing_results).length > 0 || ! arraysEqual(objects_held_agents[agent_id], objects_held))){ //(timer - past_timer > 1 || Object.keys(item_info).length > 0)){
+        fs.appendFile(dir + dateTime + '.txt', String(timer.toFixed(2)) +',' + '3' + ',' + socket_to_simulator_id(all_ids[idx]) + ',' + JSON.stringify(sensing_results) + ',' + JSON.stringify(objects_held) + '\n', err => {}); //+ ',' + JSON.stringify(neighbors_info) + '\n', err => {});
+        objects_held_agents[agent_id] = objects_held;
+		/*
+        if(disable){
+        	fs.appendFile(dir + dateTime + '.txt', String(timer.toFixed(2)) + ',5,' + socket_to_simulator_id(all_ids[idx]) + '\n', err => {});
+        }
+        */
+    }
+    
     if((! disable_list.includes(all_ids_list[idx])) && disable){
     	disable_list.push(all_ids_list[idx]);
     }
@@ -415,9 +441,15 @@ io.sockets.on("connection", socket => { //When a client connects
   socket.on("human_output", (idx, location, item_info, neighbors_info, timer, disable, dropped_objects, objects_held) => {
     socket.to(all_ids[idx]).emit("human_output", location, item_info, neighbors_info, timer, disable, objects_held);
     
-    if(command_line_options.log && Object.keys(item_info).length > 0){ //(timer - past_timer > 1 || Object.keys(item_info).length > 0)){
-        fs.appendFile(dir + dateTime + '.txt', String(timer.toFixed(2)) +',' + '3' + ',' + socket_to_simulator_id(all_ids[idx]) + ',' + JSON.stringify(item_info) + '\n', err => {}); //+ ',' + JSON.stringify(neighbors_info) + '\n', err => {});
-
+    var agent_id = socket_to_simulator_id(all_ids[idx]);
+    
+    if (!(agent_id in objects_held_agents)) {
+        objects_held_agents[agent_id] = [0, 0];
+    }
+    
+    if(command_line_options.log && (Object.keys(item_info).length > 0 || ! arraysEqual(objects_held_agents[agent_id], objects_held))){ //(timer - past_timer > 1 || Object.keys(item_info).length > 0)){
+        fs.appendFile(dir + dateTime + '.txt', String(timer.toFixed(2)) +',' + '3' + ',' + socket_to_simulator_id(all_ids[idx]) + ',' + JSON.stringify(item_info) + ',' + JSON.stringify(objects_held) + '\n', err => {}); //+ ',' + JSON.stringify(neighbors_info) + '\n', err => {});
+        objects_held_agents[agent_id] = objects_held;
 		/*
         if(disable){
         	fs.appendFile(dir + dateTime + '.txt', String(timer.toFixed(2)) + ',5,' + socket_to_simulator_id(all_ids[idx]) + '\n', err => {});
@@ -548,7 +580,7 @@ io.sockets.on("connection", socket => { //When a client connects
 		        //console.log(neighbors_list)
 		        
 		        var keys_neighbors = '"';
-		        var debug_message = '';
+		        var debug_message = '{';
 		        
 		        if (command_line_options.messageLoop){
 			        socket.emit("message", message, timestamp, source_id, robot_state); //Emit message to itself
@@ -559,7 +591,7 @@ io.sockets.on("connection", socket => { //When a client connects
 		            //console.log(key)
 		            //console.log(value)
 		            
-		            debug_message += key + ": " + value + " ";
+		            debug_message += '"' + key + '": "' + value + '", ';
 		            
 		            if(key != "whole" && ! disable_list.includes(key) && value){
 		                //console.log("not disabled 3")
@@ -580,13 +612,16 @@ io.sockets.on("connection", socket => { //When a client connects
 		            
 		        }
 		        
+		        debug_message += "}";
+		        
 		        console.log(timestamp,source_id,debug_message);
 		        
 		        keys_neighbors += '"';
 		        
 		        
 		        if(command_line_options.log){
-		            fs.appendFile(dir + dateTime + '.txt', String(timestamp.toFixed(2)) +',' + '2' + ',' + socket_to_simulator_id(socket.id) + ',' + '"'+message.replace(/"/g, '\\"')+'"'+','+keys_neighbors+'\n', err => {});
+		            //fs.appendFile(dir + dateTime + '.txt', String(timestamp.toFixed(2)) +',' + '2' + ',' + socket_to_simulator_id(socket.id) + ',' + '"'+message.replace(/"/g, '\\"')+'"'+','+keys_neighbors+'\n', err => {});
+		            fs.appendFile(dir + dateTime + '.txt', String(timestamp.toFixed(2)) +',' + '2' + ',' + socket_to_simulator_id(socket.id) + ',' + debug_message + '\n', err => {});
 		        }
 		    }
         }

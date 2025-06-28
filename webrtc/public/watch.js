@@ -885,6 +885,8 @@ function removeTags(str) {
 
 const questions = ["Dependable","Reliable","Unresponsive","Predictable","Act consistently","Function successfully","Malfunction","Have errors","Provide feedback","Meet the needs of the mission/task","Provide appropriate information", "Communicate with people","Perform exactly as instructed", "Follow directions"];
 
+const nasa_questions = ['Mental Demand: How mentally demanding was the task?','Physical Demand: How physically demanding was the task?','Temporal Demand: How hurried or rushed was the pace of the task?','Performance: How successful were you in accomplishing what you were asked to do?','Effort: How hard did you have to work to accomplish your level of performance?','Frustration: How insecure, discouraged, irritated, stressed, and annoyed were you?'];
+
 function create_survey(){
 
     var survey = document.getElementById("survey-questions");
@@ -974,6 +976,62 @@ function create_survey(){
         survey.appendChild(document.createElement("br"));
         
     }
+    
+    survey.appendChild(document.createElement("br"));
+    var p_element = document.createElement("h3");
+    p_element.textContent = "NASA Task Load Index";
+    survey.appendChild(p_element);
+    
+    for (let i = 0; i < nasa_questions.length; i++) {
+        var p_element = document.createElement("p");
+        p_element.style.textAlign = "left";
+        var bold_element = document.createElement("b");
+        bold_element.textContent = nasa_questions[i];
+        p_element.appendChild(bold_element);
+        survey.appendChild(p_element);
+        
+        // container for the radio row
+        const row = document.createElement('div');
+        Object.assign(row.style, {
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5vw',
+          marginTop: '0.5vw',
+          justifyContent: 'center',
+        });    
+        const leftLabel = document.createElement('span');
+        
+        if(i == 3){
+            leftLabel.textContent = 'Perfect';
+        } else{        
+            leftLabel.textContent = 'Very Low';
+        }
+        row.appendChild(leftLabel);
+        
+        for (let j = 1; j <= 21; j++) {
+            const radio = document.createElement('input');
+            radio.type = 'radio';
+            radio.name = 'survey_nasa' + String(i);
+            radio.value = j;
+            
+            if (j === 11) {
+                radio.classList.add('middle-ref');
+            }
+
+
+            row.appendChild(radio);
+        }
+        const rightLabel = document.createElement('span');
+        
+        if(i == 3){
+            rightLabel.textContent = 'Failure';
+        } else{ 
+            rightLabel.textContent = 'Very High';
+        }
+        row.appendChild(rightLabel);
+        survey.appendChild(row);
+    }
+    
 
 }
 
@@ -1091,6 +1149,7 @@ function reset(config_options){
 
     object_list_store = [];
     neighbors_list_store = [];
+    extra_info_estimates = {};
     own_neighbors_info_entry = [client_id, 0, 0, 0, -1];
     
     create_survey();
@@ -2832,11 +2891,14 @@ socket.on("message", (message, timestamp, id, robot_state) => {
     }
     */
     
+    console.log("MEssage:", message)
     var agent_command = document.getElementById('agent_command');
     for (const idreg in cnl_filters["regex"]) {
-        var mregex = new RegExp(cnl_filters["regex"][idreg]);
-        let mregex_match = mregex.exec(message);
-        if(mregex_match){
+        let matches_lst = message.matchAll(cnl_filters["regex"][idreg]);
+        //var mregex = new RegExp(cnl_filters["regex"][idreg]);
+        //let mregex_match = mregex.exec(message);
+        //if(mregex_match){
+        for (mregex_match of matches_lst){
             switch(idreg){
                 case 'order_cancelled':
                 case 'thanks':
@@ -2917,7 +2979,7 @@ function update_create_object_tooltip(object_id){
     var object_tooltip = document.getElementById(object_id + "_object_tooltip");
                 
     if(object_tooltip){
-        object_tooltip.textContent = multiple_item_process(object_id);
+        object_tooltip.innerHTML = multiple_item_process(object_id);
     } else{
         var object_element = document.getElementById("label_" + object_id);
         if(object_element){
@@ -2925,12 +2987,32 @@ function update_create_object_tooltip(object_id){
             const multiple_items = multiple_item_process(object_id);
         
             if(multiple_items){
+                
                 object_element.classList.add("tooltip");
-                var span_cnl = document.createElement('span');
+                
+                const span_cnl = document.createElement('span');
                 span_cnl.classList.add("tooltiptext_object");
                 span_cnl.innerHTML = multiple_items;
                 span_cnl.setAttribute("id", object_id + "_object_tooltip");
                 object_element.appendChild(span_cnl);
+                
+                object_element.addEventListener('mouseenter', () => {
+                    const rect = object_element.getBoundingClientRect();
+
+                    // Compute desired position (above the button, centered)
+                    span_cnl.style.top  = rect.top + 'px'; 
+                    span_cnl.style.left = rect.right + 60 + 'px'; 
+                    //span_cnl.style.left = rect.left + (rect.width - span_cnl.offsetWidth) / 2 + 'px';
+
+                    //console.log(rect.top, rect.left, span_cnl.offsetHeight, span_cnl.offsetWidth);
+                    span_cnl.classList.add('show');
+                  });
+
+                object_element.addEventListener('mouseleave', () => {
+                    span_cnl.classList.remove('show');
+                });
+                
+                
             }
         }
     }
@@ -3056,9 +3138,10 @@ function submitReport(){
 function submitSurvey(){
 
     
-	var array_values = [];
+	var array_values = [], all_questions = [];
 	
 	for(i = 0; i < questions.length; i++) {
+	    all_questions.push(questions[i]);
 	    var survey_question = document.getElementsByName('rsurvey' + String(i));
 	    var not_applicable = false;
 	    for(j = 0; j < survey_question.length; j++) {
@@ -3075,8 +3158,30 @@ function submitSurvey(){
         }
 	}
 	
+	for(i = 0; i < nasa_questions.length; i++) {
+	    all_questions.push(nasa_questions[i]);
+        var survey_range = document.getElementById('survey_nasa' + String(i));
+        
+        var survey_question = document.getElementsByName('survey_nasa' + String(i+1));
+        
+        var radio_checked = false;
+        
+	    for(j = 0; j < survey_question.length; j++) {
+	        if(survey_question[j].checked){
+	            array_values.push(survey_question[j].value);
+	            radio_checked = true;
+	            break;
+	        }
+
+	    }
+        
+        if(! radio_checked){
+            array_values.push("");
+        }
+	}
 	
-	socket.emit("survey", simulator_timer, questions, array_values,token)
+	
+	socket.emit("survey", simulator_timer, all_questions, array_values,token)
 	
 	document.getElementById("popup-stats").classList.add("active");
 	document.getElementById("popup-survey").classList.remove("active");
