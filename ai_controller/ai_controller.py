@@ -192,7 +192,8 @@ def print_map(occupancy_map): #Occupancy maps require special printing so that t
 
 device = "cuda"
 
-env = gym.make('gym_collab/AICollabWorld-v0', use_occupancy=args.use_occupancy, view_radius=args.view_radius, skip_frames=10, client_number=int(args.robot_number), host=args.host, port=args.port, address=args.address, cert_file=args.cert_file, key_file=args.key_file, webcam=args.webcam, video_index=args.video_index+1)
+#skip_frames = 10
+env = gym.make('gym_collab/AICollabWorld-v0', use_occupancy=args.use_occupancy, view_radius=args.view_radius, skip_frames=5, client_number=int(args.robot_number), host=args.host, port=args.port, address=args.address, cert_file=args.cert_file, key_file=args.key_file, webcam=args.webcam, video_index=args.video_index+1)
 
 
 

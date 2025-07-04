@@ -420,7 +420,7 @@ io.sockets.on("connection", socket => { //When a client connects
     
     
     if(command_line_options.log && (Object.keys(sensing_results).length > 0 || ! arraysEqual(objects_held_agents[agent_id], objects_held))){ //(timer - past_timer > 1 || Object.keys(item_info).length > 0)){
-        fs.appendFile(dir + dateTime + '.txt', String(timer.toFixed(2)) +',' + '3' + ',' + socket_to_simulator_id(all_ids[idx]) + ',' + JSON.stringify(sensing_results) + ',' + JSON.stringify(objects_held) + '\n', err => {}); //+ ',' + JSON.stringify(neighbors_info) + '\n', err => {});
+        fs.appendFile(dir + dateTime + '.txt', String(timer.toFixed(2)) +',' + '3' + ',' + socket_to_simulator_id(all_ids[idx]) + ',' + JSON.stringify(sensing_results) + ',' + JSON.stringify(objects_held) + ',' + JSON.stringify(dropped_objects) + '\n', err => {}); //+ ',' + JSON.stringify(neighbors_info) + '\n', err => {});
         objects_held_agents[agent_id] = objects_held;
 		/*
         if(disable){
@@ -448,7 +448,7 @@ io.sockets.on("connection", socket => { //When a client connects
     }
     
     if(command_line_options.log && (Object.keys(item_info).length > 0 || ! arraysEqual(objects_held_agents[agent_id], objects_held))){ //(timer - past_timer > 1 || Object.keys(item_info).length > 0)){
-        fs.appendFile(dir + dateTime + '.txt', String(timer.toFixed(2)) +',' + '3' + ',' + socket_to_simulator_id(all_ids[idx]) + ',' + JSON.stringify(item_info) + ',' + JSON.stringify(objects_held) + '\n', err => {}); //+ ',' + JSON.stringify(neighbors_info) + '\n', err => {});
+        fs.appendFile(dir + dateTime + '.txt', String(timer.toFixed(2)) +',' + '3' + ',' + socket_to_simulator_id(all_ids[idx]) + ',' + JSON.stringify(item_info) + ',' + JSON.stringify(objects_held) + ',' + JSON.stringify(dropped_objects) + '\n', err => {}); //+ ',' + JSON.stringify(neighbors_info) + '\n', err => {});
         objects_held_agents[agent_id] = objects_held;
 		/*
         if(disable){

@@ -157,24 +157,43 @@ class Stats():
         self.individual_payment = 0
         self.token = ""
         
-        
-
+agents_good_sensors = []
 #This class inherits the magnebot class, we just add a number of attributes over it
 class Enhanced_Magnebot(Magnebot):
 
     def sensor_paramenter_lower_threshold(self):
     
         low_threshold = 0.5
+        high_threshold = 0.9
+    
+        good_sensor = agents_good_sensors.pop(0)
     
         if self.difficulty_level:
             if self.difficulty_level == 1:
-                low_threshold = 0.7 #0.7
+                if good_sensor == 1:
+                    low_threshold = [0.8,0.8] #0.9 #0.7
+                    high_threshold = [0.85,0.85] #0.95
+                elif good_sensor == 2:
+                    low_threshold = [0.8,0.75] 
+                    high_threshold = [0.85,0.8]
+                elif good_sensor == 3:
+                    low_threshold = [0.75,0.8] 
+                    high_threshold = [0.7,0.85]
+                elif good_sensor == 4:
+                    low_threshold = [0.8,0.8] 
+                    high_threshold = [0.85,0.85]
+                else:
+                    low_threshold = 0.7 #0.7
+                    high_threshold = 0.75
+                
+                low_threshold = [0.8,0.8] #0.9 #0.7
+                high_threshold = [0.85,0.85] 
             elif self.difficulty_level == 2:
                 low_threshold = 0.7
             elif self.difficulty_level == 3:
                 low_threshold = 0.6
                 
-        return low_threshold
+        return low_threshold,high_threshold
 
     def __init__(self,robot_id, position, controlled_by, difficulty_level, key_set=None,image_frequency=ImageFrequency.never,pass_masks=['_img'],strength=1, check_version=False):
         super().__init__(robot_id=robot_id, position=position,image_frequency=image_frequency,check_version=check_version)
@@ -204,9 +223,10 @@ class Enhanced_Magnebot(Magnebot):
         self.stats = Stats()
         self.skip_frames = 0
         self.difficulty_level = difficulty_level
-        low_thresh = self.sensor_paramenter_lower_threshold()
-        self.p11 = float(random.uniform(low_thresh, 0.9)) #Binary channel
-        self.p22 = float(random.uniform(low_thresh, 0.9))
+        low_thresh,high_thresh = self.sensor_paramenter_lower_threshold()
+        self.p11 = float(random.uniform(low_thresh[0], high_thresh[0])) #Binary channel
+        self.p22 = float(random.uniform(low_thresh[1], high_thresh[1]))
+        print("Sensors", self.p11,self.p22)
         self.current_teammates = {}
         self.reported_objects = []
         
@@ -226,9 +246,10 @@ class Enhanced_Magnebot(Magnebot):
         self.last_output = False
         self.stats = Stats()
         self.last_position = np.array([])
-        low_thresh = self.sensor_paramenter_lower_threshold()
-        self.p11 = float(random.uniform(low_thresh, 0.9)) #Binary channel
-        self.p22 = float(random.uniform(low_thresh, 0.9))
+        low_thresh,high_thresh = self.sensor_paramenter_lower_threshold()
+        self.p11 = float(random.uniform(low_thresh[0], high_thresh[0])) #Binary channel
+        self.p22 = float(random.uniform(low_thresh[1], high_thresh[1]))
+        print("Sensors",self.p11,self.p22)
         self.current_teammates = {}
         self.reported_objects = []
         self.danger_estimates = []
@@ -274,6 +295,7 @@ class Simulation(Controller):
         self.timer_limit = 0#float(self.cfg['timer'])
         self.waiting = False
         self.rooms = {}
+        self.visibility_matrix = {}
 
         """
         if float(self.cfg['timer']) > 0:
@@ -338,7 +360,7 @@ class Simulation(Controller):
         
         self.communicate([])
         
-        #self.label_components(self.static_occupancy_map.occupancy_map, 6)
+        #self.visibility_matrix[6] = self.label_components(self.static_occupancy_map.occupancy_map, 6)
 
         out_of_bounds = np.where(self.static_occupancy_map.occupancy_map == 2)
         self.static_occupancy_map.occupancy_map[out_of_bounds[0],out_of_bounds[1]] = -1
@@ -594,8 +616,10 @@ class Simulation(Controller):
                             break
 
                     if not self.ai_magnebots[ai_agent_idx].visibility_matrix:
-                        self.ai_magnebots[ai_agent_idx].visibility_matrix = self.label_components(self.static_occupancy_map.occupancy_map, int(view_radius))
+                        if int(view_radius) not in self.visibility_matrix.keys():
+                            self.visibility_matrix[int(view_radius)] = self.label_components(self.static_occupancy_map.occupancy_map, int(view_radius))
                     
+                        self.ai_magnebots[ai_agent_idx].visibility_matrix = self.visibility_matrix[int(view_radius)]
                    
                 #Reset environment
                 @self.sio.event 
@@ -616,7 +640,7 @@ class Simulation(Controller):
                     if not self.options.no_human_test:
                         self.scenario = 2    
                     else:
-                        self.scenario = 1
+                        self.scenario = self.options.scenario
                         self.waiting = False
                 #Key
                 @self.sio.event
@@ -760,19 +784,35 @@ class Simulation(Controller):
                     component_id = component_id.tolist()
                     queue = deque([(sub_i, sub_j)])
                     component_id[sub_i][sub_j] = current_label
+                    #print(sub_occupancy_map)
                     while queue:
                         x, y = queue.popleft()
                         for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
                             nx, ny = x + dx, y + dy
                             if 0 <= nx < sub_rows and 0 <= ny < sub_cols:
                                 # If neighbor is free and still unlabeled, label it
-                                if sub_occupancy_map[nx][ny] == 0 and component_id[nx][ny] == -2:
+                                
+                                within_range = False
+                                
+                                #print([sub_i,sub_j],[nx,ny])
+                                #print(sub_occupancy_map)
+                                
+                                ''''
+                                if [sub_i,sub_j] == [nx,ny]:
+                                    within_range = True
+                                elif len(self.findPath([sub_i,sub_j],[nx,ny],sub_occupancy_map)) <= view_radius:
+                                    within_range = True
+                                '''
+                                within_range = True
+                                
+                                if sub_occupancy_map[nx][ny] == 0 and component_id[nx][ny] == -2 and within_range:
                                     component_id[nx][ny] = current_label
                                     queue.append((nx, ny))
-                                elif sub_occupancy_map[nx][ny] == 1 and component_id[nx][ny] == -2:
+                                elif sub_occupancy_map[nx][ny] == 1 and component_id[nx][ny] == -2 and within_range:
                                     component_id[nx][ny] = current_label
             
 
+                #print(np.array(component_id))
                 component_maps[-1].append(component_id)
         return component_maps
 
@@ -795,6 +835,10 @@ class Simulation(Controller):
         
         self.ai_spawn_positions = self.ai_original_spawn_positions.copy()
         self.user_spawn_positions = self.user_original_spawn_positions.copy()
+        
+        global agents_good_sensors
+        agents_good_sensors = [1,2,3,4]
+        random.shuffle(agents_good_sensors)
         
         extra_ai_agents = 0
         
@@ -820,6 +864,7 @@ class Simulation(Controller):
             robot_id = self.get_unique_id()
             self.user_magnebots.append(Enhanced_Magnebot(robot_id=robot_id, position=user_spawn_positions[us_idx], image_frequency=ImageFrequency.always, pass_masks=['_img'],key_set=self.proposed_key_sets[us_idx], controlled_by='human', difficulty_level=self.options.level))
             self.robot_names_translate[str(robot_id)] = chr(ord('A') + us_idx)
+            print(self.robot_names_translate[str(robot_id)])
     
         #Create ai magnebots
         for ai_idx in range(num_ais+extra_ai_agents):  
@@ -830,6 +875,7 @@ class Simulation(Controller):
                 self.ai_magnebots.append(Enhanced_Magnebot(robot_id=robot_id, position=ai_spawn_positions[ai_idx],image_frequency=ImageFrequency.never, controlled_by='ai', difficulty_level=self.options.level))
             
             self.robot_names_translate[str(robot_id)] = chr(ord('A') + ai_idx + num_users)
+            print(self.robot_names_translate[str(robot_id)])
         
         
         reticule_size = 9
@@ -2000,8 +2046,11 @@ class Simulation(Controller):
                     self.rooms_limits[r_key] = [[loc[0]-self.scenario_size/2-cell_size*multipliers[0],loc[1]-self.scenario_size/2-cell_size*multipliers[1]] if loc_idx < len(self.rooms[r_key])-1 else [loc[0]-self.scenario_size/2+cell_size*multipliers[2],loc[1]-self.scenario_size/2+cell_size*multipliers[3]] for loc_idx,loc in enumerate(self.rooms[r_key])] #Slight modification from 0.5 to 1
                     self.rooms[r_key] = [[loc[0]-self.scenario_size/2+cell_size*0.5,loc[1]-self.scenario_size/2+cell_size*0.5] for loc in self.rooms[r_key]]
                 
-                room_capacity = {0:10,1:5,2:0,3:5,4:7,5:5,6:0,7:3}
-                actual_room_capacity = {r_key:0 for r_key in self.rooms.keys()}
+                original_room_capacity = {0:10,1:5,2:0,3:5,4:7,5:5,6:0,7:3}
+                room_capacity = original_room_capacity.copy()
+                room_empty = random.choice([r for r in room_capacity.keys() if room_capacity[r] > 0])
+                room_capacity[room_empty] = 0
+                actual_room_capacity = {r_key:0 if not room_capacity[r_key] else 2 for r_key in self.rooms.keys()}
                 
                 #possible_ranges = [np.arange(max_coord-3,max_coord+0.5,0.5),np.arange(max_coord-3,max_coord+0.5,0.5)]
                 #possible_ranges = [np.arange(self.scenario_size/2-self.wall_length+cell_size*1.5,self.scenario_size/2-cell_size*0.5,cell_size),np.arange(self.scenario_size/2-self.wall_length+cell_size*1.5,self.scenario_size/2-cell_size*0.5,cell_size)]
@@ -2013,9 +2062,11 @@ class Simulation(Controller):
                 
                 #print([[np.array(pl)*np.array(m) for pl in possible_locations] for m in modifications])
                 
-                total_num_objects = 20 #sum(np.array(list(object_models.values()))*len(modifications))
+                total_num_objects = random.choice([19,20,21]) #20
                 
-                for t in range(total_num_objects):
+                to_assign_total_num_objects = total_num_objects - sum(actual_room_capacity[r_key] for r_key in actual_room_capacity.keys()) #sum(np.array(list(object_models.values()))*len(modifications))
+                
+                for t in range(to_assign_total_num_objects):
                     while True:
                         room_assignment = random.choice(range(len(self.rooms.keys())))
                         if actual_room_capacity[room_assignment] < room_capacity[room_assignment]:
@@ -2041,8 +2092,12 @@ class Simulation(Controller):
                     objects_remaining = total_num_objects
                 
                     
-                    if self.options.level == 2: #approx. normal distribution
-                        middle_weight = round((num_users+num_ais+1)/2)
+                    if self.options.level == 2 or self.options.level == 1: #approx. normal distribution
+                    
+                        if self.options.level == 1:
+                            middle_weight = 2
+                        else:
+                            middle_weight = round((num_users+num_ais+1)/2)
                         
                         first_half = list(range(middle_weight-1,0,-1))
                         second_half = list(range(middle_weight+1, num_users+num_ais+2))
@@ -2223,12 +2278,45 @@ class Simulation(Controller):
                             if feasible_room:
                                 for fc in chosen_locations.keys():
                                     final_coords[fc].extend(chosen_locations[fc])
-                                
+                                    
                                 break
                 
                 else:
                     final_coords = {"iron_box": [possible_locations[0]]}
 
+                
+                #weight to dangerous object
+                
+                dangerous_candidates = []
+                while True:
+                    
+                    dangerous_candidates = random.sample(list(weight_object_assignment.keys()), num_dangerous)
+                    
+                    # per-room cap
+                    counts = {}
+                    max_per_room = 2
+                    for oid in dangerous_candidates:
+                        sum_room = 0
+                        room_num = 0
+                        for r in actual_room_capacity.keys():
+                            sum_room += actual_room_capacity[r]
+                            if oid < sum_room:
+                                room_num = r
+                                break
+                        counts[room_num] = counts.get(room_num, 0) + 1
+                    if any(cnt > max_per_room for cnt in counts.values()):
+                        continue
+                    
+                    # weight constraints
+                    half_weight_thresh = 2
+                    high_weight_thresh = 3
+                    wts = [weight_object_assignment[oid] for oid in dangerous_candidates]
+                    if sum(1 for w in wts if w >= half_weight_thresh) < (num_dangerous / 2):
+                        continue
+                    if not any(w >= high_weight_thresh for w in wts):
+                        continue
+        
+                    break
                 
                 object_index = 0
                 for fc in final_coords.keys():
@@ -3119,8 +3207,7 @@ class Simulation(Controller):
                         break
             
                 #print(object_room, ego_room)
-                if np.linalg.norm(self.object_manager.transforms[o].position -
-                        ego_magnebot.dynamic.transform.position) < int(self.cfg['sensing_radius']) and not any(doIntersect([self.object_manager.transforms[o].position[0],self.object_manager.transforms[o].position[2]],[ego_magnebot.dynamic.transform.position[0],ego_magnebot.dynamic.transform.position[2]],[self.walls[w_idx][0][0],self.walls[w_idx][0][1]],[self.walls[w_idx][-1][0],self.walls[w_idx][-1][1]]) for w_idx in range(len(self.walls))) and ego_room == object_room:
+                if True: #np.linalg.norm(self.object_manager.transforms[o].position - ego_magnebot.dynamic.transform.position) < int(self.cfg['sensing_radius']) and not any(doIntersect([self.object_manager.transforms[o].position[0],self.object_manager.transforms[o].position[2]],[ego_magnebot.dynamic.transform.position[0],ego_magnebot.dynamic.transform.position[2]],[self.walls[w_idx][0][0],self.walls[w_idx][0][1]],[self.walls[w_idx][-1][0],self.walls[w_idx][-1][1]]) for w_idx in range(len(self.walls))) and ego_room == object_room:
                         
                     #print([doIntersect([self.object_manager.transforms[o].position[0],self.object_manager.transforms[o].position[2]],[ego_magnebot.dynamic.transform.position[0],ego_magnebot.dynamic.transform.position[2]],[self.walls[w_idx][0][0],self.walls[w_idx][0][1]],[self.walls[w_idx][-1][0],self.walls[w_idx][-1][1]]) for w_idx in range(len(self.walls))])
                     
@@ -5007,6 +5094,9 @@ class Simulation(Controller):
         self.ai_spawn_positions = self.ai_original_spawn_positions.copy()
         self.user_spawn_positions = self.user_original_spawn_positions.copy()
         
+        global agents_good_sensors
+        agents_good_sensors = [1,2,3,4]
+        random.shuffle(agents_good_sensors)
         
         if self.scenario != 2:
             random.shuffle(self.ai_spawn_positions)
@@ -5042,6 +5132,7 @@ class Simulation(Controller):
         
         for u_idx in range(len(self.ai_magnebots)):
             self.ai_magnebots[u_idx].reset(position=ai_spawn_positions[u_idx])
+            print(self.robot_names_translate[str(self.ai_magnebots[u_idx].robot_id)])
         
         for u_idx in range(len(self.user_magnebots)):
             self.user_magnebots[u_idx].reset(position=user_spawn_positions[u_idx])
@@ -5050,7 +5141,8 @@ class Simulation(Controller):
             
             if self.scenario != 2:
                 self.user_magnebots[u_idx].stats.token = ''.join(random.choices(string.ascii_lowercase + string.digits + string.ascii_uppercase, k=8))
-
+            
+            print(self.robot_names_translate[str(self.user_magnebots[u_idx].robot_id)])
 
         commands.extend(self.populate_world())
         

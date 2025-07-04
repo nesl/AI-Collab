@@ -9,6 +9,7 @@ from collections import deque, defaultdict
 import time
 import json
 import os
+import heapq
 
 def calculateHValue(current,dest):
 
@@ -38,9 +39,13 @@ def tracePath(node_details,dest):
     path.reverse()
     
     return path
-
+'''
 def findPath(startNode,endNode,occMap):
 
+    
+    if tuple(startNode) == tuple(endNode):
+        print("Same node")
+        return []
     
     openSet = [startNode]
     closedSet = []
@@ -94,7 +99,94 @@ def findPath(startNode,endNode,occMap):
                 
 
     return [] #No path
+'''   
+
+def heuristic(a_row, a_col, b_row, b_col):
+    # Manhattan distance
+    return abs(a_row - b_row) + abs(a_col - b_col)
+
+def reconstruct_path(parent, dest_row, dest_col):
+    path = []
+    r, c = dest_row, dest_col
+    while True:
+        path.append((r, c))
+        pr, pc = parent[r][c]
+        if pr == r and pc == c:
+            break
+        r, c = pr, pc
+    path.reverse()
+    return path
+
+def findPath(start, goal, occ):
+    """
+    Pure-Python A* on a grid.
     
+    start, goal: numpy arrays of shape (2,), e.g. np.array([r, c])
+    occ: 2D numpy array of ints; passable when occ[r,c] in {0,3,-2}
+    
+    Returns list of (row, col) tuples from start (exclusive) to goal (inclusive),
+    or [] if no path.
+    """
+    # unpack into Python ints
+    sr, sc = int(start[0]), int(start[1])
+    gr, gc = int(goal[0]), int(goal[1])
+    
+    # trivial case
+    if sr == gr and sc == gc:
+        return []
+    
+    nrows, ncols = occ.shape
+    INF = 10**9
+
+    # preallocate grids
+    g = [[INF]*ncols for _ in range(nrows)]
+    f = [[INF]*ncols for _ in range(nrows)]
+    parent = [[None]*ncols for _ in range(nrows)]
+    closed = [[False]*ncols for _ in range(nrows)]
+
+    # initialize start node
+    g[sr][sc] = 0
+    f[sr][sc] = heuristic(sr, sc, gr, gc)
+    parent[sr][sc] = (sr, sc)
+
+    # heap elements: (f_score, g_score, row, col)
+    open_heap = [(f[sr][sc], 0, sr, sc)]
+
+    # 4-connectivity
+    neighbors = [(1,0),(-1,0),(0,1),(0,-1)]
+
+    while open_heap:
+        _, curr_g, r, c = heapq.heappop(open_heap)
+        if closed[r][c]:
+            continue
+        if (r, c) == (gr, gc):
+            return reconstruct_path(parent, gr, gc)
+
+        closed[r][c] = True
+
+        for dr, dc in neighbors:
+            nr, nc = r + dr, c + dc
+            # bounds check
+            if not (0 <= nr < nrows and 0 <= nc < ncols):
+                continue
+            # closed check
+            if closed[nr][nc]:
+                continue
+            # occupancy check
+            if (nr, nc) != (gr, gc) and occ[nr, nc] not in (0, 3, -2):
+                continue
+
+            tentative_g = curr_g + 1
+            if tentative_g < g[nr][nc]:
+                g[nr][nc] = tentative_g
+                h = heuristic(nr, nc, gr, gc)
+                f[nr][nc] = tentative_g + h
+                parent[nr][nc] = (r, c)
+                heapq.heappush(open_heap, (f[nr][nc], tentative_g, nr, nc))
+
+    # no path found
+    return []
+
 
 class UndirectedGraph:
     def __init__(self):
@@ -190,12 +282,15 @@ class RobotMonitor:
                     actions['check_item'] += 1
         elif "carry" in node:
             try:
-                if not path: #Too close to destination
-                    return_path = findPath(np.array(curr_pos),np.array(self.goal_area),self.occMap)
-                    all_actions = self.predict_actions(curr_pos, return_path, '')
+                all_actions = {}
+                if not path:
+                    if tuple(curr_pos) != tuple(self.goal_area): #Too close to destination
+                        return_path = findPath(np.array(curr_pos),np.array(self.goal_area),self.occMap)
+                        all_actions = self.predict_actions(curr_pos, return_path, '')
                 else:
-                    return_path = findPath(np.array(path[-1]),np.array(self.goal_area),self.occMap)
-                    all_actions = self.predict_actions(path[-1], return_path, '')
+                    if tuple(path[-1]) != tuple(self.goal_area): #Too close to destination
+                        return_path = findPath(np.array(path[-1]),np.array(self.goal_area),self.occMap)
+                        all_actions = self.predict_actions(path[-1], return_path, '')
             
                 for a in all_actions.keys():
                     actions[a] += all_actions[a]
@@ -224,6 +319,7 @@ class RobotMonitor:
         #alpha_fail = 0.9
         lambda_param = 0.2
         #pdb.set_trace()
+        skip_reliability = False
         
         if team and task == "carry_heavy":
         
@@ -256,23 +352,28 @@ class RobotMonitor:
                 else:
                     task = 'carry_heavy_AI'
 
-        try:
-            self.reliability[task] = max(min((1-lambda_param)*self.reliability[task] + lambda_param * success, 1), 0)  # Cap at 1
-        except:
-            pdb.set_trace()
-        '''
-        if success:
-            self.reliability[task] = min(self.reliability[task] * alpha_success, 1)  # Cap at 1
-        else:
-            self.reliability[task] *= alpha_fail  # No floor (can approach 0)
-        '''
-        
-        if self.log_file: 
+        elif not team and task == "carry_heavy":
+            print("No team and carry heavy")
+            skip_reliability = True
+            
+        if not skip_reliability:
             try:
-                self.log_file.write(str(round(current_time,2))+",0," + self.agent_id + "," + json.dumps(self.reliability) + '\n')
+                self.reliability[task] = max(min((1-lambda_param)*self.reliability[task] + lambda_param * success, 1), 0)  # Cap at 1
             except:
                 pdb.set_trace()
-        
+            '''
+            if success:
+                self.reliability[task] = min(self.reliability[task] * alpha_success, 1)  # Cap at 1
+            else:
+                self.reliability[task] *= alpha_fail  # No floor (can approach 0)
+            '''
+            if self.log_file: 
+                try:
+                    self.log_file.write(str(round(current_time,2))+",0," + self.agent_id + "," + json.dumps(self.reliability) + '\n')
+                    self.log_file.flush()
+                except:
+                    pdb.set_trace()
+            
     def update_model(self, actual_time, time_factor, current_time=0):
     
         if self.decay:
@@ -297,12 +398,14 @@ class RobotMonitor:
         if self.log_file: 
             try:
                 self.log_file.write(str(round(current_time,2))+",1," + self.agent_id + "," + json.dumps(self.times) + '\n')
+                self.log_file.flush()
             except:
                 pdb.set_trace()
         
     def set(self, goal, occMap, room_locations):
         
         self.goal = goal
+        print("Set goal to ", goal)
         self.occMap = occMap.copy()
         self.occMap[self.goal_area[0], self.goal_area[1]] = 0
         self.room_locations = room_locations.copy()
@@ -315,6 +418,7 @@ class RobotMonitor:
         self.moving_finished = False
         self.sensing_finished = False
         self.init_state = False
+        self.object_carried = ''
     
     def set_current_node(self, current_node):
         self.current_node = current_node
@@ -391,7 +495,7 @@ class RobotMonitor:
         else:
             self.consecutive_increases = 0
         
-        print(f"Moved {self.current_node} → {new_node} | Distance: {current_dist} → {new_dist}")
+        print(f"Moved {self.current_node} → {new_node} | Distance: {current_dist} → {new_dist} | Goal node {self.goal}")
         self.current_node = new_node
         
         if self.current_node == self.goal and not self.moving_finished:
@@ -417,9 +521,9 @@ class DynamicSensorPlanner:
         self.sensed_clusters = []
         self.penalty_weight = 1000
         self.prior_belief = 0.5
-        self.pickup_belief_threshold = 0.5 #0.95
-        self.tau_initial = 0.1 #2.0
-        self.objects_to_carry = objects_to_carry
+        self.pickup_belief_threshold = 0.9 #0.5 #0.95
+        self.tau_initial = 2.5 #0.1 #2.0
+        self.objects_to_carry = objects_to_carry.copy()
         self.object_weights = object_weights
         self.regions_to_explore = []
         self.occMap = occMap
@@ -431,6 +535,8 @@ class DynamicSensorPlanner:
         self.clusters = {}
         self.agents_type = agents_type
         self.human_agents_combinations = []
+        self.skipped_objectives = []
+        self.adjust_feasibility = 0
         
         human_agents = []
         for ag in self.agents_type.keys():
@@ -464,10 +570,10 @@ class DynamicSensorPlanner:
         #self.rooms = {r_idx:[] for r_idx in range(len(self.room_locations)+1)}
         self.rooms = {r:[] for r in self.room_locations.keys()}
         self.rooms["extra"] = []
-        self.locations = self.objects_in_rooms(locations, [])
+        self.locations = self.objects_in_rooms(locations.copy(), [])
         
         
-        log_file_monitor = None
+        self.log_file_monitor = None
         
         if log_name:
             log_dir = './log/'
@@ -476,11 +582,11 @@ class DynamicSensorPlanner:
             
             self.log_state_f = open(log_dir + log_name + '_' + agent_id + '_strategy.txt', "a")
             self.log = True
-            log_file_monitor = open(log_dir + log_name + '_' + agent_id + '_monitor.txt', "a")
+            self.log_file_monitor = open(log_dir + log_name + '_' + agent_id + '_monitor.txt', "a")
         else:
             self.log = False
         
-        self.path_monitoring = {a:RobotMonitor(a, self.agents_type,self.g,locations['SAFE'],self.rooms,log_file_monitor) for a in self.agents}
+        self.path_monitoring = {a:RobotMonitor(a, self.agents_type,self.g,locations['SAFE'],self.rooms,self.log_file_monitor) for a in self.agents}
         
         #self.locations = self.recluster(locations)
         #self.locations.update(self.create_exploration_regions())
@@ -508,7 +614,7 @@ class DynamicSensorPlanner:
                         1: np.log(PD / (1 - PB)),  # LLR for Y=1
                         0: np.log((1 - PD) / PB)    # LLR for Y=0
                     }
-                self.update_belief(ob[0], ob[1], ob[2])
+                self.update_belief(ob[0], ob[1], ob[2], objects_to_carry)
                 self.past_beliefs.append(ob)
         
         self.nodes = self.create_nodes()
@@ -564,7 +670,7 @@ class DynamicSensorPlanner:
                 if path:
                     break
                     
-            if not path:
+            if not path: #Object blocking the way
                 pdb.set_trace()
                    
             
@@ -798,7 +904,7 @@ class DynamicSensorPlanner:
                     
         return node_type
        
-    def update_belief(self, object_j, agent_i, report_Y):
+    def update_belief(self, object_j, agent_i, report_Y, proposed_objects_to_carry):
         PD, PB = self.PD_PB[agent_i]
         prior = self.belief[object_j]
         
@@ -820,11 +926,13 @@ class DynamicSensorPlanner:
             self.tau_current[object_j] -= self.LLR[agent_i][report_Y]
         except:
             pdb.set_trace()
-        self.tau_current[object_j] = max(0, self.tau_current[object_j])  # Threshold ≥ 0
+        #self.tau_current[object_j] = max(0, self.tau_current[object_j])  # Threshold ≥ 0
         self.sensed_objects.append((agent_i,object_j))
         
-        if self.belief[object_j] >= self.pickup_belief_threshold and object_j not in self.objects_to_carry: #self.object_weights[object_j] <= len(self.agents) and 
+        if self.belief[object_j] >= self.pickup_belief_threshold and self.tau_current[object_j] < 0.1 and object_j not in self.objects_to_carry and object_j not in self.already_carried: #self.object_weights[object_j] <= len(self.agents) and 
             self.objects_to_carry.append(object_j)
+        elif (not self.belief[object_j] >= self.pickup_belief_threshold or not self.tau_current[object_j] < 0.1) and object_j in self.objects_to_carry and object_j not in self.already_carried and object_j not in proposed_objects_to_carry:
+            self.objects_to_carry.remove(object_j)
             
         #CLUSTERS
         '''  
@@ -844,13 +952,13 @@ class DynamicSensorPlanner:
                 if obc not in self.objects_to_carry:
                     self.objects_to_carry.append(obc)
         
-        if len(agents) > len(self.path_monitoring.keys()):
+        if set(agents) ^ set(self.path_monitoring.keys()):
             for a in agents:
                 if a not in self.path_monitoring.keys():
-                    self.path_monitoring[a] = RobotMonitor(a, self.agents_type,self.g,object_locations['SAFE'],self.rooms)
+                    self.path_monitoring[a] = RobotMonitor(a, self.agents_type,self.g,object_locations['SAFE'],self.rooms,self.log_file_monitor)
         
         
-        if len(agents) > len(self.LLR.keys()):      
+        if set(agents) ^ set(self.LLR.keys()):      
             for i in self.agents:
                 if i not in self.LLR.keys():
                     PD, PB = self.PD_PB[i]
@@ -871,7 +979,7 @@ class DynamicSensorPlanner:
         
         self.current_positions = current_positions
         
-        self.objects = objects
+        self.objects = objects.copy()
         
         '''
         for j in object_locations.keys():
@@ -906,8 +1014,11 @@ class DynamicSensorPlanner:
                         0: np.log((1 - PD) / PB)    # LLR for Y=0
                     }
                     
-                self.update_belief(ob[0], ob[1], ob[2])
+                self.update_belief(ob[0], ob[1], ob[2], objects_to_carry)
                 self.past_beliefs.append(ob)
+            else:
+                if (not self.belief[ob[0]] >= self.pickup_belief_threshold or not self.tau_current[ob[0]] < 0.1) and ob[0] in self.objects_to_carry and ob[0] not in self.already_carried and ob[0] not in objects_to_carry:
+                    self.objects_to_carry.remove(ob[0])
             
         '''
         ####### Cluster
@@ -918,6 +1029,8 @@ class DynamicSensorPlanner:
                     self.sensed_clusters.append((a,str(c)))
         #######
         '''
+        
+        previous_sensed_clusters = self.sensed_clusters.copy()
         self.sensed_clusters = []
         #self.room_numbers = list(range(len(self.room_locations)))
         #self.room_numbers.extend([o+len(self.room_locations) for o in range(len(self.rooms[len(self.room_locations)]))])
@@ -930,6 +1043,10 @@ class DynamicSensorPlanner:
                     if c in self.room_locations.keys(): #c < len(self.room_locations):
                         if self.rooms[c] and all(True if (a,ob) in self.sensed_objects else False for ob in self.rooms[c]):
                             self.sensed_clusters.append((a,'ROOM'+str(c)))
+                        '''
+                        elif not self.rooms[c] and (a,'ROOM'+str(c)) in previous_sensed_clusters: #If room is empty but has been sensed already, don't make it sense again
+                            self.sensed_clusters.append((a,'ROOM'+str(c)))
+                        '''
                     else:
                         ob = c.split('extra')[1]
                         if (a,ob) in self.sensed_objects:
@@ -937,7 +1054,7 @@ class DynamicSensorPlanner:
         else:
             print("NO OBJECTS TO OPTIMIZE")
 
-        print("ALREADY IN GOAL:", self.locations, self.goal_coords,self.already_carried)
+        print("ALREADY IN GOAL:", self.locations, self.goal_coords,self.already_carried, self.sensed_objects, self.sensed_clusters)
   
         skip_objects = []      
         for ss in skip_states: #Make sure, objects being carried are not eliminated from the planning
@@ -968,7 +1085,7 @@ class DynamicSensorPlanner:
                     
                 if ol_key in self.objects_to_carry:
                     self.objects_to_carry.remove(ol_key)
-            
+        
         #self.locations.update(self.create_exploration_regions())
             
         self.nodes = self.create_nodes()
@@ -985,7 +1102,10 @@ class DynamicSensorPlanner:
             if c in self.room_locations.keys(): #if c < len(self.room_locations):
                 objects = self.rooms[c]
                 if objects:
-                    total_belief = sum(self.belief[o] for o in objects)
+                    try:
+                        total_belief = sum(self.belief[o] for o in objects)
+                    except:
+                        pdb.set_trace()
                     self.group_belief['ROOM'+str(c)] = total_belief / len(objects)
                     self.group_tau['ROOM'+str(c)] = sum(self.tau_current[o] for o in objects)
                 else:
@@ -1012,7 +1132,7 @@ class DynamicSensorPlanner:
         
         self.node_type = self.node_type_classification(self.nodes)
         
-        print("BELIEFS", self.belief)
+        print("BELIEFS", self.belief, self.tau_current, self.LLR, object_beliefs)
         
     
     def set_monitoring(self, agent, assigned, skip_state):
@@ -1043,6 +1163,9 @@ class DynamicSensorPlanner:
             
                 self.path_monitoring[agent].set_time_spent(curr_pos,path,assigned)
                 
+                #if "carry" in assigned:
+                #    pdb.set_trace()
+                
                 init_time = time.time()
                 if 'SAFE' in assigned:
                     self.path_monitoring[agent].set('goal area', self.occMap, self.original_room_locations)
@@ -1057,6 +1180,7 @@ class DynamicSensorPlanner:
                                 self.path_monitoring[agent].set('main area', self.occMap, self.original_room_locations) #What happens if in the boundary?
                             else:
                                 self.path_monitoring[agent].set(r, self.occMap, self.original_room_locations)
+                                print("setting to ", r, self.rooms)
                             break
                             
                 print(time.time() - init_time)        
@@ -1065,12 +1189,13 @@ class DynamicSensorPlanner:
     def replan(self,skip_state=[],pretend=False, current_time=0):
     
         print("SKIP STATE", skip_state)
+        #pdb.set_trace()
     
         model = gp.Model("FixedRoutingAssignment")
         
         model.setParam('Threads', 15)
         
-        M = len(self.nodes) + 1  # Upper bound for order variables
+        M = len(self.objects_to_carry) + len(self.room_locations.keys()) #len(self.nodes) + 1  # Upper bound for order variables
         
         # ================== Decision Variables ==================
         assign = model.addVars([(i, j) for i in self.agents for j in self.nodes if not (i == 'HOME' or j == 'HOME')], vtype=GRB.BINARY, name="Assign")
@@ -1242,6 +1367,16 @@ class DynamicSensorPlanner:
         
         objective_weights = [0.1,1,1,1,1,10]
         objective_names = ["distance to travel", "completeness", "uncertainty reduction", "reliability", "agent utilization", "object carrying"]
+        penalties = [inspection_time + travel_time + collaborative_travel - exploration_reward, confidence_penalty, uncertainty_penalty, reliability_objective, subutilization_penalty, -completeness]
+        
+        penalty_index = 0
+        
+        for p_idx in range(len(penalties)):
+            if objective_names[p_idx] not in self.skipped_objectives:
+                model.setObjectiveN(penalties[p_idx], index=penalty_index, weight=objective_weights[p_idx])
+                penalty_index += 1
+        
+        '''
         model.setObjectiveN(inspection_time + travel_time + collaborative_travel - exploration_reward, index=0, weight=objective_weights[0])
         model.setObjectiveN(confidence_penalty, index=1, weight=objective_weights[1])
         model.setObjectiveN(uncertainty_penalty, index=2, weight=objective_weights[2])
@@ -1249,6 +1384,7 @@ class DynamicSensorPlanner:
         model.setObjectiveN(subutilization_penalty, index=4, weight=objective_weights[4]) 
         # give it its own objective index, e.g. index=1, with whatever weight you like:
         model.setObjectiveN(-completeness,index=5, weight=objective_weights[5])
+        '''
         #Minimize agents subutilization
         #model.setObjective(inspection_time + travel_time + uncertainty_penalty + confidence_penalty + collaborative_travel, GRB.MINIMIZE)
 
@@ -1261,7 +1397,6 @@ class DynamicSensorPlanner:
                 f"Confidence_{j}"
             )
         '''
-
 
         carrying_heavy_objects_nodes = {}
         
@@ -1374,6 +1509,10 @@ class DynamicSensorPlanner:
                             order[i,'SAFE'+object_id] == order[i,j]+1, f"Force_SAFE_Order_{j}_{i}"
                         )
                         
+                        model.addConstr(
+                            order[i,'SAFE'+object_id] >= 2, f"Force_SAFE_Order_More_Than_HOME{j}_{i}"
+                        )
+                        
                         
                     
                 else:
@@ -1418,19 +1557,38 @@ class DynamicSensorPlanner:
             
                 if j == 'HOME':
                     continue
-            
+                '''
                 # If traveling from HOME to j, order[j] = 1
                 model.addConstr(
                     (travel[i, 'HOME', j] == 1) >> (order[i,j] == 1),
                     f"MTZ_HomeStart_{i}_{j}"
                 )
+                '''
+
+                # similarly for HOME → first order
+                model.addGenConstrIndicator(
+                    travel[i, 'HOME', j], 
+                    True, 
+                    order[i, j] == 1,
+                    name=f"MTZ_home_ind_{i}_{j}"
+                )
+
+                
                 for k in self.nodes:
                     if j != k and k != 'HOME':
+                        model.addGenConstrIndicator(
+                            travel[i, j, k], 
+                            True,                     # when travel[i,j,k] = 1
+                            order[i, k] >= order[i, j] + 1,
+                            name=f"MTZ_ind_{i}_{j}_{k}"
+                        )
+                        '''
                         # If traveling j->k, order[k] >= order[j] + 1
                         model.addConstr(
                             order[i,k] >= order[i,j] + 1 - M*(1 - travel[i,j,k]),
                             f"MTZ_Order_{i}_{j}_{k}"
                         )
+                        '''
                         
                     
 
@@ -1483,7 +1641,10 @@ class DynamicSensorPlanner:
 
         for j in self.objects_to_carry:
             carry_node = f"carry_{j}"
-            w = self.object_weights[j]
+            try:
+                w = self.object_weights[j]
+            except:
+                pdb.set_trace()
             # at least w assignments if picked[j]=1
             try:
                 model.addConstr(
@@ -1501,7 +1662,14 @@ class DynamicSensorPlanner:
                 pdb.set_trace()
 
         # ================== Solve & Results ==================
-        model.Params.TimeLimit = 5
+
+        model.Params.TimeLimit = 5 + self.adjust_feasibility*10
+        
+        if self.adjust_feasibility:
+            model.Params.MIPFocus    = 1         # 1 = focus on feasibility
+            model.Params.Heuristics  = 0.8       # boost heuristic search
+            model.Params.Presolve    = 2         # aggressive presolve on
+            print("adjust")
         model.optimize()
 
         objectives = []
@@ -1548,6 +1716,8 @@ class DynamicSensorPlanner:
                     
                     first_time = time.time()
                     if not pretend:
+                        #if "carry" in sorted_assigned[0][0]:
+                        #    pdb.set_trace()
                         self.set_monitoring(i, sorted_assigned[0][0], skip_state)
                         print("took", time.time() - first_time)
                         
@@ -1559,7 +1729,14 @@ class DynamicSensorPlanner:
             objectives = []
             objective_weights = []
             objective_names = []
-            #pdb.set_trace()
+            
+            if not pretend:
+                if "agent utilization" not in self.skipped_objectives:
+                    self.skipped_objectives.append("agent utilization")
+                
+                self.adjust_feasibility += 1
+                
+                #pdb.set_trace()
         
         
         if self.log:

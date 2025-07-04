@@ -1,3 +1,6 @@
-hierarchy: {A: equal, B: equal, C: equal, D: equal, E: equal}
+hierarchy: {A: order, B: obey, C: obey, D: obey, E: equal}
 role: {A: equal, B: equal, C: equal, D: equal, E: equal}
-interdependency: {A: followed, B: follower, C: follower, D: followed, E: equal}
+interdependency: {A: equal, B: equal, C: equal, D: equal, E: equal}
+return: {A: False, B: False, C: False, D: False, E: False}
+communication_range: {A: 5, B: 50, C: 5, D: 5}
+suggestions: True

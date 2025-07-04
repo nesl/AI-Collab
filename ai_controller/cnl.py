@@ -602,7 +602,7 @@ class MessagePattern:
         
     @staticmethod
     def order_sense_room(robot_id, room):
-        return str(robot_id) + ", sense room " + room + ". "
+        return str(robot_id) + ", sense room " + room + " and report results. "
     
     @staticmethod    
     def order_sense_room_regex():

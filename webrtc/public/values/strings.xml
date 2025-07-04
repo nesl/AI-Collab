@@ -306,24 +306,29 @@
     -->
     
     <entry name="Title">Movement</entry>
-    <entry name="Come closer" id="come_closer">Come closer [agent_id]. </entry>
-    <entry name="Request to move" id="move_request">Hey [agent_id], I need you to move. </entry>
+    
     
     <entry name="Title">End</entry>
     <entry name="End participation" id="finish">Let's end participation. </entry>
     <entry name="Don't end participation" id="finish_reject">Wait, let's not end participation yet. </entry>
     
-    <entry name="Order complete" id="order_complete">Order completed. </entry>
+    <entry name="Order complete/New order" id="order_complete">Order completed. </entry>
     <entry name="Room empty" id="room_empty">Room is empty. </entry>
-    <entry name="Move away" id="move_away">Hey [agent_id_list], I need you to move. </entry>
-    <entry name="Come closer" id="come_closer">Come closer [agent_id_list]. </entry>
     
+    <entry name="Come closer" id="come_closer">Come closer [agent_id]. </entry>
+    <entry name="Move away" id="move_away">Hey [agent_id], I need you to move. </entry>
+    <!--
+    <entry name="Request to move" id="move_request">Hey [agent_id], I need you to move. </entry>
+    <entry name="Come closer" id="come_closer">Come closer [agent_id_list]. </entry>
+    -->
+    
+    <entry name="Thanks" id="thanks">Thanks [agent_id]</entry>
     <entry name="Order cancelled" id="order_cancelled">Order cancelled [agent_id]</entry>
     <entry name="Order sense room" id="order_sense_room">[agent_id], sense room [room_id]</entry>
     <entry name="Order collect object" id="order_collect_object">[agent_id], collect object [object_id]</entry>
     <entry name="Order collect object team" id="order_collect_object_team">Team leader: [agent_id]. Helpers: [agent_id_list]. Collect object [object_id]</entry>
     <entry name="Order sense object" id="order_sense_object">[agent_id], sense object [object_id] at location [object_location]</entry>
-    <entry name="Thanks" id="thanks">Thanks [agent_id]</entry>
+    
     <entry name="Object to message multiple" id="item_multiple">[object_list]</entry>
     
     

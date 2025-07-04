@@ -35,7 +35,7 @@ function loadXMLDoc() {
 }
 
 var cnl_filters = {"normal":{},"regex":{}};
-var cnl_filter_names = ["Order sense room","Order collect object","Order collect object team","Order cancelled","Order sense object", "Thanks"];
+var cnl_filter_names = ["Order cancelled","Thanks","Order sense room","Order collect object","Order collect object team","Order sense object"];
 
 var object_filter_names = ["Object to message multiple","Object to message"]
 var object_filters = {"normal":{},"regex":{}};
@@ -63,7 +63,7 @@ function set_cnl(){
             object_filters["normal"][cnl_entries[z].getAttribute("id")] = message_text2; 
         }
         
-        if((only_cnl && cnl_name != "Title") || cnl_name == "Agent to message" || cnl_name == "Object to message" || cnl_name == "Order complete" || cnl_name == "Room empty" || cnl_name == "Move away" || cnl_name == "Come closer"){
+        if((only_cnl && cnl_name != "Title") || cnl_name == "Agent to message" || cnl_name == "Object to message" || cnl_name == "Order complete/New order" || cnl_name == "Room empty" || cnl_name == "Move away" || cnl_name == "Come closer"){
         
             if(! cnl_entries[z].getAttribute("hide")){
                 var div_cnl = document.createElement('div');
@@ -109,6 +109,10 @@ function set_cnl(){
                 button_cnl.appendChild(span_cnl);
                 
                 div_cnl.appendChild(button_cnl);
+                
+                if(cnl_name == "Order complete/New order" || cnl_name == "Come closer"){
+                    cnl_entries_doc.appendChild(document.createElement('br'));
+                }
                 
                 cnl_entries_doc.appendChild(div_cnl);
             
@@ -1039,7 +1043,7 @@ var last_clicked_id = {};
 
 function selectOnlyThis(event, id, name) {
 
-    if(! event.ctrlKey && ! event.shiftKey){
+    if(! event.ctrlKey && ! event.metaKey && ! event.shiftKey){
         var all_checkboxes = document.getElementsByName(name);
         for (var i = 0;i < all_checkboxes.length; i++)
         {
@@ -1132,6 +1136,7 @@ function reset(config_options){
         if(map_config['all_robots'][ob_idx][0] === client_id){
             sensor_parameters = map_config["sensor_parameters"][ob_idx];
             map_config['all_robots'].splice(ob_idx,1);
+            map_config['sensor_parameters'].splice(ob_idx,1);
             break;
         }
     }
@@ -1761,7 +1766,17 @@ socket.on("human_output", (location, item_info, neighbors_info, timer, disable, 
                 }
             } else {
                 
-                if(text_node.style.color != "black"){
+                if(distance >= 2.5 && distance < 3){
+                    if(text_node.style.color != "Brown"){
+                        text_node.style.color = "Brown";
+                    }
+                }
+                else if(distance >= 3){
+                    if(text_node.style.color != "DarkRed"){
+                        text_node.style.color = "DarkRed";
+                    }
+                }
+                else if(text_node.style.color != "black"){
                     text_node.style.color = "black";
                 }
             
@@ -2893,6 +2908,7 @@ socket.on("message", (message, timestamp, id, robot_state) => {
     
     console.log("MEssage:", message)
     var agent_command = document.getElementById('agent_command');
+    var matched = false;
     for (const idreg in cnl_filters["regex"]) {
         let matches_lst = message.matchAll(cnl_filters["regex"][idreg]);
         //var mregex = new RegExp(cnl_filters["regex"][idreg]);
@@ -2902,7 +2918,7 @@ socket.on("message", (message, timestamp, id, robot_state) => {
             switch(idreg){
                 case 'order_cancelled':
                 case 'thanks':
-                    if(mregex_match[1] == client_id){
+                    if(mregex_match[1] == client_id && ! matched){
                         agent_command.textContent = "";
                     }
                 
@@ -2910,12 +2926,14 @@ socket.on("message", (message, timestamp, id, robot_state) => {
                 case 'order_collect_object_team':
                     if(mregex_match[1] == client_id || mregex_match[2].includes(client_id)){
                         agent_command.textContent = "Current order: " + mregex_match[0];
+                        matched = true;
                     }
                 
                     break;
                 default:
                     if(mregex_match[1] == client_id){
                         agent_command.textContent = "Current order: " + mregex_match[0];
+                        matched = true;
                     }
                 
             }
@@ -3030,10 +3048,10 @@ function add_external_estimates(object_id, id, danger_status, prob){
             
         }
         
-        if(! present){
+        if(! present && id != client_id){
             extra_info_estimates[object_id].push([id,danger_status,prob]);
         }
-    }else{
+    }else if(id != client_id){
         extra_info_estimates[object_id] = [[id,danger_status,prob]]
         
     }
