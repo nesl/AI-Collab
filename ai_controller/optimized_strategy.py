@@ -330,7 +330,7 @@ class RobotMonitor:
                     for agent in team[t]:
                         if self.agents_type[agent] == "ai" and agent not in AI_team:
                             AI_team.append(agent)
-                        elif agent not in human_team:
+                        elif self.agents_type[agent] == "human" and agent not in human_team:
                             human_team.append(agent)
                     break
         
@@ -959,7 +959,7 @@ class DynamicSensorPlanner:
         
         
         if set(agents) ^ set(self.LLR.keys()):      
-            for i in self.agents:
+            for i in agents:
                 if i not in self.LLR.keys():
                     PD, PB = self.PD_PB[i]
                     self.LLR[i] = {
@@ -1740,7 +1740,7 @@ class DynamicSensorPlanner:
         
         
         if self.log:
-            collected_info = {"nodes": self.nodes, "agents": self.agents, "objects": self.objects, "sensor_parameters": self.PD_PB, "objects_to_carry": self.objects_to_carry, "object_weights": self.object_weights, "pretend": pretend, "skip_state": skip_state, "objectives": objectives, "objective_weights": objective_weights, "objective_names": objective_names, "assignments": assignments, "group_tau": self.group_tau, "current_positions": self.current_positions, "room_locations": list(self.room_locations.keys()), "occMap": self.occMap.tolist(), "locations": self.locations, "rooms": self.rooms, "sensed_clusters": self.sensed_clusters, "sensed_objects": self.sensed_objects, "already_carried": self.already_carried, "group_belief":self.group_belief, "LLR": self.LLR, "tau_current": self.tau_current, "belief": self.belief, "past_beliefs": self.past_beliefs, "original_room_locations": list(self.original_room_locations.keys()), "reliability": [[i,self.path_monitoring[i].reliability] for i in self.path_monitoring.keys()], "activity_times": [[i,self.path_monitoring[i].times] for i in self.path_monitoring.keys()], "time":current_time} 
+            collected_info = {"type": 0, "nodes": self.nodes, "agents": self.agents, "objects": self.objects, "sensor_parameters": self.PD_PB, "objects_to_carry": self.objects_to_carry, "object_weights": self.object_weights, "pretend": pretend, "skip_state": skip_state, "objectives": objectives, "objective_weights": objective_weights, "objective_names": objective_names, "assignments": assignments, "group_tau": self.group_tau, "current_positions": self.current_positions, "room_locations": list(self.room_locations.keys()), "occMap": self.occMap.tolist(), "locations": self.locations, "rooms": self.rooms, "sensed_clusters": self.sensed_clusters, "sensed_objects": self.sensed_objects, "already_carried": self.already_carried, "group_belief":self.group_belief, "LLR": self.LLR, "tau_current": self.tau_current, "belief": self.belief, "past_beliefs": self.past_beliefs, "original_room_locations": list(self.original_room_locations.keys()), "reliability": [[i,self.path_monitoring[i].reliability] for i in self.path_monitoring.keys()], "activity_times": [[i,self.path_monitoring[i].times] for i in self.path_monitoring.keys()], "time":current_time} 
             
             try:
                 json.dumps(collected_info)
@@ -1753,6 +1753,13 @@ class DynamicSensorPlanner:
             return assignments, (objectives,objective_weights,objective_names)
         else:
             return [], []
+            
+            
+    def log_plan_suggestion_timing(self,time_last_suggestion_interval, proposed_plan_similarities, agent_plan, functions, current_time):
+        if self.log:
+            collected_info = {"type": 1, "time_last_suggestion_interval":time_last_suggestion_interval,"proposed_plan_similarities":proposed_plan_similarities, "agent_plan":agent_plan,"functions":functions, "time":current_time} 
+            self.log_state_f.write(json.dumps(collected_info)+'\n')
+            
 # ================== Data Setup ==================
 
 if __name__ == "__main__":

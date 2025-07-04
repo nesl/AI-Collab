@@ -142,6 +142,12 @@ class OptimizedControl:
         if not all(robot[1] for robot in env.neighbors_info): #Check if there are human peers    
         
             self.human_to_ai_text = Human2AIText(env, robotState, team_structure)
+            
+            
+        self.human_leaders = False
+        if any(not robot[1] and self.team_structure["hierarchy"][robot[0]] == "order" for robot in env.neighbors_info):
+            self.human_leaders = True
+            
        
     class Other_Agent:
         
@@ -327,7 +333,7 @@ class OptimizedControl:
                 arguments = function_str.split(",")
                 argument = eval(arguments[0][arguments[0].find("(") + 1:])
                 
-                if not argument:
+                if not argument and argument != 0:
                     xy_grid = eval(arguments[1] + ',' + arguments[2])
                     xy_world = self.env.convert_to_real_coordinates(xy_grid)
                     if xy_world:
@@ -1832,7 +1838,6 @@ class OptimizedControl:
           
                             ## Evaluate similarities with previous proposed plan by AI agent
                             if self.proposed_plan:
-                        
                                 try:
                                     agent_plan = {}
                                     proposed_plan_similarities = []
@@ -1850,8 +1855,9 @@ class OptimizedControl:
                                     if any(proposed_plan_similarities):
                                         self.time_last_suggestion_interval = max(60, self.time_last_suggestion_interval-60)
                                     else:
-                                        self.time_last_suggestion_interval += 30
+                                        self.time_last_suggestion_interval += 60 #30
                                         
+                                    self.planner.log_plan_suggestion_timing(self.time_last_suggestion_interval, proposed_plan_similarities, agent_plan, functions, info["time"])
                                     print("Current time interval: ", self.time_last_suggestion_interval)
                                 except:
                                     pdb.set_trace()
@@ -2098,6 +2104,9 @@ class OptimizedControl:
                                             if not obeying:
                                                 explanation_queue = objective_explanation + "Let's do that. "
                                                 
+                                                if objective_explanation:
+                                                    explanation_queue = self.human_to_ai_text.customize_plan_response(2, rm, explanation_queue, list(self.message_history)[-20:], robotState, info)
+                                                
                                                 objective_explanation = "Your plan seems good: [" + final_function_descriptions + "]. "
                                                 
                                                 self.providing_plan,self.optimization_metrics = plan2,objectives
@@ -2116,6 +2125,10 @@ class OptimizedControl:
                                         else:
                                             if not obeying:
                                                 explanation_queue = objective_explanation + "Let's stick with the previous plan. "
+                                                
+                                                if objective_explanation:
+                                                    explanation_queue = self.human_to_ai_text.customize_plan_response(1, rm, explanation_queue, list(self.message_history)[-20:], robotState, info)
+                                                
                                                 objective_explanation = MessagePattern.plan_evaluation_bad() + "[" + final_function_descriptions + "]. "
                                             else:
                                                 
@@ -2125,6 +2138,11 @@ class OptimizedControl:
                                                     extra_explanation = "I will follow your orders, although "
                                                 
                                                 explanation_queue = objective_explanation + extra_explanation + "I think you may consider a better plan: [" + plan_description + "] "
+                                                
+                                                if objective_explanation:
+                                                    explanation_queue = self.human_to_ai_text.customize_plan_response(0, rm, explanation_queue, list(self.message_history)[-20:], robotState, info)
+                                                
+                                                #explanation_queue += "I think you may consider a better plan: [" + plan_description + "] "
                                                 objective_explanation = MessagePattern.plan_evaluation_bad() + "[" + final_function_descriptions + "]. "
                                     else:
                                         if not obeying:
@@ -2138,6 +2156,10 @@ class OptimizedControl:
                                                 extra_explanation = "I will follow your orders, although "
                                                 
                                             explanation_queue = objective_explanation + extra_explanation + "I think you may consider a better plan: [" + plan_description + "] "
+                                            
+                                            if objective_explanation:
+                                                explanation_queue = self.human_to_ai_text.customize_plan_response(0, rm, explanation_queue, list(self.message_history)[-20:], robotState, info)
+                                            
                                             objective_explanation = MessagePattern.plan_evaluation_bad() + "[" + final_function_descriptions + "]. "
                                             
                             
@@ -2614,9 +2636,10 @@ class OptimizedControl:
                         
                     moving_result = self.planner.path_monitoring[robot_id].move_to(room_num, info["time"])
                     if moving_result == 1:
-                        self.message_text.insert(MessagePattern.not_following_order(robot_id),robot_id)
-                        
                         if self.team_structure["hierarchy"][self.env.robot_id] == "order" and robot_id in self.plan and self.plan[robot_id]:
+                        
+                            self.message_text.insert(MessagePattern.not_following_order(robot_id),robot_id)
+                        
                             if "sense" in self.plan[robot_id][0]:
                                 if "ROOM" in self.plan[robot_id][0]:
                                     self.message_text.insert("You should go towards room " + self.planner.path_monitoring[robot_id].goal + ". ",robot_id)
@@ -2691,7 +2714,8 @@ class OptimizedControl:
                     
                     if agent_od[1] not in team.keys():
                         team[agent_od[1]] = []
-                    team[agent_od[1]].append(agent_od[0])
+                    if agent_od[0] not in team[agent_od[1]]:
+                        team[agent_od[1]].append(agent_od[0])
                     '''
                     if agent_od[0] != self.env.robot_id:
                         agent_idx = info['robot_key_to_index'][agent_od[0]]
@@ -2701,7 +2725,7 @@ class OptimizedControl:
                     '''
             for od in robotState.dropped_objects:
                 for agent_od in od:
-                    if self.planner and self.planner.path_monitoring[agent_od[0]]:
+                    if self.planner and agent_od[0] in self.planner.path_monitoring.keys() and self.planner.path_monitoring[agent_od[0]]:
                         self.planner.path_monitoring[agent_od[0]].update_reliability("carry_heavy", 0, team=team, current_time=info["time"])
                     '''
                     if any(humans_in_team[agent_od[1]]):
@@ -3099,7 +3123,7 @@ class OptimizedControl:
         output = []
         
         try:
-            if str(object_id) in info['object_key_to_index'] and robotState.get("objects", "already_sensed", info['object_key_to_index'][str(object_id)]) == "Yes":
+            if str(object_id) in info['object_key_to_index'] and robotState.get("objects", "already_sensed", info['object_key_to_index'][str(object_id)]) == "Yes" and self.top_action_sequence < 1:
                 return action, True, [] 
         except:
             print("Don't know object sense_object")
@@ -4705,9 +4729,19 @@ class OptimizedControl:
                             continue
                         objects_reported.append(ob[0])
                         
-                        if ob[0] not in self.other_agents[info['robot_key_to_index'][str(self.leader_id)]].items_info_provided:
-                            self.message_text.insert(MessagePattern.item(robotState,object_idx,ob[0], info, self.env.robot_id, self.env.convert_to_real_coordinates),str(self.leader_id))
-                            self.other_agents[info['robot_key_to_index'][str(self.leader_id)]].items_info_provided.append(ob[0])
+                        
+                        if self.human_leaders:
+                            ai_teammates =  [robot[0] for robot in self.env.neighbors_info if robot[1]]
+                            agentss = [str(self.leader_id),*ai_teammates]
+                            for agent_id in agentss:
+                                if ob[0] not in self.other_agents[info['robot_key_to_index'][agent_id]].items_info_provided:
+                                    self.message_text.insert(MessagePattern.item(robotState,object_idx,ob[0], info, self.env.robot_id, self.env.convert_to_real_coordinates),agent_id)
+                                    self.other_agents[info['robot_key_to_index'][agent_id]].items_info_provided.append(ob[0])
+                                    
+                        else:
+                            if ob[0] not in self.other_agents[info['robot_key_to_index'][str(self.leader_id)]].items_info_provided:
+                                self.message_text.insert(MessagePattern.item(robotState,object_idx,ob[0], info, self.env.robot_id, self.env.convert_to_real_coordinates),str(self.leader_id))
+                                self.other_agents[info['robot_key_to_index'][str(self.leader_id)]].items_info_provided.append(ob[0])
                      
                     print('MESSAGE:',self.message_text.get())
 
@@ -4719,7 +4753,13 @@ class OptimizedControl:
                             object_idx = info["object_key_to_index"][ob]
                         except:
                             pdb.set_trace()
-                        self.message_text.insert(MessagePattern.item(robotState,object_idx,ob, info, self.env.robot_id, self.env.convert_to_real_coordinates),str(self.leader_id))
+                            
+                        if self.human_leaders:
+                            ai_teammates =  [robot[0] for robot in self.env.neighbors_info if robot[1]]
+                            agentss = [str(self.leader_id),*ai_teammates]
+                            self.message_text.insert(MessagePattern.item(robotState,object_idx,ob, info, self.env.robot_id, self.env.convert_to_real_coordinates),agentss)
+                        else:
+                            self.message_text.insert(MessagePattern.item(robotState,object_idx,ob, info, self.env.robot_id, self.env.convert_to_real_coordinates),str(self.leader_id))
                 elif "go_to_location" in self.order_status_info[0]:
                     self.message_text.insert(MessagePattern.surroundings(self.order_status_info[1], int(self.env.view_radius), robotState, info, self.env.convert_to_real_coordinates),str(self.leader_id))
             self.order_status = self.OrderStatus.reporting_availability

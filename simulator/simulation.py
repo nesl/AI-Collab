@@ -2675,10 +2675,34 @@ class Simulation(Controller):
 
                 #Coordinates can be for a magnebot or object
                 if mid in self.ai_magnebots_ids:
-                    mid = 'A_'+self.robot_names_translate[mid]
+                    
+                    viewable = False
+                    
+                    if not scre.get_avatar_id() == "a":
+                        ai_idx = self.ai_magnebots_ids.index(mid)
+                        if np.linalg.norm(all_magnebots[idx].dynamic.transform.position - self.ai_magnebots[ai_idx].dynamic.transform.position) < 12:
+                            viewable = True
+                        else:
+                            mid = ""
+                    else:
+                        viewable = True
+                        
+                    if viewable:
+                        mid = 'A_'+self.robot_names_translate[mid]
                 elif mid in self.user_magnebots_ids:
 
-                    mid = 'U_'+self.robot_names_translate[mid]
+                    viewable = False
+                    if not scre.get_avatar_id() == "a":
+                        u_idx = self.user_magnebots_ids.index(mid)
+                        if np.linalg.norm(all_magnebots[idx].dynamic.transform.position - self.ai_magnebots[u_idx].dynamic.transform.position) < 12:
+                            viewable = True
+                        else:
+                            mid = ""
+                    else:
+                        viewable = True
+                        
+                    if viewable:
+                        mid = 'U_'+self.robot_names_translate[mid]
                 else: #For object
 
                     if not scre.get_avatar_id() == "a":
@@ -2704,12 +2728,12 @@ class Simulation(Controller):
                     else:
                         color = (255, 255, 255)
 
-                if scre.get_avatar_id() not in screen_data:
+                if mid and scre.get_avatar_id() not in screen_data:
                     screen_data[scre.get_avatar_id()] = {}
                     screen_data[scre.get_avatar_id()]['coords'] = [scre_coords]
                     screen_data[scre.get_avatar_id()]['ids'] = [mid]
                     screen_data[scre.get_avatar_id()]['color'] = [color]
-                else:
+                elif mid:
                     screen_data[scre.get_avatar_id()]['coords'].append(scre_coords)
                     screen_data[scre.get_avatar_id()]['ids'].append(mid)
                     screen_data[scre.get_avatar_id()]['color'].append(color)
@@ -3207,7 +3231,7 @@ class Simulation(Controller):
                         break
             
                 #print(object_room, ego_room)
-                if True: #np.linalg.norm(self.object_manager.transforms[o].position - ego_magnebot.dynamic.transform.position) < int(self.cfg['sensing_radius']) and not any(doIntersect([self.object_manager.transforms[o].position[0],self.object_manager.transforms[o].position[2]],[ego_magnebot.dynamic.transform.position[0],ego_magnebot.dynamic.transform.position[2]],[self.walls[w_idx][0][0],self.walls[w_idx][0][1]],[self.walls[w_idx][-1][0],self.walls[w_idx][-1][1]]) for w_idx in range(len(self.walls))) and ego_room == object_room:
+                if np.linalg.norm(self.object_manager.transforms[o].position - ego_magnebot.dynamic.transform.position) < int(self.cfg['sensing_radius']) and not any(doIntersect([self.object_manager.transforms[o].position[0],self.object_manager.transforms[o].position[2]],[ego_magnebot.dynamic.transform.position[0],ego_magnebot.dynamic.transform.position[2]],[self.walls[w_idx][0][0],self.walls[w_idx][0][1]],[self.walls[w_idx][-1][0],self.walls[w_idx][-1][1]]) for w_idx in range(len(self.walls))) and ego_room == object_room:
                         
                     #print([doIntersect([self.object_manager.transforms[o].position[0],self.object_manager.transforms[o].position[2]],[ego_magnebot.dynamic.transform.position[0],ego_magnebot.dynamic.transform.position[2]],[self.walls[w_idx][0][0],self.walls[w_idx][0][1]],[self.walls[w_idx][-1][0],self.walls[w_idx][-1][1]]) for w_idx in range(len(self.walls))])
                     
