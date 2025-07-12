@@ -114,7 +114,7 @@ var window_name = '';
 
 var char_replacement = [{'Up':'Up','Down':'Down','Left':'Left','Right':'Right'},{'Up':'W','Down':'S','Left':'A','Right':'D'}];
 var clients_ids = [], user_ids_list = [], ai_ids_list = [], ai_ids = [], all_ids = [], all_ids_list = [], stats = {}, saved_events = [], saved_key_strokes = [], saved_tutorial_state = [];
-var wait_ids = [], redirect_ids = [], waiting_room = false, wait_cookies=[], redirect_cookies=[], redirect_questions=[], redirect_answers=[], use_cookies = command_line_options.cookies;
+var wait_ids = [], redirect_ids = [], waiting_room = false, wait_cookies=[], redirect_cookies=[], redirect_questions=[], redirect_answers=[], redirect_agents_ids = [], use_cookies = command_line_options.cookies;
 var init_xdotool = false;
 var video_idx_broadcaster = 0;
 var past_timer2 = 0, last_time = 0;
@@ -848,7 +848,7 @@ io.sockets.on("connection", socket => { //When a client connects
     
   });
   
-  socket.on("redirect_session", (demographics_questions, demographics_answers) => {
+  socket.on("redirect_session", (demographics_questions, demographics_answers, agent_id) => {
 
     var cookie = getCookie(socket.request.headers.cookie,'simulator_cookie');
 
@@ -858,30 +858,61 @@ io.sockets.on("connection", socket => { //When a client connects
         redirect_cookies.push(cookie);
         redirect_questions.push(demographics_questions);
         redirect_answers.push(demographics_answers);
+        redirect_agents_ids.push(agent_id.toUpperCase().trim());
 
 
         if(redirect_ids.length == user_ids_list.length){
             socket.to(simulator).emit("reset_tutorial");
             socket.to(simulator).emit("enable_timer");
             waiting_room = false;
+            
+            var saved_idxs = [];
+            var remaining_idx_range = [...Array(redirect_ids.length).keys()];
+            for (let id_idx = 0; id_idx < redirect_agents_ids.length; id_idx++) {
+                if(redirect_agents_ids[id_idx]){
+                    var saved_idx = user_ids_list.indexOf(redirect_agents_ids[id_idx]);
+                    if(! saved_idxs.includes(saved_idx)){
+                        var index = remaining_idx_range.indexOf(saved_idx);
+                        remaining_idx_range.splice(index, 1);
+                        saved_idxs.push(saved_idx);
+                    } else{
+                        saved_idxs.push(-1);
+                    }
+                }
+            }
+            
+            
+            console.log(redirect_agents_ids, user_ids_list, saved_idxs, remaining_idx_range);
             for (let id_idx = 0; id_idx < redirect_ids.length; id_idx++) {
                 individual_passcode = Math.random().toString(36).substring(2,7);
                 passcode.push(individual_passcode);
                 
-                if(command_line_options.log){
-    	            fs.appendFile(dir + dateTime + '.txt', '0.00' + ',7,' + String(id_idx+1) + ',' + redirect_cookies[id_idx] + ',' + JSON.stringify(redirect_questions[id_idx]) + ',' + JSON.stringify(redirect_answers[id_idx]) + '\n', err => {});
+                var s_idx;
+                if(redirect_agents_ids[id_idx]){
+                    s_idx = saved_idxs.shift();
+                    if(s_idx == -1){
+                        s_idx = remaining_idx_range.shift();
+                    }
+                    
+                } else{
+                    s_idx = remaining_idx_range.shift();
                 }
                 
-                console.log(id_idx, individual_passcode)
+                if(command_line_options.log){
+    	            fs.appendFile(dir + dateTime + '.txt', '0.00' + ',7,' + String(s_idx+1) + ',' + redirect_cookies[id_idx] + ',' + JSON.stringify(redirect_questions[id_idx]) + ',' + JSON.stringify(redirect_answers[id_idx]) + '\n', err => {});
+                }
+                
+                console.log(id_idx, s_idx, individual_passcode)
                 if(redirect_ids[id_idx] == socket.id){
-                    socket.emit("redirect_session", id_idx+1, individual_passcode);
+                    socket.emit("redirect_session", s_idx+1, individual_passcode);
                 } else{
-                    socket.to(redirect_ids[id_idx]).emit("redirect_session", id_idx+1, individual_passcode);
+                    socket.to(redirect_ids[id_idx]).emit("redirect_session", s_idx+1, individual_passcode);
                 }
             }
             
             redirect_questions = [];
             redirect_answers = [];
+            redirect_agents_ids = [];
             
             for (let id_idx = 0; id_idx < wait_ids.length; id_idx++) {
             

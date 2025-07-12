@@ -391,7 +391,7 @@ class RobotMonitor:
         error = actual_time - predicted_time
         
         for f in factors:
-            self.times[f] += eta * error * self.predicted_actions[f]
+            self.times[f] = max(0,self.times[f] + eta * error * self.predicted_actions[f])
         
         self.updates += 1
         
@@ -1438,7 +1438,7 @@ class DynamicSensorPlanner:
                 
                 for i in self.agents:
                     #if (i,j.split('CLUSTER')[1]) in self.sensed_clusters:
-                    if (i,j.split('_')[1]) in self.sensed_clusters:
+                    if (i,j.split('_')[1]) in self.sensed_clusters or (i,j.split('_')[1]) in self.sensed_objects:
                         model.addConstr(
                             assign[i,j] == 0,
                             f"already_sensed_{i}_{j}"
@@ -1675,6 +1675,7 @@ class DynamicSensorPlanner:
         objectives = []
 
         # Print routes with order
+        not_assigned = False
         if (model.status == GRB.OPTIMAL or model.status == GRB.TIME_LIMIT) and model.solCount:
         
             for s in range(model.NumObj):
@@ -1698,10 +1699,13 @@ class DynamicSensorPlanner:
             #if not assignments or len(assignments) < len(self.agents):
             #    pdb.set_trace()
             
+            not_assigned = True
             for i in self.agents:
                 
                 assigned = [(j, int(order[i,j].X)) for j in self.nodes if j != 'HOME' and assign[i,j].X > 0.5]
                 if assigned:
+                    
+                    not_assigned = False
                     
                     sorted_assigned = sorted(assigned, key=lambda x: x[1])
                     assignments.append((i,sorted_assigned))
@@ -1721,7 +1725,8 @@ class DynamicSensorPlanner:
                         self.set_monitoring(i, sorted_assigned[0][0], skip_state)
                         print("took", time.time() - first_time)
                         
-            
+            if not_assigned: #everything has been sensed and carried
+                pass    
             
         else:
             print("No solution found", model.status, skip_state)
@@ -1750,9 +1755,9 @@ class DynamicSensorPlanner:
         
         
         if assignments:
-            return assignments, (objectives,objective_weights,objective_names)
+            return assignments, (objectives,objective_weights,objective_names), not_assigned
         else:
-            return [], []
+            return [], [], not_assigned
             
             
     def log_plan_suggestion_timing(self,time_last_suggestion_interval, proposed_plan_similarities, agent_plan, functions, current_time):

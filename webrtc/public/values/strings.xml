@@ -189,6 +189,7 @@
         <list><![CDATA[When you sense an object you will see whether the object is dangerous or benign according to the color of the object ID, and in your sidebar you will be able to consult the object, as well as the accuracy of the prediction<br><img src='/media/object_info.png'><img src='/media/sensor.gif' style='width:30%;height:auto;'/>]]></list>
         <list><![CDATA[Objects have a weight associated with them, and you will only be able to carry those that match your strength level. Strength level is modified by the amount of robots that are close to you and you may only be able to carry a heavy object when you have a given quantity of robots around you.<br><img src='/media/my_strength_bar.png' style='width:20%;height:auto;'/><img src='/media/strength2.gif' style='width:30%;height:auto;'/>]]></list>
         <list><![CDATA[You need to compare estimates of danger levels to get the correct dangerous objects. You can talk with your fellow robots through the sidebar chat. You can send messages by writing the text in the input field and then pressing Enter.<br><img src='/media/chat.gif' style='width:20%;height:auto;'/><img src='/media/object_chosen.gif' style='width:30%;height:auto;'/><img src='/media/object_write.gif' style='width:20%;height:auto;'/>]]></list>
+        <list><![CDATA[Each agent's sensor is characterized by two independent parameters: Probability of an estimate being benign given that the object is benign (<b>P.B.</b>), and Probability of an estimate being dangerous given that the object is dangerous (<b>P.D.</b>).]]></list>
         <list><![CDATA[Maximum distance for carrying objects: <b>[strength_distance_limit] m</b>]]></list>
         <list><![CDATA[Maximum distance for communication: <b>[communication_distance_limit] m</b>]]></list>
         <list><![CDATA[Maximum distance for sensing: <b>[sensing_distance_limit] m</b>]]></list>
@@ -220,12 +221,13 @@
         
         <head><![CDATA[AI agents understand your Natural Language messages! Feel free to ask and respond to AI agents however you like through the Chat sidebar. You can tell them to act in complex ways, understanding that they can make compositions of the following actions:]]></head>
         
-        <list><![CDATA[<b>Move to any location:</b> You can tell them to go to particular coordinates or rooms.]]></list>
-        <list><![CDATA[<b>Collect an object:</b> You can tell them to collect a particular object.]]></list>
-        <list><![CDATA[<b>Sense objects:</b> You can tell them to go sense a particular object or sense all objects in a particular room.]]></list>
-        <list><![CDATA[<b>Follow you:</b> You can tell them to follow you wherever you go so as to pick up heavy objects.]]></list>
-        <list><![CDATA[<b>Drop an object:</b> Drop an object they are carrying.]]></list>
-        <list><![CDATA[<b>Tell an agent something:</b> You can tell them to go tell something to another agent.]]></list>
+        <list><![CDATA[<b>Make them sense a room or object</b>]]></list>
+        <list><![CDATA[<b>Collect an object individually or as part of a team</b>]]></list>
+        <list><![CDATA[<b>Move away if they are blocking the way:</b> Use the <b>Move away</b> button.]]></list>
+        <list><![CDATA[<b>Come closer if they are too far away:</b> Use the <b>Come closer</b> button.]]></list>
+        <list><![CDATA[<b>Report an order being completed/Ask for a new order:</b> Use the <b>Order complete/New order</b> button.]]></list>
+        <list><![CDATA[<b>Report a room as empty:</b> Use the <b>Room empty</b> button.]]></list>
+        <list><![CDATA[Use the <b>Agent to message</b> and <b>Object to message</b> button to exchange information about agents or objects, respectively.]]></list>
         <!--
         <title>Expectations About AI Agents</title>
         

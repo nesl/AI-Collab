@@ -62,6 +62,7 @@ parser.add_argument('--config', type=str, default='team_structure.yaml', help='P
 parser.add_argument('--sql', default=True, action="store_true", help='Use SQL for message parsing')
 parser.add_argument('--no-reset', default=False, action="store_true", help='Continue without waiting for reset')
 parser.add_argument('--log', default=False, action="store_true", help='Log data')
+parser.add_argument('--restart', default=False, action="store_true", help='Restart from checkpoint')
 #parser.add_argument('--communication-distance', type=int, default=5, help='local communication distance limit')
 #parser.add_argument("--openai", action='store_true', help="Use openai.")
 #parser.add_argument("--llm", action='store_true', help="Use LLM.")
@@ -193,7 +194,7 @@ def print_map(occupancy_map): #Occupancy maps require special printing so that t
 device = "cuda"
 
 #skip_frames = 10
-env = gym.make('gym_collab/AICollabWorld-v0', use_occupancy=args.use_occupancy, view_radius=args.view_radius, skip_frames=5, client_number=int(args.robot_number), host=args.host, port=args.port, address=args.address, cert_file=args.cert_file, key_file=args.key_file, webcam=args.webcam, video_index=args.video_index+1)
+env = gym.make('gym_collab/AICollabWorld-v0', use_occupancy=args.use_occupancy, view_radius=args.view_radius, skip_frames=5, client_number=int(args.robot_number), host=args.host, port=args.port, address=args.address, cert_file=args.cert_file, key_file=args.key_file, webcam=args.webcam, video_index=args.video_index+1, restart=args.restart)
 
 
 
@@ -537,6 +538,7 @@ class RobotState:
         
     def get_all_object_rooms(self):
         rooms = set()
+        room_object = {}
         if self.args.sql:
             objects = self.get_all_objects()
             propert = "last_seen_room"
@@ -550,9 +552,15 @@ class RobotState:
                     row = row[0][0]
                     
                     rooms.add(row)
+                    
+                    if row:
+                        item_id = list(self.env.object_key_to_index.keys())[list(self.env.object_key_to_index.values()).index(idx)]
+                        if row not in room_object.keys():
+                            room_object[row] = []
+                        room_object[row].append(item_id)
             except:
                 pdb.set_trace() 
-        return rooms
+        return rooms,room_object
         
     def get(self, database, propert, idx):
     
@@ -1323,6 +1331,7 @@ while True:
                 elif Action(last_action[1]) == Action.get_objects_held:
 
                     robotState.object_held = next_observation['objects_held']
+                    
             
                 elif Action(last_action[1]) == Action.check_item:
                 
@@ -1611,7 +1620,7 @@ while True:
                     object_id = list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(ob_key)]
                     objects_to_report.append(object_id)
 
-            if objects_to_report:
+            if objects_to_report and False:
                 print("Reporting", objects_to_report)
                 env.sio.emit("report", (objects_to_report))
                     

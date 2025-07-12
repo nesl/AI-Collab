@@ -36,7 +36,7 @@ class AICollabEnv(gym.Env):
     # MAIN & SETUP OF HTTP SERVER #########################################
 
     def __init__(self, use_occupancy, view_radius, client_number, address, skip_frames,
-                 host=None, port=None, cert_file=None, key_file=None, record_to=None, webcam=False, video_index=0):
+                 host=None, port=None, cert_file=None, key_file=None, record_to=None, webcam=False, video_index=0, restart=False):
 
         self.pcs = set()
         self.relay = MediaRelay()
@@ -71,6 +71,7 @@ class AICollabEnv(gym.Env):
         self.delete = False
         self.truncated = False
         self.log_name = ""
+        self.restart = restart
         
         self.communication_distance = {}
         
@@ -1488,7 +1489,7 @@ class AICollabEnv(gym.Env):
                             pos_new = [round((danger_sensing_data[object_key]['location'][0]+abs(min_pos))/multiple), round((danger_sensing_data[object_key]['location'][2]+abs(min_pos))/multiple)]
                             '''
 
-                            if danger_sensing_data[object_key]['time'] >= timer:
+                            if danger_sensing_data[object_key]['time'] >= timer or self.restart:
                                 self.last_sensed.append(object_key)
 
                             if "sensor" not in danger_sensing_data[object_key]:
@@ -1521,6 +1522,8 @@ class AICollabEnv(gym.Env):
                             if not known_object:
                                 self.object_info.append([object_key,danger_sensing_data[object_key]['weight'],self.combine_danger_info(danger_sensing_data[object_key]['sensor']),pos_new[0],pos_new[1], timer])
                             '''
+                        if self.restart:
+                            self.restart = False
 
                     if extra_status[2]:  # Objects held
                         sensing_output["objects_held"] = int(

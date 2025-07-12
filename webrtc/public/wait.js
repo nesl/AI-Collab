@@ -187,8 +187,10 @@ function readyFunction(){
 	        array_values.push("");
 	    }
 	}
+	
+	agent_id = document.getElementById('agent_id_question').value;
 
-    socket.emit("redirect_session", questions, array_values);
+    socket.emit("redirect_session", questions, array_values, agent_id);
     document.getElementById('ready-btn').remove();
     
     document.getElementById('waiting-txt').textContent = "Waiting for other players...";
