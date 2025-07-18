@@ -13,7 +13,7 @@ commander
   .option('--log', 'Log everything')
   .option('--message-loop', 'Send back messages sent')
   .option('--password <value>', 'Specify passwords separated by comma')
-  .option('--logdir <value>', 'Specify alternate directory to write logs')
+  .option('--log-dir <value>', 'Specify alternate directory to write logs')
   .option('--replay <value>', 'Replay session using log file')
   .option('--wait', 'Create waiting room')
   .option('--cookies', 'Use cookies')
@@ -35,11 +35,11 @@ const replay_file = command_line_options.replay;
 
 var dir;
 
-if(! command_line_options.logdir){
+if(! command_line_options.logDir){
     dir = './log/';
 }
 else{
-    dir = command_line_options.logdir + '/';
+    dir = './log_' + command_line_options.logDir + '/';
 }
 
 

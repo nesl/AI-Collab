@@ -80,7 +80,7 @@ class OptimizedControl:
         self.team_structure = team_structure
         self.decide_order = False
         self.commander_order_status = self.OrderStatus.finished
-        
+
         if self.team_structure["hierarchy"][self.env.robot_id] == "order":
             self.commander_order_status = self.OrderStatus.giving_order
             self.decide_order = True
@@ -115,6 +115,8 @@ class OptimizedControl:
         self.help_agent_ids = set()
         self.plan = {}
         self.proposed_plan = []
+        self.previous_proposed_plan = []
+        self.proposed_plan_times = 0
         self.planner = []
         self.carry_agents = {}
         self.previous_plan = {}
@@ -1504,14 +1506,17 @@ class OptimizedControl:
                             for c in carrying_agents:
                             
                                 if c != rm[0]:
-                                    self.message_text.insert(MessagePattern.order_cancel(c),c)
+                                    if c == self.env.robot_id:
+                                        self.self_messages.append(self.self_message_create(MessagePattern.order_cancel(c), robotState, info))
+                                    else:
+                                        self.message_text.insert(MessagePattern.order_cancel(c),c)
                             
                                 print("Deleted", c, self.plan[c][0])
-                                del self.plan[c][0]
+                                #del self.plan[c][0]
                                 
-                                if not self.plan[c]:
-                                    del self.plan[c]
-                                    del self.previous_plan[c]
+                                #if not self.plan[c]:
+                                del self.plan[c]
+                                del self.previous_plan[c]
                                             
                         
                         self.decide_order = True
@@ -1870,19 +1875,33 @@ class OptimizedControl:
                                         agent_plan[agent_id] = plan[1][0][0]
                                         
                                     for agent_key in functions.keys():
-                                        if agent_key in agent_plan.keys() and functions[agent_key][0] == agent_plan[agent_key]:
+                                        if agent_key in agent_plan.keys() and agent_plan[agent_key] in functions[agent_key][0]:
                                             proposed_plan_similarities.append(True)
                                         else:
                                             proposed_plan_similarities.append(False)
                                    
+                                    if self.proposed_plan != self.previous_proposed_plan:
+                                        self.previous_proposed_plan = self.proposed_plan
+                                        self.proposed_plan_times = 0
+                                   
                                     print("Previous time interval: ", self.time_last_suggestion_interval)
                                     if any(proposed_plan_similarities):
                                         self.time_last_suggestion_interval = max(60, self.time_last_suggestion_interval-60)
-                                    else:
-                                        self.time_last_suggestion_interval += 60 #30
+                                    elif self.proposed_plan_times < 1:
+                                        self.time_last_suggestion_interval = min(60*5, self.time_last_suggestion_interval+60) #60 #30
                                         
                                     self.planner.log_plan_suggestion_timing(self.time_last_suggestion_interval, proposed_plan_similarities, agent_plan, functions, info["time"])
-                                    print("Current time interval: ", self.time_last_suggestion_interval)
+                                    print("Current time interval: ", self.time_last_suggestion_interval, self.proposed_plan_times)
+                                    
+                                    
+                                        
+                                    self.proposed_plan_times += 1
+                                    
+                                    if self.proposed_plan_times > 2:
+                                        self.proposed_plan = []
+                                        self.previous_proposed_plan = []
+                                        self.proposed_plan_times = 0
+                                        
                                 except:
                                     pdb.set_trace()
                                                 
@@ -2696,7 +2715,7 @@ class OptimizedControl:
                                             self.planner.path_monitoring[c].update_reliability("carry_heavy", 0, team={0:carrying_agents}, current_time=info["time"])
                                     else:       
                                         self.planner.path_monitoring[robot_id].update_reliability(self.planner.node_type[self.plan[robot_id][0]], 0, current_time=info["time"])
-                                elif robot_id in self.legacy_plan.keys():
+                                elif robot_id in self.legacy_plan.keys() and self.legacy_plan[robot_id]:
                                     if self.planner.node_type[self.legacy_plan[robot_id][0]] == 'carry_heavy':
                                 
                                         carrying_agents = [s for s in self.legacy_plan.keys() if self.legacy_plan[s] and self.legacy_plan[s][0] == self.legacy_plan[robot_id][0]]
@@ -4920,8 +4939,7 @@ class OptimizedControl:
             log_name = ''            
             if robotState.args.log:
                 log_name = self.env.log_name
-            
-            self.planner = DynamicSensorPlanner(self.env.robot_id, agents, objects, estimates, locations, agents_initial_positions, pd_pb, object_weights, occMap, self.extended_goal_coords, self.new_rooms, agents_type, objects_to_carry, log_name=log_name)
+            self.planner = DynamicSensorPlanner(self.env.robot_id, agents, objects, estimates, locations, agents_initial_positions, pd_pb, object_weights, occMap, self.extended_goal_coords, self.new_rooms, agents_type, objects_to_carry, log_name=log_name, reset=robotState.args.no_reset or robotState.args.restart, alternative_log_dir=robotState.args.log_dir, alternative_reset_file=robotState.args.reliability_file)
             if robotState.args.no_reset:
                 rooms,room_object = robotState.get_all_object_rooms()
                 for r in rooms:

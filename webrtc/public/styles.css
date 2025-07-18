@@ -435,7 +435,7 @@ p.error {
 
 
 /* Tooltip text */
-.tooltip .tooltiptext_object {
+.tooltiptext_object {
   visibility: hidden;
   width: 300px;
   background-color: #555;
@@ -474,7 +474,7 @@ p.error {
   opacity: 1;
 } 
 
-.tooltip .tooltiptext_object.show {
+.tooltiptext_object.show {
   visibility: visible;
   opacity: 1;
 }

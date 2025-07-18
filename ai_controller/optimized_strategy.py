@@ -199,7 +199,7 @@ class UndirectedGraph:
 
 class RobotMonitor:
 
-    def __init__(self,agent_id, agents_type,graph,goal_area,rooms,log_file=None):
+    def __init__(self,agent_id, agents_type,graph,goal_area,rooms,log_file=None, log_file_name_reset=False):
 
         self.agent_type = agents_type[agent_id]
         self.base_learning_rate = 0.01
@@ -216,26 +216,72 @@ class RobotMonitor:
         self.agents_type = agents_type
         self.goal = ''
         self.object_carried = ''
+        self.reliability = {}
         
         self.log_file = log_file
         
-        self.reliability = {r:self.initial_reliability for r in ['sense', 'carry', 'carry_heavy_AI']}
+
+        if log_file_name_reset and os.path.exists(log_file_name_reset):
+            self.reliability,times = self.process_reset_file(log_file_name_reset)
+            
+            if times:
+                self.times = times
+            
+            
+        if not self.reliability:
         
-        human_agents = []
-        for ag in self.agents_type.keys():
-            if self.agents_type[ag] == "human" and ag != agent_id:
-                human_agents.append(ag)
+            self.reliability = {r:self.initial_reliability for r in ['sense', 'carry', 'carry_heavy_AI']}
+            
+            human_agents = []
+            for ag in self.agents_type.keys():
+                if self.agents_type[ag] == "human" and ag != agent_id:
+                    human_agents.append(ag)
+            
+            human_agents.sort()
+            human_agents_combinations = []    
+            for L in range(1,len(human_agents) + 1):
+                for subset in itertools.combinations(human_agents, L):
+                    human_agents_combinations.append(subset)
+            
+            for ag in human_agents_combinations:
+                if self.agents_type[agent_id] == "human":
+                    self.reliability['carry_heavy_' + '_'.join(ag)] = self.initial_reliability
+                self.reliability['carry_heavy_AI_' + '_'.join(ag)] = self.initial_reliability
+            
+    def process_reset_file(self, reset_file):
+    
+        log_file = open(reset_file)
         
-        human_agents.sort()
-        human_agents_combinations = []    
-        for L in range(1,len(human_agents) + 1):
-            for subset in itertools.combinations(human_agents, L):
-                human_agents_combinations.append(subset)
+        new_times = {}
+        new_reliability = {}
         
-        for ag in human_agents_combinations:
-            if self.agents_type[agent_id] == "human":
-                self.reliability['carry_heavy_' + '_'.join(ag)] = self.initial_reliability
-            self.reliability['carry_heavy_AI_' + '_'.join(ag)] = self.initial_reliability
+        new_line = log_file.readline()
+        while new_line:
+        
+            split_line = new_line.strip().split(',')
+            agent_id = split_line[2]
+            
+            if agent_id == self.agent_id:
+            
+                if int(split_line[1]) == 0:
+                
+                    first_bracket = new_line.find('{')
+                    second_bracket = new_line.rfind('}')
+            
+                    new_reliability = eval(new_line[first_bracket:second_bracket+1])
+                    
+                
+                elif int(split_line[1]) == 1:
+                
+                    first_bracket = new_line.find('{')
+                    second_bracket = new_line.rfind('}')
+            
+                    new_times = eval(new_line[first_bracket:second_bracket+1])
+                    
+            new_line = log_file.readline()
+        
+        return new_reliability,new_times
+            
     def predict_actions(self,curr_pos, path, node):
         next_pos = curr_pos
         last_direction = 0
@@ -390,8 +436,12 @@ class RobotMonitor:
         predicted_time = sum(self.predicted_actions[p]*self.times[p] for p in factors)
         error = actual_time - predicted_time
         
+        print("ERROR MAGNITUDE", error)
+        
         for f in factors:
-            self.times[f] = max(0,self.times[f] + eta * error * self.predicted_actions[f])
+            #if (self.times[f] + eta * error * self.predicted_actions[f]) <= 0:
+            #    pdb.set_trace() #Check this !!!
+            self.times[f] = max(0.001,self.times[f] + eta * error * self.predicted_actions[f])
         
         self.updates += 1
         
@@ -513,7 +563,7 @@ class RobotMonitor:
         return return_value
 
 class DynamicSensorPlanner:
-    def __init__(self, agent_id, agents, objects, object_beliefs, locations, agent_home, PD_PB_params, object_weights, occMap, goal_coords, room_locations, agents_type, objects_to_carry=[], log_name=""):
+    def __init__(self, agent_id, agents, objects, object_beliefs, locations, agent_home, PD_PB_params, object_weights, occMap, goal_coords, room_locations, agents_type, objects_to_carry=[], log_name="", reset=False, alternative_log_dir="", alternative_reset_file=""):
         self.agents = agents
         self.objects = objects
         self.PD_PB = PD_PB_params  # Dict: {agent: (PD, PB)}
@@ -537,6 +587,7 @@ class DynamicSensorPlanner:
         self.human_agents_combinations = []
         self.skipped_objectives = []
         self.adjust_feasibility = 0
+        self.log_file_name = ""
         
         human_agents = []
         for ag in self.agents_type.keys():
@@ -577,16 +628,25 @@ class DynamicSensorPlanner:
         
         if log_name:
             log_dir = './log/'
+            if alternative_log_dir:
+                log_dir = './log_' + alternative_log_dir + '/'
+            
             if not os.path.exists(log_dir):
                 os.makedirs(log_dir)
             
             self.log_state_f = open(log_dir + log_name + '_' + agent_id + '_strategy.txt', "a")
             self.log = True
             self.log_file_monitor = open(log_dir + log_name + '_' + agent_id + '_monitor.txt', "a")
+            
+            if reset:
+                if alternative_reset_file:
+                    self.log_file_name = log_dir + alternative_reset_file + '_' + agent_id + '_monitor.txt'
+                else:
+                    self.log_file_name = log_dir + log_name + '_' + agent_id + '_monitor.txt'
         else:
             self.log = False
         
-        self.path_monitoring = {a:RobotMonitor(a, self.agents_type,self.g,locations['SAFE'],self.rooms,self.log_file_monitor) for a in self.agents}
+        self.path_monitoring = {a:RobotMonitor(a, self.agents_type,self.g,locations['SAFE'],self.rooms,self.log_file_monitor, self.log_file_name) for a in self.agents}
         
         #self.locations = self.recluster(locations)
         #self.locations.update(self.create_exploration_regions())
@@ -929,9 +989,9 @@ class DynamicSensorPlanner:
         #self.tau_current[object_j] = max(0, self.tau_current[object_j])  # Threshold ≥ 0
         self.sensed_objects.append((agent_i,object_j))
         
-        if self.belief[object_j] >= self.pickup_belief_threshold and self.tau_current[object_j] < 0.1 and object_j not in self.objects_to_carry and object_j not in self.already_carried: #self.object_weights[object_j] <= len(self.agents) and 
+        if self.belief[object_j] >= self.pickup_belief_threshold and self.tau_current[object_j] <= 0.0 and object_j not in self.objects_to_carry and object_j not in self.already_carried: #self.object_weights[object_j] <= len(self.agents) and 
             self.objects_to_carry.append(object_j)
-        elif (not self.belief[object_j] >= self.pickup_belief_threshold or not self.tau_current[object_j] < 0.1) and object_j in self.objects_to_carry and object_j not in self.already_carried and object_j not in proposed_objects_to_carry:
+        elif (not self.belief[object_j] >= self.pickup_belief_threshold or not self.tau_current[object_j] <= 0.0) and object_j in self.objects_to_carry and object_j not in self.already_carried and object_j not in proposed_objects_to_carry:
             self.objects_to_carry.remove(object_j)
             
         #CLUSTERS
@@ -955,7 +1015,7 @@ class DynamicSensorPlanner:
         if set(agents) ^ set(self.path_monitoring.keys()):
             for a in agents:
                 if a not in self.path_monitoring.keys():
-                    self.path_monitoring[a] = RobotMonitor(a, self.agents_type,self.g,object_locations['SAFE'],self.rooms,self.log_file_monitor)
+                    self.path_monitoring[a] = RobotMonitor(a, self.agents_type,self.g,object_locations['SAFE'],self.rooms,self.log_file_monitor, self.log_file_name)
         
         
         if set(agents) ^ set(self.LLR.keys()):      
@@ -1017,7 +1077,7 @@ class DynamicSensorPlanner:
                 self.update_belief(ob[0], ob[1], ob[2], objects_to_carry)
                 self.past_beliefs.append(ob)
             else:
-                if (not self.belief[ob[0]] >= self.pickup_belief_threshold or not self.tau_current[ob[0]] < 0.1) and ob[0] in self.objects_to_carry and ob[0] not in self.already_carried and ob[0] not in objects_to_carry:
+                if (not self.belief[ob[0]] >= self.pickup_belief_threshold or not self.tau_current[ob[0]] <= 0.0) and ob[0] in self.objects_to_carry and ob[0] not in self.already_carried and ob[0] not in objects_to_carry:
                     self.objects_to_carry.remove(ob[0])
             
         '''
@@ -1137,7 +1197,7 @@ class DynamicSensorPlanner:
     
     def set_monitoring(self, agent, assigned, skip_state):
     
-        if not any(agent == s[1] for s in skip_state):
+        if not any(agent == s[1] and s[0] == assigned for s in skip_state):
             if isinstance(self.current_positions[agent],str):
                 curr_pos = self.locations[self.current_positions[agent]]
             else:

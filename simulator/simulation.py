@@ -199,8 +199,10 @@ class Enhanced_Magnebot(Magnebot):
         #pdb.set_trace()
         sensors_values = []
         if log_metadata:
-            position = log_metadata[0]
-            sensors_values = log_metadata[1]
+            if log_metadata[0]:
+                position = log_metadata[0]
+            if log_metadata[1]:
+                sensors_values = log_metadata[1]
             
         super().__init__(robot_id=robot_id, position=position,image_frequency=image_frequency,check_version=check_version)
         self.key_set = key_set
@@ -246,8 +248,10 @@ class Enhanced_Magnebot(Magnebot):
     
         sensors_values = []
         if self.log_metadata:
-            position = self.log_metadata[0]
-            sensors_values = self.log_metadata[1]
+            if self.log_metadata[0]:
+                position = self.log_metadata[0]
+            if self.log_metadata[1]:
+                sensors_values = self.log_metadata[1]
     
         super().reset(position=position)
         self.resetting_arm = False
@@ -321,7 +325,10 @@ class Simulation(Controller):
         self.log_metadata = {}
         
         if args.checkpoint:
-            json_file = open("../webrtc/checkpoint.json", "r")
+            if args.checkpoint_name:
+                json_file = open("../webrtc/" + args.checkpoint_name + ".json", "r")
+            else:
+                json_file = open("../webrtc/checkpoint.json", "r")
             json_data = json.load(json_file)
             self.log_metadata = [json_data["metadata"],json_data["sensors"], json_data["time"], json_data["item_info"]]
             
@@ -425,6 +432,11 @@ class Simulation(Controller):
             else:
                 self.user_original_spawn_positions.append(spawn_loc)
                 
+        
+        if self.log_metadata:
+            self.check_good_locations()
+            
+            
                 
         self.create_agents()
         print("Created agents")
@@ -728,6 +740,8 @@ class Simulation(Controller):
 
     def log_init_data(self):
         log_dir = './log/'
+        if self.options.log_dir:
+            log_dir = './log_' + self.options.log_dir + '/'
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
             
@@ -874,6 +888,35 @@ class Simulation(Controller):
             return [position, sensor_params]
         else:
             return []
+     
+    def check_good_locations(self):
+    
+
+        agent_locations = []
+
+        for location in self.log_metadata[0]['metadata']:
+            if location[0]:
+                agent_locations.append([location[2],0,location[3]])
+
+        for idx, loc in enumerate(agent_locations):
+            new_x, new_y = self.find_new_location_for_agent(
+                idx, agent_locations, self.all_walls,
+                min_dist=1.0,
+                radius_step=0.5,
+                max_radius=10.0,
+                angle_step=math.pi/12
+            )
+            agent_locations[idx][0] = new_x
+            agent_locations[idx][2] = new_y
+            print(agent_locations)
+        
+        if agent_locations:
+            for location_idx in range(len(self.log_metadata[0]['metadata'])):
+                if self.log_metadata[0]['metadata'][location_idx][0]:
+                    new_loc = agent_locations.pop(0)
+                    self.log_metadata[0]['metadata'][location_idx][2] = new_loc[0]
+                    self.log_metadata[0]['metadata'][location_idx][3] = new_loc[2]
+                
         
     def create_agents(self):
     
@@ -1210,6 +1253,7 @@ class Simulation(Controller):
         self.state_machine = [None]*(num_users+num_ais)
         self.goal_area = [(float(self.cfg["goal_radius"]), [0,0])]
         self.wall_edges = []
+        self.all_walls = []
         
                      
         #commands.append({"$type": "simulate_physics", "value": False})
@@ -1428,6 +1472,10 @@ class Simulation(Controller):
             #wall4_2 = [{"x": self.scenario_size-(idx+1), "y": self.scenario_size-(self.wall_length)} for idx in range(self.wall_length-2)]
             
             self.walls = [[[wall[0]['x']+wall_width-self.scenario_size/2,wall[0]['y']+wall_width-self.scenario_size/2],[wall[-1]['x']+wall_width-self.scenario_size/2,wall[-1]['y']+wall_width-self.scenario_size/2]] for wall in [wall1_1,wall1_2,wall2_1,wall2_2,wall3_1,wall3_2,wall4_1,wall0_1]]
+            
+            self.all_walls = []
+            for wall_series in [wall1_1,wall1_2,wall2_1,wall2_2,wall3_1,wall3_2,wall4_1,wall0_1]:
+                self.all_walls.append([{"x":wall['x']+wall_width-self.scenario_size/2,"y":wall['y']+wall_width-self.scenario_size/2}  for wall in wall_series])
 
             print([wall1_1,wall1_2,wall2_1,wall2_2,wall3_1,wall3_2,wall4_1,wall0_1])
             commands = [#{'$type': 'add_scene','name': 'building_site','url': 'https://tdw-public.s3.amazonaws.com/scenes/linux/2019.1/building_site'}, 
@@ -2762,10 +2810,11 @@ class Simulation(Controller):
                     viewable = False
                     if not scre.get_avatar_id() == "a":
                         u_idx = self.user_magnebots_ids.index(mid)
-                        if np.linalg.norm(all_magnebots[idx].dynamic.transform.position - self.ai_magnebots[u_idx].dynamic.transform.position) < 12:
+                        if np.linalg.norm(all_magnebots[idx].dynamic.transform.position - self.user_magnebots[u_idx].dynamic.transform.position) < 12:
                             viewable = True
                         else:
                             mid = ""
+                        
                     else:
                         viewable = True
                         
@@ -5282,6 +5331,17 @@ class Simulation(Controller):
         agent_locations = []
         for idx in range(len(all_magnebots)):
             agent_locations.append(all_magnebots[idx].dynamic.transform.position)
+        
+        for idx, loc in enumerate(agent_locations):
+            new_x, new_y = self.find_new_location_for_agent(
+                idx, agent_locations, self.all_walls,
+                min_dist=1.0,
+                radius_step=0.5,
+                max_radius=5.0,
+                angle_step=math.pi/12
+            )
+            agent_locations[idx][0] = new_x
+            agent_locations[idx][2] = new_y
             
         self.communicate(commands)
             
@@ -5312,6 +5372,59 @@ class Simulation(Controller):
         
         self.segmentation_colors = self.get_segmentation_colors()
 
+    def is_position_valid(self, x, y, agent_locations, walls, min_dist=1.0, ignore_index=None):
+        # Check against other agents
+        for i, loc in enumerate(agent_locations):
+            if i == ignore_index:
+                continue
+            xi, yi = loc[0], loc[2]
+            if math.hypot(x - xi, y - yi) < min_dist:
+                return False
+
+        # Check against wall points
+        for wall_segment in walls:
+            for pt in wall_segment:
+                if math.hypot(x - pt["x"], y - pt["y"]) < min_dist:
+                    return False
+
+        return True
+
+    def find_new_location_for_agent(self, idx,
+                                    agent_locations,
+                                    walls,
+                                    min_dist=1.0,
+                                    radius_step=0.5,
+                                    max_radius=10.0,
+                                    angle_step=math.pi/8):
+        """
+        For agent_locations[idx], searches in expanding circles around its
+        original (x0, y0) until it finds a (x, y) that's >= min_dist from all
+        other agents and walls.
+        """
+        x0, y0 = agent_locations[idx][0], agent_locations[idx][2]
+
+        # If original pos is already valid, just return it
+        if self.is_position_valid(x0, y0, agent_locations, walls, min_dist, ignore_index=idx):
+            return x0, y0
+
+        # Expand search radius
+        r = radius_step
+        while r <= max_radius:
+            theta = 0.0
+            while theta < 2 * math.pi:
+                x_cand = x0 + r * math.cos(theta)
+                y_cand = y0 + r * math.sin(theta)
+                
+                if x_cand > self.scenario_size/2 or x_cand < -self.scenario_size/2 or y_cand > self.scenario_size/2 or y_cand < -self.scenario_size/2:
+                    continue
+                
+                if self.is_position_valid(x_cand, y_cand, agent_locations, walls, min_dist, ignore_index=idx):
+                    return x_cand, y_cand
+                theta += angle_step
+            r += radius_step
+
+        raise RuntimeError(f"No valid position found within {max_radius}m of agent {idx}")
+
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
@@ -5341,6 +5454,8 @@ if __name__ == "__main__":
     parser.add_argument('--no-block', action='store_true', help="No object will block the way")
     parser.add_argument('--agents-localized', action='store_true', help="Agents will always be localized by other agents")
     parser.add_argument('--checkpoint', action='store_true', help="Start from checkpoint")
+    parser.add_argument('--checkpoint-name', type=str, default='', help="Start from checkpoint name")
+    parser.add_argument('--log-dir', type=str, default='', help="Log dir")
     
     
     
@@ -5375,6 +5490,8 @@ if __name__ == "__main__":
             
         if args.create_video:
             log_dir = './videos/'
+            if args.log_dir:
+                log_dir = "./videos_" + args.log_dir + "/"
             if not os.path.exists(log_dir):
                 os.makedirs(log_dir)
                 

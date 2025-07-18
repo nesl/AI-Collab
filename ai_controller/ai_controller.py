@@ -62,7 +62,10 @@ parser.add_argument('--config', type=str, default='team_structure.yaml', help='P
 parser.add_argument('--sql', default=True, action="store_true", help='Use SQL for message parsing')
 parser.add_argument('--no-reset', default=False, action="store_true", help='Continue without waiting for reset')
 parser.add_argument('--log', default=False, action="store_true", help='Log data')
+parser.add_argument('--log-dir', default="", type=str, help='Log data dir')
 parser.add_argument('--restart', default=False, action="store_true", help='Restart from checkpoint')
+parser.add_argument('--reliability-file', default="", type=str, help='Alternative reliability file for restart from checkpoint')
+
 #parser.add_argument('--communication-distance', type=int, default=5, help='local communication distance limit')
 #parser.add_argument("--openai", action='store_true', help="Use openai.")
 #parser.add_argument("--llm", action='store_true', help="Use LLM.")
@@ -276,7 +279,6 @@ class RobotState:
                 self.sqliteConnection = sqlite3.connect(database_name)
                 self.cursor = self.sqliteConnection.cursor()
                 #"SELECT o.object_id, o.weight, aoe.danger_status, aoe.estimate_correct_percentage FROM objects o INNER JOIN agent_object_estimates aoe ON o.object_id = aoe.object_id WHERE o.weight = 1 AND aoe.danger_status = 'dangerous' AND aoe.last_seen_room = '3' AND o.already_sensed = 'Yes';"
-
             
         if self.args.no_reset:
             file_name="agent_map_" + str(args.robot_number) + ".txt"
@@ -559,6 +561,8 @@ class RobotState:
                             room_object[row] = []
                         room_object[row].append(item_id)
             except:
+                print(objects)
+                print(self.env.object_key_to_index)
                 pdb.set_trace() 
         return rooms,room_object
         
@@ -1205,6 +1209,7 @@ while True:
                 objects.sort(key=lambda x:x[1])
                 new_object_info = []
                 new_object_to_key = {}
+
                 for ob_idx,ob in enumerate(objects):
                     if not ob[2]:
                         location = robotState.items[ob_idx]["item_location"]
@@ -1220,8 +1225,12 @@ while True:
                                 break
                         if not_found:
                             print("NOT FOUND ITEM FOR NO RESET")
+                            location = robotState.items[ob_idx]["item_location"]
+                            time_observed = robotState.items[ob_idx]["item_time"][0]
+                            new_object_info.append([str(ob[0]),ob[2],{}, location[0], location[1], time_observed])
                     new_object_to_key[str(ob[0])] = ob_idx
-                    
+                
+                #pdb.set_trace()
                 env.set_object_info(new_object_info.copy(), new_object_to_key)
                 rearrange_observations = False
             #else:

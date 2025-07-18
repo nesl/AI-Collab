@@ -14,6 +14,7 @@ from datetime import datetime
 import shutil
 from matplotlib.patches import Patch
 from collections import Counter
+import heapq
 
 json_file = []
 total_sessions = 0
@@ -247,50 +248,135 @@ def pandas_process(filtering_column, condition_columns, metric_column):
      
     return performance
     
-def plot_dist(title, data, discrete=False):
+def heuristic(a_row, a_col, b_row, b_col):
+    # Manhattan distance
+    return abs(a_row - b_row) + abs(a_col - b_col)
 
-    #sns.kdeplot(data=data) #, bins=10, kde=True)
-    if not discrete:
-        sns.displot(data, kind="kde", fill=False,  bw_adjust=0.5)
-    else:
-        #sns.displot(data, discrete=True, multiple="dodge", shrink=.8)
-        sns.displot(data, kind="kde", fill=False,  bw_adjust=0.8)
-    plt.title(title)
+def reconstruct_path(parent, dest_row, dest_col):
+    path = []
+    r, c = dest_row, dest_col
+    while True:
+        path.append((r, c))
+        pr, pc = parent[r][c]
+        if pr == r and pc == c:
+            break
+        r, c = pr, pc
+    path.reverse()
+    return path
 
+def findPath(start, goal, occ):
     """
-    num_elem = int(np.ceil(np.sqrt(len(data.keys()))))
-    fig, axs = plt.subplots(num_elem, num_elem)
-    fig.suptitle(title)
+    Pure-Python A* on a grid.
     
+    start, goal: numpy arrays of shape (2,), e.g. np.array([r, c])
+    occ: 2D numpy array of ints; passable when occ[r,c] in {0,3,-2}
     
-    max_x = 0
-    max_y = 0
-    for key_idx,key in enumerate(data.keys()):
-        max_x += len(data[key])
+    Returns list of (row, col) tuples from start (exclusive) to goal (inclusive),
+    or [] if no path.
+    """
+    # unpack into Python ints
+    sr, sc = int(start[0]), int(start[1])
+    gr, gc = int(goal[0]), int(goal[1])
+    
+    # trivial case
+    if sr == gr and sc == gc:
+        return []
+    
+    nrows, ncols = occ.shape
+    INF = 10**9
+
+    # preallocate grids
+    g = [[INF]*ncols for _ in range(nrows)]
+    f = [[INF]*ncols for _ in range(nrows)]
+    parent = [[None]*ncols for _ in range(nrows)]
+    closed = [[False]*ncols for _ in range(nrows)]
+
+    # initialize start node
+    g[sr][sc] = 0
+    f[sr][sc] = heuristic(sr, sc, gr, gc)
+    parent[sr][sc] = (sr, sc)
+
+    # heap elements: (f_score, g_score, row, col)
+    open_heap = [(f[sr][sc], 0, sr, sc)]
+
+    # 4-connectivity
+    neighbors = [(1,0),(-1,0),(0,1),(0,-1)]
+
+    while open_heap:
+        _, curr_g, r, c = heapq.heappop(open_heap)
+        if closed[r][c]:
+            continue
+        if (r, c) == (gr, gc):
+            return reconstruct_path(parent, gr, gc)
+
+        closed[r][c] = True
+
+        for dr, dc in neighbors:
+            nr, nc = r + dr, c + dc
+            # bounds check
+            if not (0 <= nr < nrows and 0 <= nc < ncols):
+                continue
+            # closed check
+            if closed[nr][nc]:
+                continue
+            # occupancy check
+            if (nr, nc) != (gr, gc) and occ[nr, nc] not in (0, 3, -2):
+                continue
+
+            tentative_g = curr_g + 1
+            if tentative_g < g[nr][nc]:
+                g[nr][nc] = tentative_g
+                h = heuristic(nr, nc, gr, gc)
+                f[nr][nc] = tentative_g + h
+                parent[nr][nc] = (r, c)
+                heapq.heappush(open_heap, (f[nr][nc], tentative_g, nr, nc))
+
+    # no path found
+    return []
+
+def manual_occupancy_map(scenario_options):
+    
+    walls = scenario_options["walls"]
+    map_size = scenario_options["scenario_size"]
+    occupancy_map = np.zeros((map_size,map_size))
+    occupancy_map[:,:] = 0
+    occupancy_map[0,:] = 1
+    occupancy_map[-1,:] = 1
+    occupancy_map[:,0] = 1
+    occupancy_map[:,-1] = 1
+    
+    min_pos = [-9.5, -9.5]
+    multiple = 1
+    
+    for wall in walls:
+        first_point = [wall[0][0], wall[0][1]]
+        last_point = [wall[-1][0], wall[-1][1]]
         
-        if max(data[key]) > max_y :
-            max_y = max(data[key])
-            
-    for key_idx,key in enumerate(data.keys()):
-        n2 = key_idx % num_elem
-        n1 = key_idx // num_elem
+        first_cell = [round((first_point[0] + abs(min_pos[0])) / multiple),
+               round((first_point[1] + abs(min_pos[1])) / multiple)]
+               
+        last_cell = [round((last_point[0] + abs(min_pos[0])) / multiple),
+               round((last_point[1] + abs(min_pos[1])) / multiple)]
+               
+               
+        if first_cell[0] == last_cell[0]:
+            if first_cell[1] > last_cell[1]:
+                for loc in range(last_cell[1],first_cell[1]+1):
+                    occupancy_map[first_cell[0],loc] = 1
+            else:
+                for loc in range(first_cell[1],last_cell[1]+1):
+                    occupancy_map[first_cell[0],loc] = 1
+                
+        elif first_cell[1] == last_cell[1]:
+            if first_cell[0] > last_cell[0]:
+                for loc in range(last_cell[0],first_cell[0]+1):
+                    occupancy_map[loc,first_cell[1]] = 1
+            else:
+                for loc in range(first_cell[0],last_cell[0]+1):
+                    occupancy_map[loc,first_cell[1]] = 1    
 
-        data[key] = np.array(data[key])
+    return occupancy_map   
 
-        data[key] = data[key][~np.isnan(data[key])]
-
-        frq, edges = np.histogram(data[key], range = (0,max_y))
-        
-        #sns.histplot(data=data[key], bins=20, kde=True, ax=axs[n1,n2])
-
-        #pdb.set_trace()
-        axs[n1, n2].bar(edges[:-1], frq, width=np.diff(edges), edgecolor="black", align="edge")
-        axs[n1, n2].set_title(key)
-        axs[n1, n2].set_ylim(top=max_x)
-    """       
-    plt.show()
-    
-    
 def copy_files(src,processed_folder,subfolder,date,identifier):
 
 
@@ -304,6 +390,18 @@ def copy_files(src,processed_folder,subfolder,date,identifier):
     for f in glob_files:
         name = os.path.basename(f).replace(date,identifier)
         shutil.copy(f, new_folder + name)
+
+def convert_to_grid_coordinates(location):
+
+    if not location:
+        pos_new = [-1,-1]
+    else:
+        min_pos = [-9.5, -9.5]
+        multiple = 1
+        pos_new = [round((location[0] + abs(min_pos[0])) / multiple),
+                   round((location[1] + abs(min_pos[1])) / multiple)]
+
+    return pos_new
 
 agent_info = []
 agent_info_columns = []
@@ -337,17 +435,22 @@ obfuscated_date = 0
 
 track_experience = {}
 
-together_files = [["2025_07_10_17_12_54", "2025_07_10_17_28_39"]]
+together_files = [["2025_07_10_17_12_54", "2025_07_10_17_28_39"], ["2025_07_15_14_59_31", "2025_07_15_15_13_10"]]
 
 previous_file = ""
 final_average_survey_results = {}
 
-final_metrics = {"total_distance_traveled":[], "distribution_sensed":[], "objects_carried":[], "dangerous_objects":[], "weight_distribution_carried":[]}
-tutorial = "2025_07_10_15_24_22"
+start = convert_to_grid_coordinates([0,5])
+
+tutorial = ["2025_07_10_15_24_22","2025_07_15_13_56_19"]
 debug_var = False
 
 BOLD = "\033[32m"
 RESET = "\033[0m"
+
+all_final_metrics = []
+occ_map = np.array([])
+final_metrics = {"total_distance_traveled":[], "distribution_sensed":[], "objects_carried":[], "dangerous_objects":[], "weight_distribution_carried":[], "complexity": [], "complexity_reduction":[], "name":[], "strategy":[], "suggestions_taken":[], "suggestions_given":[]}
 
 for d in files:
 
@@ -355,16 +458,38 @@ for d in files:
         print("\n".join(message_history))
         quit()
 
-    if tutorial in d:
-        continue
-    
     #d = "log/2025_07_10_15_56_34.txt"
     
     dtime = d[4:-4]
     
     if "events" not in d:
     
-        
+        if any(t in d for t in tutorial):
+            number_surveys = 0
+            log_file = open(d)
+            new_line = log_file.readline()
+            while new_line:
+                split_line = new_line.strip().split(',')
+                if int(split_line[1]) == 7:
+                    
+                    first_bracket = new_line.find('[')
+                    second_bracket = new_line.find(']')
+                    third_bracket = new_line.rfind('[')
+                    fourth_bracket = new_line.rfind(']')
+                    
+                    last_comma = new_line.rfind(',')
+                    
+                    questions = eval(new_line[first_bracket:second_bracket+1])
+                    answers = eval(new_line[third_bracket:fourth_bracket+1])
+                    number_surveys += 1
+                    
+                    #print(questions, answers)
+            
+                if number_surveys == 2:
+                    break
+                    
+                new_line = log_file.readline()
+            continue
     
         log_file = open(d)
         new_line = log_file.readline()
@@ -379,8 +504,11 @@ for d in files:
         num_humans = 0
         robots_ais = 0
         robots_type = {}
+        complexity = 0
         
         
+        if occ_map.size == 0:
+            occ_map = manual_occupancy_map(scenario_options)
         
         
         for agent in scenario_options["robots_type"]:
@@ -421,6 +549,9 @@ for d in files:
             average_survey_results = {}
             time_spent_carrying = {}
             message_history = []
+            suggestions_taken = 0
+            suggestions_given = 0
+            
         
         
         #print(d)
@@ -557,6 +688,21 @@ for d in files:
                                 
                             break
              
+                    if team_strategy["suggestions"]:
+                        strategy += " with suggestions"
+                    else:
+                        strategy += " without suggestions"
+                        
+                    complexity = 0
+                    
+                    for ob in scenario_options["objects"]:
+                        if ob[2] == 2:
+                            goal = convert_to_grid_coordinates([ob[3]["x"],ob[3]["z"]])
+                            path = findPath(start, goal, occ_map)
+                            complexity += len(path)*2*ob[1]
+                    
+                    #print("Complexity:",complexity)
+                    
             elif int(split_line[1]) == 2:
                 
                 first_bracket = new_line.find('{')
@@ -574,10 +720,19 @@ for d in files:
                 if messages["whole"]:
                     mess = "Message sent by " + split_line[2] + " at time " + split_line[0] + ": " + messages["whole"]
                     #print("Message sent by " + split_line[2] + " at time " + split_line[0], messages["whole"])
+                    '''
                     if "steering" in messages["whole"]:
                         print("Message sent by " + split_line[2] + " at time " + split_line[0], messages["whole"])
-                        debug_var = True
+                        #debug_var = True
                         mess = BOLD + mess + RESET
+                    '''
+                    
+                    if "Your plan doesn't seem good:" in messages["whole"]:
+                        suggestions_taken += 1
+                    
+                    if "Your plan seems good" in messages["whole"]:
+                        suggestions_given += 1
+                    
                     message_history.append(mess)
                     for m_key in messages.keys():
                         if m_key != "whole":
@@ -637,6 +792,9 @@ for d in files:
                                 average_survey_results[questions[q_idx]].append(float(answers[q_idx]))
                 
                 survey_results.append({"token":new_line[last_comma+1:].strip(), "questions": questions, "answers": [int(a) if a else None for a in answers]})
+                
+                
+                
         
             new_line = log_file.readline()
             
@@ -659,130 +817,148 @@ for d in files:
             
                 
                 d2 = "../ai_controller/log/" + dtime + "_" + analyzed_a + "_strategy.txt"
-                log_file = open(d2)
-                new_line = log_file.readline()
-                while new_line:
                 
-                    info_decision = eval(new_line.replace("false", "False").replace("true","True"))
-                    #pdb.set_trace()
-                    if not info_decision["type"]:
-                        #print("Assignments by " + analyzed_a + " at time " + str(info_decision["time"]))
-                        for i in info_decision["assignments"]:
-                            #print(i[0], i[1])
-                            pass
-                            
-                        #print("Rooms: ", info_decision["rooms"])
-                        
-                        s_agent = {}
-                        for s in info_decision["sensed_objects"]:
-                            if s[0] not in s_agent.keys():
-                                s_agent[s[0]] = []
-                            s_agent[s[0]].append(s[1])
-                        
-                        #print("Sensed objects", s_agent)
-                        
-                    else:
-                        pass
-                        #print("Changed time for recs at time " + str(info_decision["time"]) + ":", info_decision["time_last_suggestion_interval"])
-                
+                if os.path.exists(d2):
+                    try:
+                        log_file = open(d2)
+                    except:
+                        pdb.set_trace()
                     new_line = log_file.readline()
+                    while new_line:
                     
+                        info_decision = eval(new_line.replace("false", "False").replace("true","True"))
+                        #pdb.set_trace()
+                        if not info_decision["type"]:
+                            #print("Assignments by " + analyzed_a + " at time " + str(info_decision["time"]))
+                            for i in info_decision["assignments"]:
+                                #print(i[0], i[1])
+                                pass
+                                
+                            #print("Rooms: ", info_decision["rooms"])
+                            
+                            s_agent = {}
+                            for s in info_decision["sensed_objects"]:
+                                if s[0] not in s_agent.keys():
+                                    s_agent[s[0]] = []
+                                s_agent[s[0]].append(s[1])
+                            
+                            #print("Sensed objects", s_agent)
+                            
+                        else:
+                            suggestions_taken += 1
+                            #print("Changed time for recs at time " + str(info_decision["time"]) + ":", info_decision["time_last_suggestion_interval"])
+                    
+                        new_line = log_file.readline()
+                        
                 
                 d3 = "../ai_controller/log/" + dtime + "_" + analyzed_a + "_monitor.txt"
-                log_file = open(d3)
-                new_line = log_file.readline()
-                while new_line:
                 
-                    split_line = new_line.strip().split(',')
-                    agent_id = split_line[2]
-                    
-                    if int(split_line[1]) == 0:
-                    
-                        first_bracket = new_line.find('{')
-                        second_bracket = new_line.rfind('}')
+                if os.path.exists(d3):
                 
-                        info = eval(new_line[first_bracket:second_bracket+1])
-                        
-                        if agent_id not in agent_reliability.keys():
-                            agent_reliability[agent_id] = info
-                            #print("Reliability for agent " + agent_id + " at time " + str(split_line[0]), info)
-                        else:
-                            changed_reliability = []
-                            for i in info.keys():
-                            
-                                if agent_reliability[agent_id][i] != info[i]:
-                                    changed_reliability.append((i,info[i]))
-                                    
-                            #print("Changed reliability for agent " + agent_id + " at time " + str(split_line[0]), changed_reliability)
-                            agent_reliability[agent_id] = info
-
-
-                    
-                    elif int(split_line[1]) == 1:
-                    
-                        first_bracket = new_line.find('{')
-                        second_bracket = new_line.rfind('}')
-                
-                        info = eval(new_line[first_bracket:second_bracket+1])
-                        
-                        if agent_id not in agent_model.keys():
-                            agent_model[agent_id] = info
-                            pass
-                            #print("Model for agent " + agent_id + " at time " + str(split_line[0]), info)
-                        else:
-                            changed_model = []
-                            for i in info.keys():
-                                if agent_model[agent_id][i] != info[i]:
-                                    changed_model.append((i,info[i]))
-                                    
-                            #print("Changed model for agent " + agent_id + " at time " + str(split_line[0]), changed_model)
-                            agent_model[agent_id] = info
-                            
-                    
-                    elif int(split_line[1]) == 2:
-                    
-                        if split_line[3] == 1:
-                            pass
-                            #print("Agent " + agent_id + " moved in the wrong direction")
-                        elif split_line[3] == 2:
-                            pass
-                            #print("Agent " + agent_id + " arrived to its destination")
-                        
+                    log_file = open(d3)
                     new_line = log_file.readline()
+                    while new_line:
+                    
+                        split_line = new_line.strip().split(',')
+                        agent_id = split_line[2]
+                        
+                        if int(split_line[1]) == 0:
+                        
+                            first_bracket = new_line.find('{')
+                            second_bracket = new_line.rfind('}')
+                    
+                            info = eval(new_line[first_bracket:second_bracket+1])
+                            
+                            if agent_id not in agent_reliability.keys():
+                                agent_reliability[agent_id] = info
+                                #print("Reliability for agent " + agent_id + " at time " + str(split_line[0]), info)
+                            else:
+                                changed_reliability = []
+                                for i in info.keys():
+                                
+                                    if agent_reliability[agent_id][i] != info[i]:
+                                        changed_reliability.append((i,info[i]))
+                                        
+                                #print("Changed reliability for agent " + agent_id + " at time " + str(split_line[0]), changed_reliability)
+                                agent_reliability[agent_id] = info
+
+
+                        
+                        elif int(split_line[1]) == 1:
+                        
+                            first_bracket = new_line.find('{')
+                            second_bracket = new_line.rfind('}')
+                    
+                            info = eval(new_line[first_bracket:second_bracket+1])
+                            
+                            if agent_id not in agent_model.keys():
+                                agent_model[agent_id] = info
+                                pass
+                                #print("Model for agent " + agent_id + " at time " + str(split_line[0]), info)
+                            else:
+                                changed_model = []
+                                for i in info.keys():
+                                    if agent_model[agent_id][i] != info[i]:
+                                        changed_model.append((i,info[i]))
+                                        
+                                #print("Changed model for agent " + agent_id + " at time " + str(split_line[0]), changed_model)
+                                agent_model[agent_id] = info
+                                
+                        
+                        elif int(split_line[1]) == 2:
+                        
+                            if split_line[3] == 1:
+                                pass
+                                #print("Agent " + agent_id + " moved in the wrong direction")
+                            elif split_line[3] == 2:
+                                pass
+                                #print("Agent " + agent_id + " arrived to its destination")
+                            
+                        new_line = log_file.readline()
                     
                 
                 d4 = "../ai_controller/log/" + dtime + "_" + analyzed_a + "_LLM.txt"
-                log_file = open(d4)
-                new_line = log_file.readline()
-                while new_line:
-                    
-                    llm_response = eval(new_line)
-                    
-                    #print("Used LLM at time " + llm_response["time"])
-                    
+                
+                if os.path.exists(d4):
+                
+                    log_file = open(d4)
                     new_line = log_file.readline()
+                    while new_line:
+                        
+                        llm_response = eval(new_line)
+                        
+                        #print("Used LLM at time " + llm_response["time"])
+                        
+                        new_line = log_file.readline()
         
         if not previous_file:
             print("NUMBER OF OBJECTS IN GOAL", metrics["goal_objects"])  
             dangerous = []
+            total_dangerous_locations = []
             benign = []
             total_dangerous = []
             total_objects = []
+            all_dangerous_weights = []
             weights = []
-            for m in metadata["metadata"]:
-                if not m[0] and any(m[1] == object_id for object_id in metrics["goal_objects"]):
-                    if m[5] == 1:
-                        benign.append(m[1])
-                    else:
-                        dangerous.append(m[1])
-                        
-                    weights.append(m[4])
-                
-                if not m[0]:
-                    total_objects.append(m[1])
-                    if m[5] == 2:
-                        total_dangerous.append(m[1])
-            
+            try:
+                for m in metadata["metadata"]:
+                    if not m[0] and any(m[1] == object_id for object_id in metrics["goal_objects"]):
+                        if m[5] == 1:
+                            benign.append(m[1])
+                        else:
+                            dangerous.append(m[1])
+                            
+                            
+                        weights.append(m[4])
+                    
+                    if not m[0]:
+                        total_objects.append(m[1])
+                        if m[5] == 2:
+                            total_dangerous.append(m[1])
+                            total_dangerous_locations.append(convert_to_grid_coordinates(m[2:4]))
+                            all_dangerous_weights.append(m[4])
+            except:
+                pdb.set_trace()
             print("Dangerous:", len(dangerous), "Benign:", len(benign), "Total dangerous:", len(total_dangerous), "Total objects", len(total_objects))    
             print("Weights:", weights)    
             
@@ -827,121 +1003,208 @@ for d in files:
                         final_average_survey_results[a_key].append(sum(average_survey_results[a_key])/len(average_survey_results[a_key]))
                     except:
                         pdb.set_trace()
-                    
+            
+     
+            complexity_reduction = 0
+            for d_idx in range(len(total_dangerous)):
+                
+                for ob in scenario_options["objects"]:
+                    if total_dangerous[d_idx] == ob[0]:
+                        goal = convert_to_grid_coordinates([ob[3]["x"],ob[3]["z"]])
+                        path = findPath(start, goal, occ_map)
+                        
+                        if ob[0] in dangerous:
+                            complexity_reduction += len(path)*2*ob[1]
+                        else:
+                            path2 = findPath(start, total_dangerous_locations[d_idx], occ_map)
+                            
+                            if len(path) - len(path2) > 0:
+                                complexity_reduction += len(path)*ob[1] + (len(path) - len(path2))*ob[1]
+            
+            final_metrics["complexity"].append(complexity/sum(all_dangerous_weights))
+            final_metrics["complexity_reduction"].append(complexity_reduction/sum(all_dangerous_weights))
+            final_metrics["name"].append(dtime)   
+            final_metrics["strategy"].append(strategy)
+            final_metrics["suggestions_taken"].append(suggestions_taken)
+            final_metrics["suggestions_given"].append(suggestions_given)
             #print(final_average_survey_results)
+            print(final_metrics)
+            #all_final_metrics.append(final_metrics)
+            #pdb.set_trace()
             
 for a_key in final_average_survey_results.keys():
     print(a_key,final_average_survey_results[a_key])
 
 
 legends = ['Human leader, no suggestions', 'Human leader, with suggestions', 'AI leader, with suggestions', 'AI leader, no suggestions']
-"""
+
+
+#print(all_final_metrics)
+print("")
+
+number_scenarios = len(final_metrics["distribution_sensed"])
+for n in range(number_scenarios):
+    for a_key in final_metrics.keys():
+
+        print(a_key + ": ", final_metrics[a_key][n])
+                
+    print("")
+
+number_scenarios = 4
+multiples_final_metrics = int(len(final_metrics["distribution_sensed"])/number_scenarios)
 
 group_final = [q for q in final_average_survey_results if q in final_questions]
 group_other = [q for q in final_average_survey_results if q not in final_questions]
  
-def plot_group(keys, title):
+def plot_group(ax, keys, title, legends, m):
     n_questions = len(keys)
-    n_bars = len(legends)  # now uses the length of your legends list
+    n_bars = len(legends)
     indices = np.arange(n_questions)
     bar_width = 0.8 / n_bars
-
     # Build one series per legend entry
     values_matrix = [
         [final_average_survey_results[q][i] for q in keys]
-        for i in range(n_bars)
+        for i in range(m*n_bars,n_bars*(m+1))
     ]
 
-    plt.figure(figsize=(10, 5))
     for i, vals in enumerate(values_matrix):
-        plt.bar(
+        ax.bar(
             indices + i * bar_width,
             vals,
             width=bar_width,
             label=legends[i]
         )
 
+    # Optional key cleanup for the “Other Questions” plot
+    xtick_labels = keys
     if title == 'Other Questions':
-        keys = [k.split(":")[0] for k in keys]
-    plt.xticks(indices + bar_width * (n_bars - 1) / 2, keys, rotation=45, ha='right')
-    plt.ylabel('Average Score')
-    plt.title(title)
-    plt.legend()
-    plt.tight_layout()
-    
-# 2. Make the two plots
-plot_group(group_final, 'Final Questions')
-plot_group(group_other, 'Other Questions')
+        xtick_labels = [k.split(":")[0] for k in keys]
 
-plt.show()
-"""
-'''
+    ax.set_xticks(indices + bar_width * (n_bars - 1) / 2)
+    ax.set_xticklabels(xtick_labels, rotation=45, ha='right')
+    ax.set_ylabel('Average Score')
+    ax.set_title(title)
+
+for m in range(multiples_final_metrics):
+    # Create a single figure with two subplots side by side, each with its own y‑scale
+    fig, axes = plt.subplots(1, 2, figsize=(20, 6), sharey=False)
+
+    legends = final_metrics["strategy"][number_scenarios*(m):number_scenarios*(m+1)]
+    # Plot each group on its own axis
+    plot_group(axes[0], group_final, 'Final Questions',legends,m)
+    plot_group(axes[1], group_other, 'Other Questions',legends,m)
+
+    # Shared legend below the subplots
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc='lower center', ncol=len(legends), title='Options')
+
+    plt.tight_layout(rect=[0, 0.05, 1, 1])  # leave space at bottom for legend
+    plt.show()
+
+
+
+
 # Derive category indices and labels from the first dict
 cat_indices = sorted(final_metrics["distribution_sensed"][0].keys())
 distribution_categories = [f"Sensed {i} times" for i in cat_indices]
 
 # Grab the default colors
-colors = plt.rcParams['axes.prop_cycle'].by_key()['color'][:len(legends)]
+colors = plt.rcParams['axes.prop_cycle'].by_key()['color'][:number_scenarios]
 
-fig, axes = plt.subplots(2, 2, figsize=(12, 8))
-axes = axes.flatten()
-fig.subplots_adjust(hspace=0.4, wspace=0.3)
 
-for idx, (metric, vals) in enumerate(final_metrics.items()):
-    ax = axes[idx]
+
+
+arrangement = final_metrics["strategy"][:number_scenarios]
+
+for m in range(multiples_final_metrics):
+
+    fig, axes = plt.subplots(2, 3, figsize=(12, 8))
+    axes = axes.flatten()
+    fig.subplots_adjust(hspace=0.4, wspace=0.3)
+    real_idx = 0
+
+    old_legends = final_metrics["strategy"][number_scenarios*(m):number_scenarios*(m+1)]
     
-    if metric != "distribution_sensed":
-        x = np.arange(len(legends))
-        ax.bar(x, vals, width=0.6, color=colors)
-        ax.set_xticks(x)
-        ax.set_xticklabels(legends, rotation=45, ha="right")
-        
-        if "dangerous_objects" in metric:
-            metric = "Dangerous objects carried"
-        
-        ax.set_ylabel(metric.replace("_", " ").title())
-        
-        ax.set_title(metric.replace("_", " ").title())
-    else:
-        data_dicts = vals  # list of 4 dicts
-        n_cat = len(cat_indices)
-        n_leg = len(legends)
-        x = np.arange(n_cat)
-        bar_w = 0.8 / n_leg
-        
-        # For each legend i, extract its series across categories
-        for i in range(n_leg):
-            series = [data_dicts[i][ci] for ci in cat_indices]
-            ax.bar(x + i*bar_w, series, width=bar_w, color=colors[i])
-        
-        # Draw separators between category groups
-        for sep in x + bar_w*n_leg:
-            ax.axvline(sep, color='grey', linestyle='--', linewidth=1, label='_nolegend_')
-        
-        ax.set_xticks(x + bar_w*(n_leg-1)/2)
-        ax.set_xticklabels(distribution_categories, rotation=45, ha="right")
-        ax.set_ylabel("Proportion Sensed")
-        ax.set_title("Frequency Distribution of Object Sensing Events")
+    for idx, (metric, vals) in enumerate(final_metrics.items()):
 
-# Remove any unused axes
-for j in range(len(final_metrics), len(axes)):
-    fig.delaxes(axes[j])
+        vals = vals[number_scenarios*(m):number_scenarios*(m+1)]
+        
+        true_vals = []
+        for ar in arrangement:
+            true_vals.append(vals[old_legends.index(ar)])
 
-# Shared legend in the middle, with solid boxes
-handles = [Patch(facecolor=colors[i]) for i in range(len(legends))]
-fig.legend(
-    handles,
-    legends,
-    loc='center',
-    bbox_to_anchor=(0.5, 0.52),
-    ncol=len(legends),
-    title="Scenario",
-    frameon=False
-)
+        vals = true_vals
+        legends = arrangement
+        if metric == "name" or metric == "strategy" or metric == "weight_distribution_carried":
+            continue
+            
+        ax = axes[real_idx]
+        real_idx += 1
+           
+        if metric != "distribution_sensed":
+            x = np.arange(len(legends))
+            try:
+                ax.bar(x, vals, width=0.6, color=colors)
+            except:
+                pdb.set_trace()
+            ax.set_xticks(x)
+            ax.set_xticklabels(legends, rotation=45, ha="right")
+            
+            if "dangerous_objects" in metric:
+                metric = "Dangerous objects carried"
+            elif "complexity_reduction" in metric:
+                metric = "AWRC Reduction"
+            elif "complexity" in metric:
+                metric = "Agent‑Weighted Retrieval Cost (AWRC)"
+            
+            ax.set_ylabel(metric.replace("_", " ").title())
+            
+            ax.set_title(metric.replace("_", " ").title())
+        else:
+            data_dicts = vals  # list of 4 dicts
+            n_cat = len(cat_indices)
+            n_leg = len(legends)
+            x = np.arange(n_cat)
+            bar_w = 0.8 / n_leg
 
-plt.tight_layout()
-plt.show()
-'''
+            # For each legend i, extract its series across categories
+            for i in range(n_leg):
+                try:
+                    series = [data_dicts[i][ci] for ci in cat_indices]
+                except:
+                    pdb.set_trace()
+                ax.bar(x + i*bar_w, series, width=bar_w, color=colors[i])
+            
+            # Draw separators between category groups
+            for sep in x + bar_w*n_leg:
+                ax.axvline(sep, color='grey', linestyle='--', linewidth=1, label='_nolegend_')
+            
+            ax.set_xticks(x + bar_w*(n_leg-1)/2)
+            ax.set_xticklabels(distribution_categories, rotation=45, ha="right")
+            ax.set_ylabel("Proportion Sensed")
+            ax.set_title("Frequency Distribution of Object Sensing Events")
+
+    # Remove any unused axes
+    for idx,j in enumerate(range(len(final_metrics), len(axes))):
+        if idx >= 4:
+            break
+        fig.delaxes(axes[j])
+
+    # Shared legend in the middle, with solid boxes
+    handles = [Patch(facecolor=colors[i]) for i in range(len(legends))]
+    fig.legend(
+        handles,
+        legends,
+        loc='center',
+        bbox_to_anchor=(0.5, 0.52),
+        ncol=len(legends),
+        title="Scenario",
+        frameon=False
+    )
+
+    plt.tight_layout()
+    plt.show()
+
 '''
 weight_distribution_carried = final_metrics["weight_distribution_carried"]
 # Determine all unique weight values across all legends
@@ -970,7 +1233,7 @@ plt.title("Weight Distribution Carried by Agent")
 plt.legend(title="Agent")
 plt.tight_layout()
 plt.show()
-'''
+
 
 fig, ax = plt.subplots(figsize=(10, 6))
 positions = np.arange(len(legends))
@@ -1000,3 +1263,4 @@ ax.set_title("Carried Weights per Scenario")
 
 plt.tight_layout()
 plt.show()
+'''

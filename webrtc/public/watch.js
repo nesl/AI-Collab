@@ -1238,6 +1238,12 @@ var alls = ["All (local)","All (global)"];
 function reset(config_options){
 
 
+    
+    const elementsToRemove = document.querySelectorAll('.tooltiptext_object');
+    elementsToRemove.forEach(element => {
+        element.remove();
+    });
+
     map_config = config_options;
     tutorial_mode = false;
     completed_survey = false;
@@ -3126,7 +3132,8 @@ function update_create_object_tooltip(object_id){
                 span_cnl.classList.add("tooltiptext_object");
                 span_cnl.innerHTML = multiple_items;
                 span_cnl.setAttribute("id", object_id + "_object_tooltip");
-                object_element.appendChild(span_cnl);
+                //object_element.appendChild(span_cnl);
+                document.body.appendChild(span_cnl);
                 
                 object_element.addEventListener('mouseenter', () => {
                     const rect = object_element.getBoundingClientRect();

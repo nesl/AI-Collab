@@ -19,8 +19,27 @@
         clear: both;
       }
     </style>
+    
+    
+    <button  class='help_question' onclick="help_toggle()">Information</button>
   </head>
   <body>
+
+    <div class="popup" id="popup-1">
+	        	<div class="overlay"></div>
+	        	
+	        	<div class="content">
+	        		<div class="close-btn" onclick="togglePopup('popup-1')">Close window</div>
+	        		<div id="popup_text">
+	        		
+	    			</div>
+	    			<button class="next-btn" style="margin-top:20px" onclick="backPopup()">Back</button>
+	    			<button class="next-btn" style="margin-top:20px" onclick="nextPopup()">Next</button>
+	    			<div class="progress-bar-dots" id="tutorial_progress" ></div>
+	        		</div>
+	        		
+		
+		</div>
 
     <h1 class="wait">People in the waiting room:</h1><h1 id="wait-count" class="wait">1</h1>
     <p class="wait">Please wait until the required number of participants join the waiting room</p>

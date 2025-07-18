@@ -597,7 +597,8 @@ class Movement:
             if robotState.object_held:
                 if not object_held:
                     pdb.set_trace()
-                carrying_object = object_held[0]
+                else:
+                    carrying_object = object_held[0]
                 if not carrying_object: #Sometimes the agent doesn't know what it is carrying
                     carrying_object = "9999"
         
