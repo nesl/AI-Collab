@@ -408,8 +408,8 @@ io.sockets.on("connection", socket => { //When a client connects
     socket.to(all_ids[idx]).emit("ai_status",status);
   });
   
-  socket.on("ai_output", (idx, object_type_coords_map, object_attributes_id, objects_held, sensing_results, ai_status, extra_status, strength, timer, disable, location, dropped_objects) => {//AI output forwarding
-    socket.to(all_ids[idx]).emit("ai_output", object_type_coords_map, object_attributes_id, objects_held, sensing_results, ai_status, extra_status, strength, timer, disable, location, dropped_objects);
+  socket.on("ai_output", (idx, object_type_coords_map, object_attributes_id, objects_held, sensing_results, ai_status, extra_status, strength, timer, disable, location, dropped_objects, partial_reset) => {//AI output forwarding
+    socket.to(all_ids[idx]).emit("ai_output", object_type_coords_map, object_attributes_id, objects_held, sensing_results, ai_status, extra_status, strength, timer, disable, location, dropped_objects, partial_reset);
     //Sensing actions missing
     
     var agent_id = socket_to_simulator_id(all_ids[idx]);

@@ -217,6 +217,7 @@ class RobotMonitor:
         self.goal = ''
         self.object_carried = ''
         self.reliability = {}
+        self.predicted_actions = {}
         
         self.log_file = log_file
         
@@ -421,6 +422,9 @@ class RobotMonitor:
                     pdb.set_trace()
             
     def update_model(self, actual_time, time_factor, current_time=0):
+    
+        if not self.predicted_actions:
+            return
     
         if self.decay:
             eta = self.base_learning_rate / (1 + self.updates)
@@ -667,7 +671,7 @@ class DynamicSensorPlanner:
         self.tau_current = {j: self.tau_initial for j in self.objects}
         
         for ob in object_beliefs:
-            if ob not in self.past_beliefs:
+            if ob[0] in self.belief.keys() and ob not in self.past_beliefs:
                 if ob[1] not in self.LLR.keys():
                     PD, PB = self.PD_PB[ob[1]]
                     self.LLR[ob[1]] = {
@@ -685,10 +689,11 @@ class DynamicSensorPlanner:
         #self.room_numbers = list(range(len(self.room_locations)))
         self.room_numbers = list(self.room_locations.keys())
         self.room_numbers.extend(['extra'+o for o in self.rooms["extra"]])
-        self.group_belief = {'ROOM'+str(label): self.prior_belief for label in self.room_numbers}  # Initial belief
+        self.group_belief = {'ROOM'+str(label): self.prior_belief for label in self.room_numbers if 'extra' not in label}  # Initial belief
+        self.group_belief.update({str(label).split("extra")[1]: self.prior_belief for label in self.room_numbers if 'extra' in label})
         #self.group_tau = {'ROOM'+str(label): (self.tau_initial * len(self.rooms[label])) if label < len(self.room_locations) else self.tau_initial for label in self.room_numbers}  # Threshold scaled by group size
-        self.group_tau = {'ROOM'+str(label): self.tau_initial for label in self.room_numbers}  # Threshold scaled by group size
-        
+        self.group_tau = {'ROOM'+str(label): self.tau_initial for label in self.room_numbers if 'extra' not in label}  # Threshold scaled by group size
+        self.group_tau.update({str(label).split("extra")[1]: self.tau_initial for label in self.room_numbers if 'extra' in label})
          
         self.update_positions(agent_home,[])
         
@@ -966,7 +971,10 @@ class DynamicSensorPlanner:
        
     def update_belief(self, object_j, agent_i, report_Y, proposed_objects_to_carry):
         PD, PB = self.PD_PB[agent_i]
-        prior = self.belief[object_j]
+        try:
+            prior = self.belief[object_j]
+        except:
+            pdb.set_trace()
         
         # Bayesian update
         if report_Y == 1:
@@ -1057,6 +1065,7 @@ class DynamicSensorPlanner:
         #self.rooms = {r_idx:[] for r_idx in range(len(self.room_locations)+1)}
         self.rooms = {r:[] for r in self.room_locations.keys()}
         self.rooms["extra"] = []
+
         self.locations = self.objects_in_rooms(object_locations.copy(), being_carried)
         
         print("ROOMS:", self.room_locations, self.locations.keys())
@@ -1066,19 +1075,20 @@ class DynamicSensorPlanner:
         #    pdb.set_trace()
         
         for ob in object_beliefs:
-            if ob not in self.past_beliefs:
-                if ob[1] not in self.LLR.keys():
-                    PD, PB = self.PD_PB[ob[1]]
-                    self.LLR[ob[1]] = {
-                        1: np.log(PD / (1 - PB)),  # LLR for Y=1
-                        0: np.log((1 - PD) / PB)    # LLR for Y=0
-                    }
-                    
-                self.update_belief(ob[0], ob[1], ob[2], objects_to_carry)
-                self.past_beliefs.append(ob)
-            else:
-                if (not self.belief[ob[0]] >= self.pickup_belief_threshold or not self.tau_current[ob[0]] <= 0.0) and ob[0] in self.objects_to_carry and ob[0] not in self.already_carried and ob[0] not in objects_to_carry:
-                    self.objects_to_carry.remove(ob[0])
+            if ob[0] in self.belief.keys():
+                if ob not in self.past_beliefs:
+                    if ob[1] not in self.LLR.keys():
+                        PD, PB = self.PD_PB[ob[1]]
+                        self.LLR[ob[1]] = {
+                            1: np.log(PD / (1 - PB)),  # LLR for Y=1
+                            0: np.log((1 - PD) / PB)    # LLR for Y=0
+                        }
+                        
+                    self.update_belief(ob[0], ob[1], ob[2], objects_to_carry)
+                    self.past_beliefs.append(ob)
+                else:
+                    if (not self.belief[ob[0]] >= self.pickup_belief_threshold or not self.tau_current[ob[0]] <= 0.0) and ob[0] in self.objects_to_carry and ob[0] not in self.already_carried and ob[0] not in objects_to_carry:
+                        self.objects_to_carry.remove(ob[0])
             
         '''
         ####### Cluster

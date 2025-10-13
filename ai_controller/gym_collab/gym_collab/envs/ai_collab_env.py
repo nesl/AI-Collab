@@ -259,10 +259,10 @@ class AICollabEnv(gym.Env):
 
         @self.sio.event
         def ai_output(object_type_coords_map, object_attributes_id, objects_held,
-                     sensing_results, ai_status, extra_status, strength, timer, disable, location, dropped_objects):
+                     sensing_results, ai_status, extra_status, strength, timer, disable, location, dropped_objects, partial_reset):
 
 
-
+            #print("Recevied output at", timer)
             self.map = json_numpy.loads(object_type_coords_map)
             
             if self.cap:
@@ -298,7 +298,8 @@ class AICollabEnv(gym.Env):
                 timer,
                 frame,
                 location,
-                dropped_objects)
+                dropped_objects,
+                partial_reset)
                 
             
             self.truncated = disable
@@ -702,6 +703,9 @@ class AICollabEnv(gym.Env):
         
 
         return observation, reward, terminated, self.truncated or self.agent_reset or self.delete, info
+        
+    def partial_reset_signal(self):
+        self.sio.emit("reset_partial")
 
     def reset(self, seed=None, options=None):
 
@@ -1042,6 +1046,7 @@ class AICollabEnv(gym.Env):
         state = internal_state[0]
         sensing_state = internal_state[1]
         action = Action(complete_action["action"])
+        partial_reset = observations[11]
 
         sensing_output = {
             "occupancy_map": occupancy_map,
@@ -1065,6 +1070,8 @@ class AICollabEnv(gym.Env):
         }
         
 
+        if partial_reset:
+            truncated = [True, True]
 
         # print(state, sensing_state)
 

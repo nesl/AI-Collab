@@ -231,6 +231,7 @@ class Enhanced_Magnebot(Magnebot):
         self.last_position = np.array([])
         self.stats = Stats()
         self.skip_frames = 0
+        self.partial_resetted = False
         self.difficulty_level = difficulty_level
         low_thresh,high_thresh = self.sensor_paramenter_lower_threshold()
         if sensors_values:
@@ -289,6 +290,7 @@ class Enhanced_Magnebot(Magnebot):
         self.screen_positions = {"position_ids":[],"positions":[],"duration":[]}
         self.focus_object = ""
         self.danger_estimates = []
+        self.partial_resetted = True
 
 #Main class
 class Simulation(Controller):
@@ -3470,7 +3472,7 @@ class Simulation(Controller):
         #print("Hello Sending occupancy map", self.occupancy_map_request, magnebot_id, self.ai_magnebots[m_idx].view_radius)
         if magnebot_id in self.occupancy_map_request and self.ai_magnebots[m_idx].view_radius:
             
-            print("Sending occupancy map")
+            #print("Sending occupancy map")
             self.occupancy_map_request.remove(magnebot_id)
         
 
@@ -3691,15 +3693,17 @@ class Simulation(Controller):
                         
                         if int(self.required_strength[object_id]) > 1: #Add teammates contribution
                         
-                            robot_ids,sort_indices = self.get_involved_teammates(all_magnebots[all_idx].current_teammates, self.object_names_translate[object_id])
-                            
-                            for sidx in range(int(self.required_strength[object_id])-1):
-                            
-                                if sidx < len(sort_indices):
-                            
-                                    all_magnebots[robot_ids[sort_indices[sidx]]].stats.objects_in_goal.append(self.object_names_translate[object_id])
-                                    if self.danger_level[object_id] == 1 and all_magnebots[robot_ids[sort_indices[sidx]]].ui_elements:
-                                        messages.append(self.info_message_ui(all_magnebots, robot_ids[sort_indices[sidx]], "Penalty! Benign object disposed!", "red"))
+                            sort_indices = []
+                            if all_magnebots[all_idx].current_teammates and self.object_names_translate[object_id] in all_magnebots[all_idx].current_teammates.keys() and all_magnebots[all_idx].current_teammates[self.object_names_translate[object_id]]:
+                                robot_ids,sort_indices = self.get_involved_teammates(all_magnebots[all_idx].current_teammates, self.object_names_translate[object_id])
+                                
+                                for sidx in range(int(self.required_strength[object_id])-1):
+                                
+                                    if sidx < len(sort_indices):
+                                
+                                        all_magnebots[robot_ids[sort_indices[sidx]]].stats.objects_in_goal.append(self.object_names_translate[object_id])
+                                        if self.danger_level[object_id] == 1 and all_magnebots[robot_ids[sort_indices[sidx]]].ui_elements:
+                                            messages.append(self.info_message_ui(all_magnebots, robot_ids[sort_indices[sidx]], "Penalty! Benign object disposed!", "red"))
                     
                         if self.danger_level[object_id] == 2 and self.object_names_translate[object_id] not in all_magnebots[all_idx].stats.dangerous_objects_in_goal:
                         
@@ -3710,12 +3714,15 @@ class Simulation(Controller):
                                 messages.append(self.info_message_ui(all_magnebots, all_idx, "Reward! Dangerous object disposed!", "blue"))
                             
                             
-                            if int(self.required_strength[object_id]) > 1: #Add teammates contribution
+                            if int(self.required_strength[object_id]) > 1 and sort_indices: #Add teammates contribution
                             
                                 for sidx in range(int(self.required_strength[object_id])-1):
-                                    all_magnebots[robot_ids[sort_indices[sidx]]].stats.dangerous_objects_in_goal.append(self.object_names_translate[object_id])
-                                    if all_magnebots[robot_ids[sort_indices[sidx]]].ui_elements:
-                                        messages.append(self.info_message_ui(all_magnebots, robot_ids[sort_indices[sidx]], "Reward! Dangerous object disposed!", "blue"))
+                                    try:
+                                        all_magnebots[robot_ids[sort_indices[sidx]]].stats.dangerous_objects_in_goal.append(self.object_names_translate[object_id])
+                                        if all_magnebots[robot_ids[sort_indices[sidx]]].ui_elements:
+                                            messages.append(self.info_message_ui(all_magnebots, robot_ids[sort_indices[sidx]], "Reward! Dangerous object disposed!", "blue"))
+                                    except:
+                                        pdb.set_trace()
                             
                       
 
@@ -4162,6 +4169,7 @@ class Simulation(Controller):
                 all_magnebots[idx].strength = 1
                 company = {}
                 
+                #print('hello', robot_id, self.timer)
                 #print(all_magnebots[idx].screen_positions["position_ids"])
                 
                 pos1 = all_magnebots[idx].dynamic.transform.position[[0,2]] #Not interested in height coordinate
@@ -4375,6 +4383,10 @@ class Simulation(Controller):
                     else:
                         self.sio.emit("stats", (self.robot_names_translate[str(all_magnebots[idx].robot_id)], all_magnebots[idx].stats.__dict__, self.timer, False))
                 
+                #for arm in [Arm.left,Arm.right]: #DEBUG
+                #    if all_magnebots[idx].dynamic.held[arm].size > 0:
+                #        pdb.set_trace()
+                #print('hello2', robot_id, self.timer)
                 for idx2 in range(len(all_magnebots)):
                     if idx == idx2:
                         continue
@@ -4383,6 +4395,7 @@ class Simulation(Controller):
                     pos2 = all_magnebots[idx2].dynamic.transform.position[[0,2]]
                     distance = np.linalg.norm(pos1 - pos2)
                     
+                    #print('hello3', self.timer, all_magnebots[idx].dynamic.held, not all_magnebots[idx2].disabled and distance < int(self.cfg['strength_distance_limit']))
                     if not all_magnebots[idx2].disabled and distance < int(self.cfg['strength_distance_limit']) and not any(doIntersect([pos2[0],pos2[1]],[pos1[0],pos1[1]],[self.walls[w_idx][0][0],self.walls[w_idx][0][1]],[self.walls[w_idx][-1][0],self.walls[w_idx][-1][1]]) for w_idx in range(len(self.walls))): #Check if robot is close enough to influence strength
                         all_magnebots[idx].strength += 1 #Increase strength
                         
@@ -4391,9 +4404,10 @@ class Simulation(Controller):
                             all_magnebots[idx].stats.time_with_teammates[robot2] = 0
                         all_magnebots[idx].stats.time_with_teammates[robot2] += float(sim_elapsed_time)
                         
-                        
+                        #print('hello4', self.timer)
                         for arm in [Arm.left,Arm.right]:
                             if all_magnebots[idx].dynamic.held[arm].size > 0:
+
                                 object_id = self.object_names_translate[all_magnebots[idx].dynamic.held[arm][0]]
                                 if object_id not in all_magnebots[idx].current_teammates:
                                     all_magnebots[idx].current_teammates[object_id] = {}
@@ -5057,7 +5071,10 @@ class Simulation(Controller):
                     if not self.local and not all_magnebots[all_idx].last_output:
                         #if any(extra_status):
                         #    print("Sending extra status")
-                        self.sio.emit('ai_output', (all_idx, json_numpy.dumps(limited_map), reduced_metadata, objects_held, item_info, ai_status, extra_status, all_magnebots[all_idx].strength, self.timer, all_magnebots[all_idx].disabled, [all_magnebots[all_idx].dynamic.transform.position.tolist(), QuaternionUtils.quaternion_to_euler_angles(all_magnebots[all_idx].dynamic.transform.rotation).tolist()],dropped_objects))
+                        #if self.robot_names_translate[str(all_magnebots[idx].robot_id)] == "A":
+                        #    print("sending message to", self.robot_names_translate[str(all_magnebots[idx].robot_id)], self.timer)
+                        self.sio.emit('ai_output', (all_idx, json_numpy.dumps(limited_map), reduced_metadata, objects_held, item_info, ai_status, extra_status, all_magnebots[all_idx].strength, self.timer, all_magnebots[all_idx].disabled, [all_magnebots[all_idx].dynamic.transform.position.tolist(), QuaternionUtils.quaternion_to_euler_angles(all_magnebots[all_idx].dynamic.transform.rotation).tolist()],dropped_objects, all_magnebots[all_idx].partial_resetted))
+                        all_magnebots[all_idx].partial_resetted = False
                         if all_magnebots[all_idx].disabled:
                             all_magnebots[all_idx].last_output = True
     
@@ -5109,6 +5126,11 @@ class Simulation(Controller):
                 self.reset_world()
                 
                 self.reset_number += 1
+                
+                print("Reset number:", self.reset_number)
+                if self.options.reset_limit and self.reset_number > self.options.reset_limit:
+                    self.communicate({"$type": "terminate"})
+                    return 0
                 
                 if not self.local:
                     self.reset_agents()
@@ -5456,6 +5478,8 @@ if __name__ == "__main__":
     parser.add_argument('--checkpoint', action='store_true', help="Start from checkpoint")
     parser.add_argument('--checkpoint-name', type=str, default='', help="Start from checkpoint name")
     parser.add_argument('--log-dir', type=str, default='', help="Log dir")
+    parser.add_argument('--reset-limit', type=int, default=0, help="How many resets to allow")
+    
     
     
     
@@ -5515,12 +5539,13 @@ if __name__ == "__main__":
 
     result = c.run()
     
+    if result:
 
-    while True:       
-        print("Simulation ended with result: ", result)
-         
-        c.__init__(args, cfg, restart=True)
+        while True:       
+            print("Simulation ended with result: ", result)
+             
+            c.__init__(args, cfg, restart=True)
 
-        result = c.run()
+            result = c.run()
 
 #TODO: remove fires, make goal locations valid in tutorial    

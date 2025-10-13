@@ -825,7 +825,9 @@ class RobotState:
 
             item_loc = self.env.convert_to_real_coordinates([int(item_output["item_location"][0]),int(item_output["item_location"][1])])
             if not item_loc:
-                pdb.set_trace()
+                #pdb.set_trace()
+                print("Object NOT FOUND in SQL", item_id, item_output)
+                
             room = self.env.get_room(item_loc,False)
             item_loc = str(item_loc)
             
@@ -1043,8 +1045,11 @@ while True:
         
         
             
-        #print(action, next_observation)
+        
         next_observation, reward, terminated, truncated, info = env.step(action)
+        
+        #if next_observation:
+        #    print("received", next_observation['action_status'], info["time"])
         
         if info["dropped_objects"]:
             robotState.dropped_objects.append(info["dropped_objects"])
@@ -1179,7 +1184,9 @@ while True:
             fell_down += 1
             if fell_down >= 1000:
                 print("FELL DOWN")
-                done = True
+                env.partial_reset_signal()
+                fell_down = 0
+                #done = True
         else:
             fell_down = 0
             

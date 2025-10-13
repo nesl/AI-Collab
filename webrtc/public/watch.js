@@ -1087,6 +1087,24 @@ function create_survey(){
             
         }
         
+        var clearBtn = document.createElement('button');
+        clearBtn.type = 'button';
+        clearBtn.textContent = 'Clear selection';
+
+
+        // 5) when clicked, uncheck all radios in this group
+        clearBtn.addEventListener('click', () => {
+        // grab by name
+            const radios = document.getElementsByName(`rsurvey${i}`);
+            radios.forEach(r => r.checked = false);
+        });
+
+        var li_element = document.createElement("li");
+        li_element.style.paddingLeft = "50px";
+        li_element.appendChild(clearBtn);
+        ul_element.appendChild(li_element);
+        
+        
 
         survey.appendChild(ul_element);
         survey.appendChild(document.createElement("br"));
