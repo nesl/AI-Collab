@@ -251,7 +251,7 @@ const config = {
     //  urls: ["stun:stun.l.google.com:19302"]
     //},
     { 
-       "urls": "turn:44.203.1.205:3478?transport=tcp",
+       "urls": "turn:54.219.135.112:3478?transport=tcp",
        "username": config_api.username,
        "credential": config_api.password
     }
@@ -287,6 +287,8 @@ socket.on("offer", (id, description, new_client_id) => {
 
   //client_id = new_client_id;
   peerConnection = new RTCPeerConnection(config);
+  
+  
   peerConnection
     .setRemoteDescription(description)
     .then(() => peerConnection.createAnswer())
@@ -307,7 +309,12 @@ socket.on("offer", (id, description, new_client_id) => {
       socket.emit("candidate", id, event.candidate);
     }
   };
+  peerConnection.oniceconnectionstatechange = () => {
+  console.log('[ICE STATE]', peerConnection.iceConnectionState);
+  };
 });
+
+
 
 
 socket.on("candidate", (id, candidate) => {

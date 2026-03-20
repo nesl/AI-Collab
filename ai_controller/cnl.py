@@ -745,7 +745,7 @@ class MessagePattern:
         return "Still working on it. "
         
     @staticmethod
-    def parse_sensing_message(rematch, rm, robotState, info, other_agents, convert_to_grid_coordinates, convert_to_real_coordinates):    
+    def parse_sensing_message(rematch, rm, robotState, info, other_agents, convert_to_grid_coordinates, convert_to_real_coordinates):  #parse message and update danger estimates  
         
         object_id = rematch.group(1)
         

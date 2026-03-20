@@ -3,4 +3,4 @@ role: {A: equal, B: equal, C: equal, D: equal, E: equal}
 interdependency: {A: equal, B: equal, C: equal, D: equal, E: equal}
 return: {A: False, B: False, C: False, D: False, E: False}
 communication_range: {A: 5, B: 50, C: 5, D: 5}
-suggestions: True
+suggestions: false

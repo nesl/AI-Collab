@@ -251,3 +251,281 @@ To control the robot through the web interface, you need to first click in the v
 
 
 
+Here is the **revised, cleaner README** with your corrections integrated and clarified. I tightened terminology (especially around *scenario vs layout*), fixed the workflow, and made the pipeline more explicit.
+
+---
+
+# Human–Robot Collaboration Simulator Updated
+
+This repository contains a framework for studying **mixed human–autonomous team coordination**, including a simulator, WebRTC server, autonomous agent controllers, and analysis tools.
+
+---
+
+## 📁 Repository Structure
+
+* `simulator/` — Simulation environment
+* `webrtc/` — Server for user interaction and video streaming
+* `ai_controller/` — Autonomous agent control system
+* `interviews/` — Qualitative data processing tools
+
+---
+
+## 🚀 Running the Simulator
+
+Navigate to the simulator folder:
+
+```bash
+cd simulator
+```
+
+### Basic Execution
+
+```bash
+python simulation.py --address "URL" --no-human-test --level 1 --scenario 3
+```
+
+### ⚠️ Important Notes
+
+* `--scenario 3` is **always used** for the main (third-version) experiments
+* Layout selection is controlled via **checkpoints**, not scenarios
+
+### Optional Arguments
+
+* `--showall`
+  Enable debug visualization (true danger status, weights, object/agent IDs)
+
+* `--no-block`
+  Prevent objects from fully blocking pathways
+
+* `--checkpoint`
+  Load the most recent checkpoint
+
+* `--checkpoint --checkpoint-name [1–4]`
+  Select one of the **four predefined layouts**
+
+* `--log`
+  Record simulation videos and results
+
+### Restarting from Checkpoint
+
+```bash
+./command_restart
+```
+
+---
+
+## ⚙️ Configuration
+
+Simulation parameters are defined in:
+
+```
+config.yaml
+```
+
+This includes:
+
+* Number of human participants
+* Number of autonomous agents
+* Environment settings
+
+---
+
+## 🌐 Running the WebRTC Server
+
+Navigate to:
+
+```bash
+cd webrtc
+```
+
+Run the server:
+
+```bash
+node server --address "URL" --port "5683"
+```
+
+### Optional Flags
+
+* `--wait`
+  Enables a waiting room (`URL/wait.html`) before users join
+
+* `--log`
+  Logs all interactions
+
+### ⚠️ Important
+
+You must configure a **TURN server** in:
+
+* `watch.js`
+* `broadcast.js`
+
+Inside the `iceServers` configuration.
+Otherwise, users will **not receive video streams**.
+
+---
+
+## 🤖 Autonomous Agent Controller
+
+Navigate to:
+
+```bash
+cd ai_controller
+```
+
+### Running Agents
+
+Each autonomous agent runs independently:
+
+```bash
+./command
+```
+
+* `--robot-number` must be unique per agent inside command
+
+To restart after a crash:
+
+```bash
+./command_restart
+```
+
+This uses the latest reliability file so the agent preserves learned statistics.
+
+---
+
+### Core Components
+
+* `ai_controller.py` — Main entry point
+* `optimized_control.py` — High-level control logic
+* `optimized_strategy.py` — MILP-based task allocation
+* `movement_strategy.py` — Low-level motion planning
+* `process_text_strategy.py` — LLM-based communication
+
+---
+
+### Team Configuration
+
+Defined in:
+
+```
+team_structure.yaml
+```
+
+Key parameters:
+
+* **Hierarchy type** (`obey`, `order`)
+* Suggestion policies
+* Team coordination structure
+
+---
+
+## 💾 Checkpointing
+
+```bash
+python checkpoint.py
+```
+
+* Takes a simulator log file (e.g., after a crash)
+* Generates a checkpoint file
+* Allows restarting from the exact same state
+
+---
+
+## 📊 Log Processing & Analysis
+
+### Processing Logs
+
+```bash
+python process_logs.py
+```
+
+This script:
+
+* Computes the metrics used in the paper
+* Accepts different dataset types:
+
+  * Mixed teams
+  * Autonomous-only teams
+* Skips incompatible files automatically
+
+### Required Input
+
+* `orders.csv`
+  Contains annotated messages with structured labels for **orders and interactions**
+
+---
+
+### Feature Extraction & Analysis
+
+```bash
+python features_process.py
+```
+
+Used to:
+
+* Generate processed features
+* Produce plots
+* Perform statistical analysis
+
+---
+
+### Video Analysis
+
+```bash
+python review_videos.py
+```
+
+Used for inspecting recorded sessions.
+
+---
+
+## 🧠 Interview Data Processing
+
+Navigate to:
+
+```bash
+cd interviews
+```
+
+### Pipeline
+
+1. Concatenate Zoom transcripts into:
+
+   ```
+   output.txt
+   ```
+
+2. Parse transcripts:
+
+   ```bash
+   python interview_parsing.py
+   ```
+
+   → Generates a CSV file
+
+3. Manually annotate the CSV
+
+4. Run code selection:
+
+   ```bash
+   python code_selection2.py
+   ```
+
+---
+
+## 🧩 Notes
+
+* The system is designed for **non-dyadic human–robot collaboration under partial observability**
+* Supports:
+
+  * Real-time interaction
+  * LLM-based autonomous agents
+  * Reproducible experiments via logging and checkpointing
+
+---
+
+If you want, I can next:
+
+* Add a **quick-start (1–2 command minimal run)** for reviewers
+* Or tailor this into a **paper artifact README** (which is usually stricter and more concise for submission)
+
+

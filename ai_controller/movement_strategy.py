@@ -256,7 +256,7 @@ class Movement:
                 
         return True
 
-    def go_to_location(self, x, y, occMap, robotState, info, ego_location, action_index, message_text, end=False,checking=False, help_sensing=False):
+    def go_to_location(self, x, y, occMap, robotState, info, ego_location, action_index, message_text, end=False,checking=False, help_sensing=False): #low level movement primitives to go to a location
         
         occMap_clean = np.copy(occMap)
         locations_to_test = [[1,0],[0,1],[1,1],[-1,0],[0,-1],[-1,-1],[-1,1],[1,-1]]
@@ -276,7 +276,7 @@ class Movement:
         elif not path_to_follow: #This means there is no feasible path, maybe because robots are blocking the path
         
 
-            if self.help_status == self.HelpState.helping: #self.helping:
+            if self.help_status == self.HelpState.helping: #if we are helping out another agent, first treate the leader as a wall
                 agent_idx = info['robot_key_to_index'][self.help_status_info[0][0]]
                 helping_robot_location = robotState.get("agents", "last_seen_location", agent_idx) #robotState.robots[agent_idx]["neighbor_location"]
                 
@@ -286,7 +286,7 @@ class Movement:
             if self.ignore_robots: #Modify the occMap by removing the robots, to see if that works
             
                 nearby_robots = []
-                for rb_idx in self.ignore_robots:
+                for rb_idx in self.ignore_robots: #remove the robots that are staying in a single place not moving, treat them as empty cells
                     rb = robotState.get("agents", "last_seen_location", rb_idx) #robotState.robots[rb_idx]["neighbor_location"]
                     
                     if not (rb[0] == -1 and rb[1] == -1):
@@ -294,11 +294,11 @@ class Movement:
                             continue
                             
                         occMap_clean[rb[0],rb[1]] = 0
-                        if self.env.compute_real_distance(rb,[ego_location[0][0],ego_location[1][0]]) < self.env.map_config['communication_distance_limit']:
+                        if self.env.compute_real_distance(rb,[ego_location[0][0],ego_location[1][0]]) < self.env.map_config['communication_distance_limit']: #check if these robots are within comms distance
                             nearby_robots.append(rb)
                     
                 
-                path_to_follow = self.findPath(np.array([ego_location[0][0],ego_location[1][0]]),np.array([x,y]),occMap_clean,ignore=self.ignore_go_location, all_movements=all_movements)
+                path_to_follow = self.findPath(np.array([ego_location[0][0],ego_location[1][0]]),np.array([x,y]),occMap_clean,ignore=self.ignore_go_location, all_movements=all_movements) #with these robots removed, compute again a feasible path
                 
                 if path_to_follow and occMap[path_to_follow[0][0],path_to_follow[0][1]] != 0 and not checking: #Removing robots does work, make other robots move
                     robot_combinations = self.get_combinations(nearby_robots) 
@@ -331,8 +331,8 @@ class Movement:
                                     break
 
                             
-                            message_text.insert(MessagePattern.move_request(robot_id),robot_id)
-                            self.wait_locations.append(rb)
+                            message_text.insert(MessagePattern.move_request(robot_id),robot_id) #send move request
+                            self.wait_locations.append(rb) #save agent id, wait until it moves away
                             
                             if not action_index == self.State.wait_free and not action_index == self.State.wait_random:
                                 self.last_action_index = action_index
@@ -390,15 +390,15 @@ class Movement:
                 self.stuck_retries = 0
         #elif helping and (x == path_to_follow[1][0] and y == path_to_follow[1][1] and occMap[x,y]):
         #    action = []
-        elif not checking:
+        elif not checking: #finally if everything is good and we are not just checking if the path is feasible, move
             
             self.stuck_retries = 0
             current_location = [ego_location[0][0],ego_location[1][0]]
             
-            if self.previous_go_location and path_to_follow[0][0] == self.previous_go_location[0] and path_to_follow[0][1] == self.previous_go_location[1]: #If it gets stuck at location
+            if self.previous_go_location and path_to_follow[0][0] == self.previous_go_location[0] and path_to_follow[0][1] == self.previous_go_location[1]: #If it gets stuck at location, we have a series of retries
                 if self.go_retries == 5:#2:
 
-                    self.ignore_go_location.append(path_to_follow[0])
+                    self.ignore_go_location.append(path_to_follow[0]) #try to ignore the current next cell destination and see
                     path_to_follow = self.findPath(np.array([ego_location[0][0],ego_location[1][0]]),np.array([x,y]),occMap, ignore=self.ignore_go_location, all_movements=all_movements)
                     print("stuck1?", path_to_follow, self.ignore_go_location)
                     if not path_to_follow: #stuck
@@ -415,7 +415,7 @@ class Movement:
                 self.go_retries = 0
                 self.ignore_go_location = []
             
-            if path_to_follow:
+            if path_to_follow: #save previous cell location
                 self.previous_go_location = [path_to_follow[0][0],path_to_follow[0][1]]
                 action = self.position_to_action(current_location,path_to_follow[0],False)
                        
@@ -718,7 +718,7 @@ class Movement:
                     action_index = self.last_action_index
 
                 
-                if not robotState.object_held and self.help_status == self.HelpState.no_request: #not self.helping and not self.being_helped and not self.accepted_help and not self.asked_help: # accept help request
+                if not robotState.object_held and self.help_status == self.HelpState.no_request: #accept help request, we are going to help #not self.helping and not self.being_helped and not self.accepted_help and not self.asked_help: # accept help request
                     message_text.insert(MessagePattern.carry_help_accept(rm[0]),rm[0])
                     #self.accepted_help = rm[0]
                     
@@ -864,7 +864,7 @@ class Movement:
            
       
         
-        if re.search(MessagePattern.location_regex(),rm[1]) and not (self.help_status == self.HelpState.helping and self.help_status_info[0][0] == rm[0] and action_index == self.State.obey) and not action_index == self.State.wait_message:  #"Going towards location" in rm[1]: 
+        if re.search(MessagePattern.location_regex(),rm[1]) and not (self.help_status == self.HelpState.helping and self.help_status_info[0][0] == rm[0] and action_index == self.State.obey) and not action_index == self.State.wait_message:  #if obeying, we don't care about this information 
             match_pattern = re.search(MessagePattern.location_regex(),rm[1])
             
             template_match = True
@@ -905,10 +905,10 @@ class Movement:
             
             curr_loc = tuple(curr_loc)
             
-            if curr_loc not in self.occupied_locations:
+            if curr_loc not in self.occupied_locations: #make sure to not crash with the other agents by saving its current location
                 self.occupied_locations.append(curr_loc)
             
-            if other_next_step == other_target_location: #robot stays there
+            if other_next_step == other_target_location: #the other robot stays there, has arrived to its destination, doesn't plan to move, we can ignore it when planning our movement
                 
                 if agent_idx not in self.ignore_robots:
                     self.ignore_robots.append(agent_idx)
@@ -916,7 +916,7 @@ class Movement:
                 if target_location == other_target_location and not action_index == self.State.follow and not action_index == self.State.obey and not self.help_status == self.HelpState.helping: #Change destination
                     action_index = initial_state
                     print("Changed -1")
-                    if self.help_status == self.HelpState.being_helped: #self.being_helped:
+                    if self.help_status == self.HelpState.being_helped: #if we are being helped, we just finish carrying #self.being_helped:
                         #self.being_helped = []
                         #self.being_helped_locations = []
                         self.help_status = self.HelpState.no_request
@@ -928,10 +928,10 @@ class Movement:
                         
                         
             else:
-                if target_location == other_target_location:
+                if target_location == other_target_location: #if we share same intended destination as other robot (right now doesn't seem to have much effect, maybe it can make teams to dissolve)
                 
                 
-                    if not match_pattern.group(5) and not robotState.object_held and not match_pattern.group(7) and not self.help_status == self.HelpState.helping and not self.help_status == self.HelpState.being_helped: #not self.helping and not self.being_helped: #Possible change !!!!
+                    if not match_pattern.group(5) and not robotState.object_held and not match_pattern.group(7) and not self.help_status == self.HelpState.helping and not self.help_status == self.HelpState.being_helped: #if not carrying an object, nor helping or being helped, not sure if this changes anything, just eliminate message with target location
                 
                  
                 
@@ -966,7 +966,7 @@ class Movement:
                                 print("changing going location!!!")
                                 
 
-                    elif (match_pattern.group(7) and (self.help_status == self.HelpState.helping or self.help_status == self.HelpState.being_helped)) or (match_pattern.group(5) and robotState.object_held) or (match_pattern.group(5) and (self.help_status == self.HelpState.helping or self.help_status == self.HelpState.being_helped)) or (match_pattern.group(7) and robotState.object_held):
+                    elif (match_pattern.group(7) and (self.help_status == self.HelpState.helping or self.help_status == self.HelpState.being_helped)) or (match_pattern.group(5) and robotState.object_held) or (match_pattern.group(5) and (self.help_status == self.HelpState.helping or self.help_status == self.HelpState.being_helped)) or (match_pattern.group(7) and robotState.object_held): #if part of a team, or carrying an object
                         if match_pattern.group(7):
                             other_id = match_pattern.group(8)
                         else:
@@ -1018,7 +1018,7 @@ class Movement:
                 
        
             
-                    if (other_next_step == next_loc[0].tolist() or (len(next_loc) > 1 and other_next_step == next_loc[1].tolist())):
+                    if (other_next_step == next_loc[0].tolist() or (len(next_loc) > 1 and other_next_step == next_loc[1].tolist())): #if agents share the next step
                     
                         if not match_pattern.group(5) and not robotState.object_held and not match_pattern.group(7) and not self.help_status == self.HelpState.helping and not self.help_status == self.HelpState.being_helped: #Message arrive at the same time or previous than this robot sent its message. This condition is true only when robots have no teams and are not carrying any object
                         
@@ -1030,7 +1030,7 @@ class Movement:
                             if ord(other_id) < ord(our_id): #If sender's id appears first than receiver in alphabetic order
                                 #Move to free location
                                 #print(rm[2],self.message_send_time)
-                                action_index = self.wait_movement(agent_idx,rm[0],action_index,message_text)
+                                action_index = self.wait_movement(agent_idx,rm[0],action_index,message_text) #wait for the other agent until it moves away
                             """
                             else:
                                 print(rm[2],self.message_send_time)
@@ -1052,13 +1052,13 @@ class Movement:
                             if ord(other_id) < ord(our_id): #If sender's id appears first than receiver in alphabetic order
                                 #Move to free location
                                 #print(rm[2],self.message_send_time)
-                                action_index = self.wait_movement(agent_idx,rm[0],action_index, message_text)
+                                action_index = self.wait_movement(agent_idx,rm[0],action_index, message_text)  #wait for the other agent until it moves away
 
                         elif match_pattern.group(7) or match_pattern.group(5): #If we are not carrying an object while the other is, or we are not part of a team while the other is
                             #print(rm[2],self.message_send_time)
-                            action_index = self.wait_movement(agent_idx,rm[0],action_index, message_text)
+                            action_index = self.wait_movement(agent_idx,rm[0],action_index, message_text)  #wait for the other agent until it moves away
                             
-                    else:
+                    else: #if we don't share a next step
 
                         if match_pattern.group(7):
                             other_id = match_pattern.group(8)
@@ -1075,9 +1075,9 @@ class Movement:
                             
                         previous_index = -1
                         
-                        if match_pattern.group(7) or match_pattern.group(5) or (ord(other_id) < ord(our_id) and (((match_pattern.group(7) and (self.help_status == self.HelpState.helping or self.help_status == self.HelpState.being_helped)) or (match_pattern.group(5) and robotState.object_held) or (match_pattern.group(5) and (self.help_status == self.HelpState.helping or self.help_status == self.HelpState.being_helped)) or (match_pattern.group(7) and robotState.object_held)) or not match_pattern.group(5) and not robotState.object_held and not match_pattern.group(7) and not self.help_status == self.HelpState.helping and not self.help_status == self.HelpState.being_helped)):
+                        if match_pattern.group(7) or match_pattern.group(5) or (ord(other_id) < ord(our_id) and (((match_pattern.group(7) and (self.help_status == self.HelpState.helping or self.help_status == self.HelpState.being_helped)) or (match_pattern.group(5) and robotState.object_held) or (match_pattern.group(5) and (self.help_status == self.HelpState.helping or self.help_status == self.HelpState.being_helped)) or (match_pattern.group(7) and robotState.object_held)) or not match_pattern.group(5) and not robotState.object_held and not match_pattern.group(7) and not self.help_status == self.HelpState.helping and not self.help_status == self.HelpState.being_helped)): #if the other agent is carrying or part or a team
                         
-                            for s_idx,s in enumerate(self.potential_occupied_locations):
+                            for s_idx,s in enumerate(self.potential_occupied_locations): #add the agent's next location into list of potentially occupied cells
                                 if s[0] == other_next_step:
                                     previous_index = s_idx
                                 
@@ -1094,7 +1094,7 @@ class Movement:
         
         template_match = False
                             
-        if MessagePattern.wait(self.env.robot_id) in rm[1]:
+        if MessagePattern.wait(self.env.robot_id) in rm[1]: #if someone is waiting just ignore them
             
             template_match = True
         
@@ -1104,7 +1104,7 @@ class Movement:
             if agent_idx not in self.ignore_robots:
                 self.ignore_robots.append(agent_idx)
                 
-        if re.search(MessagePattern.move_order_regex(),rm[1]):
+        if re.search(MessagePattern.move_order_regex(),rm[1]): #if leaders orders to move, just get the target location and make sure to obey
             rematch = re.search(MessagePattern.move_order_regex(),rm[1])
             
             template_match = True
@@ -1129,7 +1129,7 @@ class Movement:
             agent_idx = info['robot_key_to_index'][rm[0]]
             other_robot_location = robotState.get("agents", "last_seen_location", agent_idx) #robotState.robots[agent_idx]["neighbor_location"]
             
-            if not (other_robot_location[0] == -1 and other_robot_location[1] == -1) and ((not robotState.object_held and not (self.help_status == self.HelpState.being_helped and not helping_sense) and (not (self.help_status == self.HelpState.helping and not helping_sense) or (self.help_status == self.HelpState.helping and (self.help_status_info[0][0] == rm[0] or rm[0] in self.help_status_info[6])))) or other_agents[agent_idx].carrying):#not self.being_helped and (not self.helping or (self.helping and self.helping[0] == rm[0])): #This condition is true only when robots have no teams and are not carrying any object
+            if not (other_robot_location[0] == -1 and other_robot_location[1] == -1) and ((not robotState.object_held and not (self.help_status == self.HelpState.being_helped and not helping_sense) and (not (self.help_status == self.HelpState.helping and not helping_sense) or (self.help_status == self.HelpState.helping and (self.help_status_info[0][0] == rm[0] or rm[0] in self.help_status_info[6])))) or other_agents[agent_idx].carrying):#not self.being_helped and (not self.helping or (self.helping and self.helping[0] == rm[0])): #This condition is true only when robots have no teams and are not carrying any object and know the location of the agent asking them to move away
                         
                 print("MOVING pending")
                 
@@ -1141,7 +1141,7 @@ class Movement:
                 maximum_distance = 0
                 maximum_distance_with_robot = 0
                 
-                for p in possible_locations:
+                for p in possible_locations: #get all the possible locations away from the agent, maximize according to distance and choose those ones
                 
                     if ego_location[0][0] + p[0] >= robotState.latest_map.shape[0] or ego_location[1][0] + p[1] >= robotState.latest_map.shape[1] or ego_location[0][0] + p[0] < 0 or ego_location[1][0] + p[1] < 0:
                         continue
@@ -1159,7 +1159,7 @@ class Movement:
                             next_location_with_robot = p
                             maximum_distance_with_robot = temp_distance
                 
-                if maximum_distance:            
+                if maximum_distance: #if we get a candidate, go to a new state and move to location      
                     ego_location2 = [ego_location[0][0] + next_location[0],ego_location[1][0] + next_location[1]]
                     self.pending_location = ego_location2
                      
@@ -1171,7 +1171,7 @@ class Movement:
                     self.help_status_info[1] = time.time()
                     print("MOVING")
                     message_text.insert("Ok " + rm[0] + ". ",rm[0])
-                elif maximum_distance_with_robot:
+                elif maximum_distance_with_robot: #if we can only achieve this by moving into a cell that is currently occupied by another robot, we will first have to tell that robot to move
                     #object_id = list(info['object_key_to_index'].keys())[list(info['object_key_to_index'].values()).index(self.heavy_objects['index'][ho])]
                     robot_index_to_key = list(info['robot_key_to_index'].keys())
                     message_text.insert(MessagePattern.move_request(robot_index_to_key[list(info['robot_key_to_index'].values()).index(agent_idx)]),rm[0])
@@ -1255,11 +1255,11 @@ class Movement:
         
         ego_location = [ego_location[0][0],ego_location[1][0]]
                                 
-        if self.help_status == self.HelpState.being_helped: #self.being_helped:
+        if self.help_status == self.HelpState.being_helped: #if being helped
         
             ai_robots = []
             human_robots_idx = []
-            for agent_id in self.help_status_info[0]:
+            for agent_id in self.help_status_info[0]: #get all our collaborators
                 agent_idx = info['robot_key_to_index'][agent_id]
                         
                 if robotState.get("agents", "type", agent_idx):
@@ -1274,7 +1274,7 @@ class Movement:
             #pdb.set_trace()
 
             print("help status info",self.help_status_info)
-            if self.help_status_info[2] or self.help_status_info[7]: #self.being_helped_locations:
+            if self.help_status_info[2] or self.help_status_info[7]: #if we are waiting for humans to come closer or AI agents to go to their indicated destinations, get the previous location of the AI agent
             
                 if ai_robots:
                     if not next_locations:
@@ -1288,11 +1288,11 @@ class Movement:
                     previous_agent_location = robotState.get("agents", "last_seen_location", agent_idx)
                 
             
-            elif next_locations: #At the beginning choose the order of path assignment
+            elif next_locations: #At the beginning choose the order of path assignment if we have a next location we want to go
             
                 #According to next step, we have all the possible cells helping robots may move into
                 
-                if not all(humans_close):
+                if not all(humans_close): #if some humans are not close enough, tell them to come closer
                     for hc in range(len(humans_close)):
                         if not humans_close[hc]:
                             robot_index_to_key = list(info['robot_key_to_index'].keys())
@@ -1302,7 +1302,7 @@ class Movement:
                                 self.help_status_info[7].append(robot_id)
                 
         
-                if ai_robots:
+                if ai_robots: #get all the possible combinations of movements that would allow the AI robots to follow without blocking each other
                 
                     res = np.array(next_locations[0]) - np.array(ego_location) 
                     
@@ -1357,7 +1357,7 @@ class Movement:
                     possible_permutations = list(itertools.permutations(list(range(len(ai_robots)))))
                     
                     solution_found = []
-                    for perm in possible_permutations:
+                    for perm in possible_permutations: #for each possible combination of AI agents
 
                         possible_perm = self.find_order_team_rec(perm,0,robotState,info,goal_locations,limited_occ_map, len(ai_robots))
                         
@@ -1365,19 +1365,19 @@ class Movement:
                             solution_found = perm
                             break
                             
-                    if solution_found:
+                    if solution_found: #we found a set of movements that all AI agents could follow
                         possible_perm.reverse()
                         
                         #self.being_helped_combinations = [[solution_found[p_idx],possible_perm[p_idx]] for p_idx in range(len(possible_perm))]
                         self.help_status_info[3] = [[solution_found[p_idx],possible_perm[p_idx]] for p_idx in range(len(possible_perm))]
                         print("Combinaionts", self.help_status_info[3])                    
 
-                    else:
+                    else: #impossible to carry together object
                         combinations_found = False
                         message_text.insert(MessagePattern.carry_help_finish(),self.help_status_info[0])
                         print("No possible combinations 1")
                 
-            else: #To wait for others to get into communication range
+            else: #To wait for others to get into communication range if we don't have another location to go
                 agent_sum = 0
                 robot_index_to_key = list(info['robot_key_to_index'].keys())
                 for noa in nearby_other_agents:
@@ -1385,11 +1385,11 @@ class Movement:
                     if robot_id in self.help_status_info[0]: #self.being_helped:
                         agent_sum += 1
                             
-                if agent_sum != len(self.help_status_info[0]):
+                if agent_sum != len(self.help_status_info[0]): #if we don't have all the agents helping next to us
                     within_comms_range = False
                     
                 
-                if within_comms_range and ai_robots: #Compute feasible paths if in communication range
+                if within_comms_range and ai_robots: #If we do have the agents in communication range Compute feasible paths to help us pick up object
                 
         
                     limited_occ_map = np.copy(occMap)
@@ -1439,7 +1439,7 @@ class Movement:
                
             
             
-            if within_comms_range and combinations_found and ai_robots and (not self.help_status_info[2] or (self.help_status_info[2] and self.help_status_info[2][-1] == previous_agent_location and len(self.help_status_info[2]) != len(ai_robots))): #(not self.being_helped_locations or (self.being_helped_locations and self.being_helped_locations[-1] == previous_agent_location and len(self.being_helped_locations) != len(self.being_helped))):
+            if within_comms_range and combinations_found and ai_robots and (not self.help_status_info[2] or (self.help_status_info[2] and self.help_status_info[2][-1] == previous_agent_location and len(self.help_status_info[2]) != len(ai_robots))): #if everyone is within communication range, there are AI robots and combinations that serve to get help us and if we haven't already defined a path and given all instructions
 
                 """
                 if not next_locations:
@@ -1483,18 +1483,18 @@ class Movement:
                 new_location = self.help_status_info[3][comb_idx][1] #self.being_helped_combinations[comb_idx][1]
 
                 #self.being_helped_locations.append(new_location)
-                self.help_status_info[2].append(new_location)
+                self.help_status_info[2].append(new_location) #append destination for agent
                 
                 help_idx = self.help_status_info[3][comb_idx][0] #self.being_helped_combinations[comb_idx][0]
                 
                 agent_id = ai_robots[help_idx] #self.being_helped[help_idx]
-                message_text.insert(MessagePattern.move_order(agent_id, new_location, self.env.convert_to_real_coordinates),agent_id)
+                message_text.insert(MessagePattern.move_order(agent_id, new_location, self.env.convert_to_real_coordinates),agent_id) #give order for movement
                 #self.asked_time = time.time()
                 self.help_status_info[1] = time.time()
             
-            elif len(self.help_status_info[2]) == len(ai_robots) and not (ai_robots and self.help_status_info[2][-1] != previous_agent_location) and all(humans_close): #len(self.being_helped_locations) == len(self.being_helped) and self.being_helped_locations[-1] == previous_agent_location: #When all agents have followed orders
+            elif len(self.help_status_info[2]) == len(ai_robots) and not (ai_robots and self.help_status_info[2][-1] != previous_agent_location) and all(humans_close): #len(self.being_helped_locations) == len(self.being_helped) and self.being_helped_locations[-1] == previous_agent_location: #When all agents have followed orders, we have completed our waiting
                 wait_for_others = False
-            elif not all(humans_close):
+            elif not all(humans_close): #if humans are not close call them to get closer
                 for hc in range(len(humans_close)):
                     if not humans_close[hc]:
                         robot_index_to_key = list(info['robot_key_to_index'].keys())
@@ -1516,7 +1516,7 @@ class Movement:
     def movement_state_machine(self, occMap, info, robotState, action_index, message_text, target_location, initial_state, next_loc, ego_location, action):
         
         
-        if action_index == self.State.wait_message:
+        if action_index == self.State.wait_message: #if we are waiting for a message (confirmation of collaboration), end the wait after some time if no response is obtained
             if time.time() - self.help_status_info[1] > self.wait_time_limit: #time.time() - self.asked_time > self.wait_time_limit:
 
                 #self.asked_help = False
@@ -1535,7 +1535,7 @@ class Movement:
                 print("end of waiting")
             action = Action.get_occupancy_map.value
             
-        elif action_index == self.State.wait_random:
+        elif action_index == self.State.wait_random: #move away to specified location until time limit or agent goes away communication distance
         
             #for rm in received_messages:
             #    if MessagePattern.move_request(self.env.robot_id) in rm[1]:
@@ -1559,7 +1559,7 @@ class Movement:
                 self.pending_location = []
                 
                 
-        elif action_index == self.State.wait_free: 
+        elif action_index == self.State.wait_free: #wait for robots to move from location
             
             for loc_wait_idx in reversed(range(len(self.wait_locations))): #Wait for robots to move from location
                 loc_wait = self.wait_locations[loc_wait_idx]
@@ -1583,7 +1583,7 @@ class Movement:
                 robot = agent_idx
                 self.action_index += 1
             """
-        elif action_index == self.State.follow:
+        elif action_index == self.State.follow: #follow robot within a given range
             
             try:
                 agent_idx = info['robot_key_to_index'][self.help_status_info[0][0]]
@@ -1614,7 +1614,7 @@ class Movement:
                 if (not action and isinstance(action, list)) or real_distance < distance_limit:
                     action = Action.get_occupancy_map.value
             
-            elif (robo_location[0] == -1 and robo_location[1] == -1) and robotState.get("agents", "disabled", agent_idx) != 1 and time.time() - self.robot_not_found_time < self.robot_not_found_time_limit:
+            elif (robo_location[0] == -1 and robo_location[1] == -1) and robotState.get("agents", "disabled", agent_idx) != 1 and time.time() - self.robot_not_found_time < self.robot_not_found_time_limit: #ask where is the agent to be followed
                 action = Action.get_occupancy_map.value
                 message_text.insert(MessagePattern.ask_for_agent(self.help_status_info[0][0]),"all")
             else:
@@ -1624,7 +1624,7 @@ class Movement:
                 print("Agent not found")
                 #pdb.set_trace()
                     
-        elif action_index == self.State.obey:
+        elif action_index == self.State.obey: #go to the location specified by the leader
             print("TARGET LOCATION:", target_location)
             
             try:

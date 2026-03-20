@@ -229,7 +229,7 @@ class RobotMonitor:
                 self.times = times
             
             
-        if not self.reliability:
+        if not self.reliability: #initialize all the types of reliability we are checking: sensing objects, carrying light and heavy object. For heavy objects they can correspond to different combinations of human and AI
         
             self.reliability = {r:self.initial_reliability for r in ['sense', 'carry', 'carry_heavy_AI']}
             
@@ -538,7 +538,7 @@ class RobotMonitor:
             return -1
         
         return_value = 0
-        # Direction check
+        # Direction check, warn if deviating from destination
         if new_dist > current_dist:
             self.consecutive_increases += 1
             if self.consecutive_increases >= self.consecutive_increases_limit:
@@ -552,7 +552,7 @@ class RobotMonitor:
         print(f"Moved {self.current_node} → {new_node} | Distance: {current_dist} → {new_dist} | Goal node {self.goal}")
         self.current_node = new_node
         
-        if self.current_node == self.goal and not self.moving_finished:
+        if self.current_node == self.goal and not self.moving_finished: #update speed models
             return_value = 2
             self.update_model(time.time()-self.initial_time, "moving", current_time=current_time)
             self.initial_time = time.time()
@@ -605,7 +605,7 @@ class DynamicSensorPlanner:
         
         #self.goal_area = goal_coords[int(len(goal_coords)/2)]
         
-        self.g = UndirectedGraph()
+        self.g = UndirectedGraph() #graph useful to measure performance, connecting all the relevant rooms
         self.g.add_edge('0', 'main area')
         self.g.add_edge('main area', 'goal area')
         self.g.add_edge('1', 'main area')
@@ -650,7 +650,7 @@ class DynamicSensorPlanner:
         else:
             self.log = False
         
-        self.path_monitoring = {a:RobotMonitor(a, self.agents_type,self.g,locations['SAFE'],self.rooms,self.log_file_monitor, self.log_file_name) for a in self.agents}
+        self.path_monitoring = {a:RobotMonitor(a, self.agents_type,self.g,locations['SAFE'],self.rooms,self.log_file_monitor, self.log_file_name) for a in self.agents} #start monitoring structure for each agent
         
         #self.locations = self.recluster(locations)
         #self.locations.update(self.create_exploration_regions())

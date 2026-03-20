@@ -916,7 +916,7 @@ class RobotState:
         if information_change:
             #print(item_output)
             #self.average_fusion(item_idx)
-            self.bayesian_fusion(item_idx)
+            self.bayesian_fusion(item_idx) #perform bayesian fusion
         
         if self.args.sql:
             self.sqliteConnection.commit()  

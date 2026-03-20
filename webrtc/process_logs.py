@@ -251,7 +251,7 @@ def average_team_composition_fraction_global(
             total_members += size   * w
 
     if total_members == 0.0:
-        pdb.set_trace()
+        #pdb.set_trace()
         return {"avg_human_fraction": 0.0, "avg_ai_fraction": 0.0}
 
     human_frac = total_humans / total_members
@@ -533,7 +533,10 @@ def process_human_orders_pd():
                             new_order[ag].append('sense_room' + room_num)
                         elif 'CARRY' in ff:
                             if not leader or leader == ag:
-                                new_order[ag].append('carry_' + room_num)
+                                try:
+                                    new_order[ag].append('carry_' + room_num)
+                                except:
+                                    pdb.set_trace()
                             else:
                                 new_order[ag].append('follow_' + leader)
                                 
@@ -1116,7 +1119,7 @@ def evaluate_objects(
     groundtruth: Dict[Any, int],
     prior_danger: float = 0.5,
     max_readings: int = 4,
-    entropy_epistemic_thresh_bits: float = 0.3,
+    entropy_epistemic_thresh_bits: float = 0.9,
 ) -> Dict[str, Any]:
     """
     Iterates over the union of object ids from groundtruth and leader-known.
@@ -1186,7 +1189,7 @@ def _make_calibration_bins(per_object: Dict[Any, Dict[str, Any]], n_bins: int = 
     return bins
 
 
-def analyze_ambiguous_cases(per_object, entropy_thresh=0.3):
+def analyze_ambiguous_cases(per_object, entropy_thresh=0.9):
     ambiguous = []
     ambiguous_dangerous = []
     total_dangerous = sum(1 for m in per_object.values() if m["gt"] == 2)
@@ -1567,6 +1570,9 @@ def session_summary(row):
     weights = row['weight_by_object']
     danger  = row['danger_level_by_object']  # 1=dangerous, 0=benign (or thresholded)
     carried_dist = row['carried_distance_by_object']
+    
+    carried_dist_no_filter = row['carried_distance_by_object_no_filter']
+    
     tod     = row['time_over_distance']         # per object
     t_first = row['time_first_order_to_carry']  # per object
     sensings = row['sensings_per_object']       # per object in [0..4]
@@ -1607,6 +1613,18 @@ def session_summary(row):
             
     latency_norm_median = np.nanmedian(lat_vals) if len(lat_vals) else np.nan
 
+    # Latency normalized by (distance * weight)
+    lat_vals = []
+    for o in carried:
+        base = (carried_dist_no_filter.get(o, np.nan) * weights.get(o, np.nan))
+        lat  = t_first.get(o, np.nan)
+        if pd.notna(base) and base>0 and pd.notna(lat):
+            lat_vals.append(lat / base)
+            
+    latency_norm_median_no_filter = np.nanmedian(lat_vals) if len(lat_vals) else np.nan
+
+
+
     # Interaction metrics from orders
     total_orders = row['total_orders']
     misunderstanding_rate = safe_ratio(row['misunderstood_orders'], total_orders)
@@ -1623,6 +1641,11 @@ def session_summary(row):
     # Distance allocation
     benign_weighted_distance = sum(weights.get(o,0)*carried_dist.get(o,0) for o in carried_benign)
     dangerous_weighted_distance = sum(weights.get(o,0)*carried_dist.get(o,0) for o in carried_danger)
+    dangerous_distance = sum(carried_dist.get(o,0) for o in carried_danger)
+    
+    benign_weighted_distance_no_filter = sum(weights.get(o,0)*carried_dist_no_filter.get(o,0) for o in carried_benign)
+    dangerous_weighted_distance_no_filter = sum(weights.get(o,0)*carried_dist_no_filter.get(o,0) for o in carried_danger)
+    dangerous_distance_no_filter = sum(carried_dist_no_filter.get(o,0) for o in carried_danger)
     
     lost_track_indicator = lost_track #/row['total_messages']
     
@@ -1651,7 +1674,12 @@ def session_summary(row):
         completed_orders=completed_orders,
         orders_to_AI=orders_to_AI,
         total_orders=total_orders,
-        fraction_of_orders_to_messages=fraction_of_orders_to_messages
+        fraction_of_orders_to_messages=fraction_of_orders_to_messages,
+        latency_norm_median_no_filter=latency_norm_median_no_filter,
+        benign_weighted_distance_no_filter=benign_weighted_distance_no_filter,
+        dangerous_weighted_distance_no_filter=dangerous_weighted_distance_no_filter,
+        dangerous_distance=dangerous_distance,
+        dangerous_distance_no_filter=dangerous_distance_no_filter
         
     )
     
@@ -1684,7 +1712,7 @@ def session_summary(row):
                 else:
                     series_dict[new_sk] = row[new_sk]
 
-    more_keys = ["frac_dangerous_ambiguous", "frac_benign_as_dangerous", "suggestions_exchanged", "PTT", "NASA", 'team_dispersion', 'dispersion_to_leader', 'total_changes_in_team', 'mean_distance_order_carry', 'team_carrying_composition_AI', 'times_reprimanded', 'communication_range_error', 'drop_per_distance', 'completed_other_type', 'uncertainty_at_grabbing', 'probability_at_grabbing', 'reliability_score', "repeated_orders", "dangerous_weighted_work", "relative_performance", "complexity", "suggestions_accepted"]
+    more_keys = ["frac_dangerous_ambiguous", "frac_benign_as_dangerous", "suggestions_exchanged", "PTT", "NASA", 'team_dispersion', 'dispersion_to_leader', 'total_changes_in_team', 'mean_distance_order_carry', 'team_carrying_composition_AI', 'times_reprimanded', 'communication_range_error', 'drop_per_distance', 'completed_other_type', 'uncertainty_at_grabbing', 'probability_at_grabbing', 'reliability_score', "repeated_orders", "dangerous_weighted_work", "relative_performance", "complexity", "normalized_complexity", "suggestions_accepted", "dangerous_weighted_work_no_filter", "relative_performance_no_filter", "complexity_no_filter", "performance_no_filter", "true_positive", "false_negative", "false_positive", "sensitivity_filter", "weight_sum",  "true_positive_goal", "false_negative_goal", "false_positive_goal", "weight_sum_goal", "number_false_negatives", "number_ambigous_dangerous", "total_dangerous", "total_benign", "number_ambiguous", "strategy", "team_composition"]
     for sk in more_keys:
         if sk not in row:
             series_dict[sk] = float("nan")
@@ -4238,7 +4266,7 @@ final_questions = ["Dependable","Reliable","Unresponsive","Predictable","Act con
 item_regex_full = "Object (\d+) \(weight: (\d+)\) Last seen in (\(-?\d+\.\d+,-?\d+\.\d+\)) at (\d+:\d+).( Status: (\[\w+(,\w+)*\]), Prob. Correct: (\[\d+\.\d+%(,\d+\.\d+%)*\]), From: (\[\w+(,\w+)*\]))?"
 item_regex_full_alt = "Object (\d+) \(weight: (\d+)\) Last seen in (\(-?\d+\.\d+,-?\d+\.\d+\)) at (\d+:\d+).( Status: (\w+), Prob. Correct: (\d+\.\d+)%)?"
 
-legacy = False
+legacy = True
 
 if not legacy:
     log_dir = "log"
@@ -4251,8 +4279,7 @@ ai_end = True
 
 if ai_only:
     log_dir = "log_AIOnly"
-else:
-    log_dir = "log"
+
 
 files = glob.glob(log_dir + "/20*.txt")
 files.sort(key=lambda x: datetime.strptime(os.path.basename(x)[:19], "%Y_%m_%d_%H_%M_%S"))
@@ -4283,15 +4310,19 @@ final_average_survey_results = {}
 
 
 
-tutorial = ["2025_07_10_15_24_22","2025_07_15_13_56_19", "2025_07_20_12_53_53", "2025_08_01_13_52_35", "2025_08_05_06_55_45", "2025_08_07_18_52_22", '2025_08_11_18_52_39', "2025_08_18_18_50_56", "2025_08_19_05_52_17", "2025_08_20_14_53_11", "2025_08_21_09_42_16", "2025_08_23_14_52_08", "2025_08_25_18_52_00", "2025_09_03_13_21_49", "2025_09_10_09_54_41", "2025_09_11_05_51_32", "2025_09_17_13_50_57"]
-skip = ["2025_07_20_13_05_58", "2025_07_20_13_26_40", "2025_08_05_08_45_52", "2025_08_05_08_59_53", "2025_08_05_07_19_39", "2025_08_07_19_23_14", '2025_08_11_19_26_23', '2025_08_11_20_23_20', '2025_08_11_20_24_29', '2025_08_11_20_33_22', "2025_08_18_20_53_20", "2025_08_19_07_37_53", "2025_08_19_07_40_49", "2025_08_20_15_24_56", "2025_08_20_15_28_45", "2025_08_23_17_17_47", "2025_08_25_14_53_35", "2025_08_25_14_54_47", "2025_08_25_19_24_32", "2025_08_25_20_02_51", "2025_08_25_20_08_10", "2025_09_03_15_21_25", "2025_09_10_11_08_22", "2025_09_10_11_12_52", "2025_09_10_12_05_13", "2025_09_10_12_33_36", "2025_09_11_06_34_32", "2025_09_11_06_35_22", "2025_09_11_07_26_23", "2025_09_17_15_01_53"] #2025_08_05_07_19_39 is also tutorial
+tutorial = ["2025_07_10_15_24_22","2025_07_15_13_56_19", "2025_07_20_12_53_53", "2025_08_01_13_52_35", "2025_08_05_06_55_45", "2025_08_07_18_52_22", '2025_08_11_18_52_39', "2025_08_18_18_50_56", "2025_08_19_05_52_17", "2025_08_20_14_53_11", "2025_08_21_09_42_16", "2025_08_23_14_52_08", "2025_08_25_18_52_00", "2025_09_03_13_21_49", "2025_09_10_09_54_41", "2025_09_11_05_51_32", "2025_09_17_13_50_57", "2025_12_29_08_54_42", "2026_01_19_12_12_17"]
+skip = ["2025_07_20_13_05_58", "2025_07_20_13_26_40", "2025_08_05_08_45_52", "2025_08_05_08_59_53", "2025_08_05_07_19_39", "2025_08_07_19_23_14", '2025_08_11_19_26_23', '2025_08_11_20_23_20', '2025_08_11_20_24_29', '2025_08_11_20_33_22', "2025_08_18_20_53_20", "2025_08_19_07_37_53", "2025_08_19_07_40_49", "2025_08_20_15_24_56", "2025_08_20_15_28_45", "2025_08_23_17_17_47", "2025_08_25_14_53_35", "2025_08_25_14_54_47", "2025_08_25_19_24_32", "2025_08_25_20_02_51", "2025_08_25_20_08_10", "2025_09_03_15_21_25", "2025_09_10_11_08_22", "2025_09_10_11_12_52", "2025_09_10_12_05_13", "2025_09_10_12_33_36", "2025_09_11_06_34_32", "2025_09_11_06_35_22", "2025_09_11_07_26_23", "2025_09_17_15_01_53", "2026_01_19_14_17_27", "2025_12_28_17_30_10", "2025_12_28_20_58_09"] #2025_08_05_07_19_39 is also tutorial
 skip_first = ["2025_07_10_15_24_22","2025_07_10_15_56_34","2025_07_10_16_21_36","2025_07_10_16_48_09","2025_07_10_17_12_54", "2025_07_10_17_28_39"]
+
+skip_substitute = ["2025_09_17_13_50_57", "2025_09_17_14_27_25", "2025_09_17_14_53_55", "2025_09_17_15_01_53", "2025_09_17_15_04_01", "2025_09_17_15_21_50", "2025_09_17_15_40_51", "2025_07_20_12_53_53",  "2025_07_20_13_28_59","2025_07_20_13_53_26", "2025_07_20_14_19_52", "2025_07_20_14_46_00"]
+
+skip.extend(skip_substitute)
 
 skip.extend(skip_first)
 
 layouts = [[1,2,3,4],[2,4,1,3],[4,3,2,1],[3,1,4,2]]
 
-layout_ids = [1,2,2,2,2,1,1,1,3,3,3,3,4,4,4,4] #add for each new experiment
+layout_ids = [1,2,2,2,1,1,1,3,3,3,3,4,4,4,4,2] #[1,2,2,2,2,1,1,1,3,3,3,3,4,4,4,4] #add for each new experiment
 
 empty_rooms = [[3,2,6],[0,2,6],[7,2,6],[5,2,6]]
 
@@ -4335,7 +4366,16 @@ final_metrics = {"total_distance_traveled":[], "distribution_sensed":[], "object
 tutorial_results = {"questions":[], "answers": []}
 demographic_qs = ['Name', 'Age', 'How often do you play first-person video games on average?', 'How many times have you interacted with the TeamCollab simulation environment in the past?', 'How often do you utilize Large Language Models such as ChatGPT, Claude or similar others?', 'Generally, I trust automated agents', 'Automated agents help me solve many problems', 'I think it’s a good idea to rely on automated agents for help', 'I don’t trust the information I get from automated agents', 'Automated agents are reliable', 'I rely on automated agents']
 average_demographic_qs = {}
-participants = {} #TODO DELETE THIS -----------------------------
+participants = {
+ '1': 'A',  '2': 'B',  '3': 'A',  '4': 'B',
+ '5': 'A',  '6': 'B',  '7': 'A',  '8': 'B',
+ '9': 'A',  '10': 'B', '11': 'A', '12': 'B',
+ '13': 'A', '14': 'B', '15': 'A', '16': 'B',
+ '17': 'A', '18': 'B', '19': 'A', '20': 'B',
+ '21': 'A', '22': 'B', '23': 'A', '24': 'B',
+ '25': 'A', '26': 'B', '27': 'A', '28': 'B',
+ '29': 'A', '30': 'B', '31': 'A', '32': 'B'
+} #TODO DELETE THIS -----------------------------
 
 participants_metadata = []
 
@@ -4398,7 +4438,7 @@ while dfile_idx < len(files):
     if "events" not in d:
     
         if not ai_only or (ai_only and ai_end):
-    
+
             if any(t in d for t in tutorial):
                 number_surveys = 0
                 log_file = open(d)
@@ -4505,6 +4545,7 @@ while dfile_idx < len(files):
                 sensor_qualities[agent[0]] = {"p11": agent[2],"p22": agent[3]}
         
             strategy = ''
+            team_composition = ""
             
             if not (ai_only and not ai_end):
                 leader = ''
@@ -4788,6 +4829,14 @@ while dfile_idx < len(files):
                         type_subrole = [[0,0],[0,0]]
                         
                         team_strategy_agents = {}
+                        
+                        
+                        if settings["num_humans"] > settings["num_ais"]:
+                            team_composition = "Majority Human"
+                        elif settings["num_ais"] > settings["num_humans"]:
+                            team_composition = "Majority AI"
+                        else:
+                            team_composition = "Equal"
                         
                         for agent in scenario_options["robots_type"]:
                             if agent[1] == "human":
@@ -5494,10 +5543,10 @@ while dfile_idx < len(files):
             groundtruth = {}
             total_benign = []
             
-
+            
             for m in metadata["metadata"]:
                 #For those objects that somehow ended being dropped just before the goal area
-                if not m[0] and np.linalg.norm(np.array(m[2:4])-np.array([0,5])) < settings["goal_radius"]:
+                if not m[0] and np.linalg.norm(np.array(m[2:4])-np.array([0,5])) < settings["goal_radius"] and not legacy:
                     object_id = m[1]
                     
                     #if grabbed_objects_tracker[object_id]["start_time"] > grabbed_objects_tracker[object_id]["end_time"]:
@@ -5646,6 +5695,8 @@ while dfile_idx < len(files):
             except:
                 pdb.set_trace()
             
+            number_ambigous_dangerous = len(ambigous_dangerous)
+            
             res = find_high_conf_misclassifications_fully_sensed(
                 ambiguous_results["per_object"],
                 q_low=0.10,             # confident-benign cutoff
@@ -5655,6 +5706,7 @@ while dfile_idx < len(files):
 
             
             benign_as_dangerous = []
+            dangerous_as_benign = []
             if res["false_negatives"] or res["false_positives"]:
                 actual_misclassifications = False
                 print("Summary:", res["summary"])
@@ -5665,6 +5717,7 @@ while dfile_idx < len(files):
                         if r['obj'] not in ambigous_dangerous:
                             ambigous_dangerous.append(r['obj'])
                         actual_misclassifications = True
+                        dangerous_as_benign.append(r['obj'])
 
                 print("\nHigh-confidence FALSE POSITIVES (benign classified as dangerous):")
                 for r in res["false_positives"]:
@@ -5676,6 +5729,8 @@ while dfile_idx < len(files):
                 #if actual_misclassifications:
                 #    pdb.set_trace()
             
+            number_false_negatives = len(dangerous_as_benign)
+            
             #if benign_as_dangerous or ambigous_dangerous:
             #    print(dtime)
             #    print(benign_as_dangerous)
@@ -5685,32 +5740,56 @@ while dfile_idx < len(files):
             final_metrics["frac_benign_as_dangerous"].append(len(benign_as_dangerous)/len(total_benign))
      
             all_dangerous_weights_complexity = []
+            all_dangerous_weights_complexity_no_filter = []
      
             for t in total_dangerous:
+                all_dangerous_weights_complexity_no_filter.append(all_objects_weights_dist[t])
                 if t not in ambigous_dangerous:
                     all_dangerous_weights_complexity.append(all_objects_weights_dist[t])
      
             complexity_reduction = 0
             complexity = 0
+            
+            complexity_reduction_no_filter = 0
+            complexity_no_filter = 0
+            
             object_carried_distance_distribution = {}
+            object_carried_distance_distribution_no_filter = {}
             for d_idx in range(len(total_dangerous)):
                 
                 for ob in scenario_options["objects"]:
-                    if total_dangerous[d_idx] == ob[0] and ob[0] not in ambigous_dangerous:
+                    if total_dangerous[d_idx] == ob[0]:
                         goal = convert_to_grid_coordinates([ob[3]["x"],ob[3]["z"]])
                         path = findPath(start, goal, occ_map)
                         
-                        complexity += len(path)*ob[1]
+                        if ob[0] not in ambigous_dangerous: 
+                            complexity += len(path)*ob[1]
+                        
+                        complexity_no_filter += len(path)*ob[1]
                         
                         if ob[0] in dangerous:
-                            complexity_reduction += len(path)*ob[1] #len(path)*2*ob[1]
-                            object_carried_distance_distribution[ob[0]] = len(path)
+                        
+                            if ob[0] not in ambigous_dangerous:
+                                complexity_reduction += len(path)*ob[1] #len(path)*2*ob[1]
+                                object_carried_distance_distribution[ob[0]] = len(path)
+                            
+                            
+                            complexity_reduction_no_filter += len(path)*ob[1] #len(path)*2*ob[1]
+                            object_carried_distance_distribution_no_filter[ob[0]] = len(path)
                         else:
                             path2 = findPath(start, total_dangerous_locations[d_idx], occ_map)
-                            object_carried_distance_distribution[ob[0]] = 0
+                            
+                            if ob[0] not in ambigous_dangerous:
+                                object_carried_distance_distribution[ob[0]] = 0
+                            
+                            object_carried_distance_distribution_no_filter[ob[0]] = 0
                             if len(path) - len(path2) > 0:
-                                complexity_reduction += (len(path) - len(path2))*ob[1] #len(path)*ob[1] + (len(path) - len(path2))*ob[1]
-                                object_carried_distance_distribution[ob[0]] = (len(path) - len(path2))
+                                if ob[0] not in ambigous_dangerous:
+                                    complexity_reduction += (len(path) - len(path2))*ob[1] #len(path)*ob[1] + (len(path) - len(path2))*ob[1]
+                                    object_carried_distance_distribution[ob[0]] = (len(path) - len(path2))
+                                
+                                complexity_reduction_no_filter += (len(path) - len(path2))*ob[1] #len(path)*ob[1] + (len(path) - len(path2))*ob[1]
+                                object_carried_distance_distribution_no_filter[ob[0]] = (len(path) - len(path2))
             
 
                 
@@ -5721,10 +5800,22 @@ while dfile_idx < len(files):
             object_danger_dict = {}
             object_weight_dict = {}
             weights_carrying_dangerous = 0
+            
+            weights_carrying_dangerous_goal = 0
+            
+            false_negative = [t for t in total_dangerous if object_sensed_per_agent[t]]
+            false_positive = []
+            true_positive = []
+            
+            false_negative_goal = [t for t in total_dangerous if object_sensed_per_agent[t]]
+            false_positive_goal = []
+            true_positive_goal = []
+            
             #For speed of carrying
             for ob in scenario_options["objects"]:
                 if ob[0] in grabbed_objects_tracker.keys():
-      
+                
+                    
                     if ob[0] in benign_as_dangerous:
                         pass #Only occurs when AI are leaders
                         
@@ -5744,6 +5835,16 @@ while dfile_idx < len(files):
                     distance = 0
                     if ob[0] in dangerous or ob[0] in benign:
                         distance = len(path)
+                        
+                        if ob[0] in dangerous:
+                            if ob[0] in false_negative:
+                                false_negative_goal.remove(ob[0])
+                                true_positive_goal.append(ob[0])
+                            weights_carrying_dangerous_goal += ob[1]
+                        else:
+                            false_positive_goal.append(ob[0])
+                            
+                        
                     else:
                         
                         d_location = all_objects_locations[ob[0]]
@@ -5792,8 +5893,14 @@ while dfile_idx < len(files):
                                 total_speed_carrying_dangerous.append(speed_value)
                                 #if ob[1] > 1:
                                 weights_carrying_dangerous += ob[1]
+                                
+                                if ob[0] in false_negative:
+                                    false_negative.remove(ob[0])
+                                    true_positive.append(ob[0])
+                                
                             else:
                                 total_speed_carrying_benign.append(speed_value)
+                                false_positive.append(ob[0])
                         #total_speed_carrying.append((grabbed_objects_tracker[ob[0]]["end_time"] - grabbed_objects_tracker[ob[0]]["start_time"]))
                     
 
@@ -5840,7 +5947,7 @@ while dfile_idx < len(files):
             final_metrics["travel_distance_distribution"].append(travel_distance_distribution)
             final_metrics["carry_order_to_first_carry"].append({cc.split('_')[1]:round(carry_order_to_first_carry[cc]["end"] - carry_order_to_first_carry[cc]["start"],2) for cc in carry_order_to_first_carry.keys() if carry_order_to_first_carry[cc]["end"]})
             final_metrics["num_times_sensed_before_carry"].append(num_times_sensed_before_carry)
-            if ai_only:
+            if ai_only or legacy:
                 final_metrics["NASA"].append(0)
                 final_metrics["PTT"].append(0)
             else:
@@ -5854,7 +5961,7 @@ while dfile_idx < len(files):
                 leader_type = 'ai'
             
             
-            if team_strategy["suggestions"]:
+            if not legacy and team_strategy["suggestions"]:
                 suggestions = "Yes"
             else:
                 suggestions = "No"
@@ -5862,6 +5969,8 @@ while dfile_idx < len(files):
             
             if ai_only:
                 layout_num = str(ai_layouts[ai_layout_idx])
+            elif legacy:
+                layout_num = "0"
             else:
                 layout_num = str(layouts[layout_ids[current_layout_id // 4]-1][current_layout_id % 4])
                 
@@ -5890,7 +5999,9 @@ while dfile_idx < len(files):
                 probability_at_grabbing = float("nan")
             
             
-            session_dict = {"team_id": current_layout_id // 4, "session": current_layout_id % 4, "leader_type": leader_type, "performance": final_metrics["complexity_reduction"][-1], "total_orders": sum(len(orders_parsed2[oa]["all"]) for oa in orders_parsed2.keys() if oa != leader), "misunderstood_orders": sum(orders_parsed[oa]["misunderstood"] for oa in orders_parsed.keys() if oa in ['C','D']), "orders_changed": sum(len(orders_parsed2[oa]["orders_changed"]) for oa in orders_parsed2.keys() if oa != leader), "completed_orders": sum(len(orders_parsed2[oa]["completed"]) for oa in orders_parsed2.keys() if oa != leader), "orders_to_AI": sum(len(orders_parsed2[oa]["all"]) for oa in orders_parsed2.keys() if oa in ['C','D']), "incomplete_orders": sum(len(orders_parsed2[oa]["incomplete"]) for oa in orders_parsed2.keys() if oa != leader), "underspecified": sum(orders_parsed[oa]["unspecified_team"]+orders_parsed[oa]["incomplete_orders"] for oa in orders_parsed2.keys() if oa in ['C','D']), "dist_by_agent": final_metrics["travel_distance_distribution"][-1], "weight_by_object": all_objects_weights_dist, "danger_level_by_object": all_objects_danger_status_dist, "carried_objects": list(final_metrics["objects_carried_distribution_weight"][-1].keys()), "carried_distance_by_object": object_carried_distance_distribution, "time_over_distance": total_speed_carrying_distribution, "time_first_order_to_carry": final_metrics["carry_order_to_first_carry"][-1], "sensings_per_object": object_sensed_per_agent, "layout": layout_num, "frac_dangerous_ambiguous": final_metrics["frac_dangerous_ambiguous"][-1], "frac_benign_as_dangerous": final_metrics["frac_benign_as_dangerous"][-1], "suggestions": suggestions, "suggestions_exchanged":suggestions_taken, "suggestions_accepted": suggestions_given, "lost_track": lost_track, "total_messages": len(message_history), "NASA": final_metrics["NASA"][-1], "PTT": final_metrics["PTT"][-1], "team_dispersion": sum(extra_features["team_dispersion"])/len(extra_features["team_dispersion"]), "dispersion_to_leader": sum(extra_features["dispersion_to_leader"])/len(extra_features["dispersion_to_leader"]), "total_changes_in_team": total_changes_in_team, "mean_distance_order_carry": overall_mean_distance(team_tracker), "team_carrying_composition_AI": average_team_composition_fraction_global(team_tracker,{r:True if robots_type[r] == "human" else False for r in robots_type.keys()}, all_objects_weights_dist)["avg_ai_fraction"], "times_reprimanded":extra_features["times_reprimanded"], "communication_range_error":extra_features["communication_range_error"], "drop_per_distance":drop_per_distance, "completed_other_type": completed_other_type, "uncertainty_at_grabbing": uncertainty_at_grabbing, "probability_at_grabbing": probability_at_grabbing, "reliability_score": extra_features["reliability_score"], "name": dtime, "repeated_orders": repeated_orders, "dangerous_weighted_work": complexity_reduction, "relative_performance": complexity_reduction/complexity, "complexity": complexity}
+            performance_no_filter = complexity_reduction_no_filter/sum(all_dangerous_weights_complexity_no_filter)
+            
+            session_dict = {"team_id": current_layout_id // 4, "session": current_layout_id % 4, "leader_type": leader_type, "performance": final_metrics["complexity_reduction"][-1], "total_orders": sum(len(orders_parsed2[oa]["all"]) for oa in orders_parsed2.keys() if oa != leader), "misunderstood_orders": sum(orders_parsed[oa]["misunderstood"] for oa in orders_parsed.keys() if oa in ['C','D']), "orders_changed": sum(len(orders_parsed2[oa]["orders_changed"]) for oa in orders_parsed2.keys() if oa != leader), "completed_orders": sum(len(orders_parsed2[oa]["completed"]) for oa in orders_parsed2.keys() if oa != leader), "orders_to_AI": sum(len(orders_parsed2[oa]["all"]) for oa in orders_parsed2.keys() if oa in ['C','D']), "incomplete_orders": sum(len(orders_parsed2[oa]["incomplete"]) for oa in orders_parsed2.keys() if oa != leader), "underspecified": sum(orders_parsed[oa]["unspecified_team"]+orders_parsed[oa]["incomplete_orders"] for oa in orders_parsed2.keys() if oa in ['C','D']), "dist_by_agent": final_metrics["travel_distance_distribution"][-1], "weight_by_object": all_objects_weights_dist, "danger_level_by_object": all_objects_danger_status_dist, "carried_objects": list(final_metrics["objects_carried_distribution_weight"][-1].keys()), "carried_distance_by_object": object_carried_distance_distribution, "time_over_distance": total_speed_carrying_distribution, "time_first_order_to_carry": final_metrics["carry_order_to_first_carry"][-1], "sensings_per_object": object_sensed_per_agent, "layout": layout_num, "frac_dangerous_ambiguous": final_metrics["frac_dangerous_ambiguous"][-1], "frac_benign_as_dangerous": final_metrics["frac_benign_as_dangerous"][-1], "suggestions": suggestions, "suggestions_exchanged":suggestions_taken, "suggestions_accepted": suggestions_given, "lost_track": lost_track, "total_messages": len(message_history), "NASA": final_metrics["NASA"][-1], "PTT": final_metrics["PTT"][-1], "team_dispersion": sum(extra_features["team_dispersion"])/len(extra_features["team_dispersion"]), "dispersion_to_leader": sum(extra_features["dispersion_to_leader"])/len(extra_features["dispersion_to_leader"]), "total_changes_in_team": total_changes_in_team, "mean_distance_order_carry": overall_mean_distance(team_tracker), "team_carrying_composition_AI": average_team_composition_fraction_global(team_tracker,{r:True if robots_type[r] == "human" else False for r in robots_type.keys()}, all_objects_weights_dist)["avg_ai_fraction"], "times_reprimanded":extra_features["times_reprimanded"], "communication_range_error":extra_features["communication_range_error"], "drop_per_distance":drop_per_distance, "completed_other_type": completed_other_type, "uncertainty_at_grabbing": uncertainty_at_grabbing, "probability_at_grabbing": probability_at_grabbing, "reliability_score": extra_features["reliability_score"], "name": dtime, "repeated_orders": repeated_orders, "dangerous_weighted_work": complexity_reduction, "relative_performance": complexity_reduction/complexity, "complexity": complexity, "normalized_complexity": final_metrics["complexity"][-1], "complexity_no_filter": complexity_no_filter, "performance_no_filter": performance_no_filter, "carried_distance_by_object_no_filter": object_carried_distance_distribution_no_filter, "dangerous_weighted_work_no_filter": complexity_reduction_no_filter, "relative_performance_no_filter": complexity_reduction_no_filter/complexity_no_filter, "true_positive": len(true_positive), "false_positive":len(false_positive), "false_negative":len(false_negative), "sensitivity_filter": final_metrics["complexity_reduction"][-1] - performance_no_filter, "weight_sum": weights_carrying_dangerous, "true_positive_goal": len(true_positive_goal), "false_positive_goal":len(false_positive_goal), "false_negative_goal":len(false_negative_goal), "weight_sum_goal": weights_carrying_dangerous_goal, "number_false_negatives": number_false_negatives, "number_ambigous_dangerous": number_ambigous_dangerous, "total_dangerous": len(total_dangerous), "total_benign": len(total_benign), "number_ambiguous": len(ambigous_dangerous), "strategy": strategy, "team_composition": team_composition}
 
 
             
@@ -6061,6 +6172,8 @@ fe_df = build_features(df_sessions)
 
 if ai_only:
     fe_df.to_csv("team_stats_ai.csv", index=False)
+elif legacy:
+    fe_df.to_csv("team_stats_legacy.csv", index=False)
 else:
     fe_df.to_csv("team_stats.csv", index=False)
 

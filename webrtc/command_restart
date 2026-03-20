@@ -1,0 +1,1 @@
+node server --address "172.17.40.64" --port "5683" --wait --log

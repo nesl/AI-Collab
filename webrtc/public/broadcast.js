@@ -3,14 +3,12 @@ const peerConnections = {};
 
 
 const config = {
-  sdpSemantics: 'unified-plan',
-
   iceServers: [
     //{ 
     //  urls: ["stun:stun.l.google.com:19302"]
     //},
     { 
-       "urls": "turn:44.203.1.205:3478?transport=tcp",
+       "urls": "turn:54.219.135.112:3478?transport=tcp",
        "username": config_api.username,
        "credential": config_api.password
     }
@@ -73,6 +71,8 @@ socket.on("watcher", (id, client_number) => { //When human controlled robot conn
     
   };
 
+
+
   peerConnection
     .createOffer()
     .then(sdp => peerConnection.setLocalDescription(sdp))
@@ -80,7 +80,19 @@ socket.on("watcher", (id, client_number) => { //When human controlled robot conn
       socket.emit("offer", id, peerConnection.localDescription);
     });
     
-
+  setTimeout(async () => {
+    const stats = await peerConnection.getStats();
+    stats.forEach(report => {
+      if (report.type === "outbound-rtp" && report.kind === "video") {
+        console.log("OUTBOUND VIDEO RTP:", {
+          ssrc: report.ssrc,
+          packetsSent: report.packetsSent,
+          bytesSent: report.bytesSent,
+          framesEncoded: report.framesEncoded,
+        });
+      }
+    });
+  }, 5000);
   
 });
 
@@ -114,6 +126,10 @@ socket.on("watcher_ai", (id, client_number, server_address, robot_id) => { //Whe
   peerConnection.onicecandidateerror = event => {
     console.log("error", event);
     
+  };
+
+  peerConnection.oniceconnectionstatechange = () => {
+  console.log('[ICE STATE]', peerConnection.iceConnectionState);
   };
 
   console.log("peerconnection 1", peerConnection);

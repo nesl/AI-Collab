@@ -62,7 +62,130 @@ survey_leader = [a+s for s in survey_questions for a in ["leader_", "nonleader_"
 demographic_questions = ['Age', 'How often do you play first-person video games on average?', 'How many times have you interacted with the TeamCollab simulation environment in the past?', 'How often do you utilize Large Language Models such as ChatGPT, Claude or similar others?']
 ptt_questions = ['Generally, I trust automated agents', 'Automated agents help me solve many problems', 'I think it’s a good idea to rely on automated agents for help', 'I don’t trust the information I get from automated agents', 'Automated agents are reliable', 'I rely on automated agents']
 
-translation = {'How often do you utilize Large Language Models such as ChatGPT, Claude or similar others?': "LLM_Exp", 'How many times have you interacted with the TeamCollab simulation environment in the past?': "Simulation_Exp", 'How often do you play first-person video games on average?': "VideoGame_Exp", 'Performance: How successful were you in accomplishing what you were asked to do?': "Performance_P", 'Generally, I trust automated agents': "Trust_Agents", 'Provide appropriate information': "Appropriate_Info", "team_carrying_composition_AI": "Carry_Composition", "danger_weight_coverage": "Weight_Coverage", "communication_range_error": "Range_Error", 'Perform exactly as instructed': "Perform_Exactly", "misunderstanding_rate": "Misunderstand", "dispersion_to_leader": "Dispersion_Leader", "completed_orders": "Completed_Orders", "sensed_0": "Sensed_0", "sensed_4": "Sensed_4", "sensed_2": "Sensed_2", "redundancy":"Redundancy", "underspecified_rate":"Underspecified", "completed_other_type": "Completed_Others", "precision": "Precision", "repeated_orders":"Repeated_Orders", "change_rate": "Change_Rate", "Follow directions": "Follow_Directions", "Act consistently": "Act_Consistently", "team_dispersion": "Team_Dispersion", "total_orders": "Total_Orders", "path_eff_median": "Carry_Efficiency", "latency_norm_median": "Effort_Latency", "completion_rate": "Completion_Rate", "Unresponsive": "Responsive"}
+translation = {'How often do you utilize Large Language Models such as ChatGPT, Claude or similar others?': "LLM_Exp", 'How many times have you interacted with the TeamCollab simulation environment in the past?': "Simulation_Exp", 'How often do you play first-person video games on average?': "VideoGame_Exp", 'Performance: How successful were you in accomplishing what you were asked to do?': "Performance_P", 'Generally, I trust automated agents': "Trust_AI", 'Provide appropriate information': "Appropriate_Info", "team_carrying_composition_AI": "Carry_Composition", "danger_weight_coverage": "Weight_Coverage", "communication_range_error": "Range_Error", 'Perform exactly as instructed': "Perform_Exactly", "misunderstanding_rate": "Misunderstand", "dispersion_to_leader": "Dispersion_Leader", "completed_orders": "Completed_Orders", "sensed_0": "Sensed_0", "sensed_4": "Sensed_4", "sensed_2": "Sensed_2", "redundancy":"Redundancy", "underspecified_rate":"Underspecified", "completed_other_type": "Completed_Others", "precision": "Precision", "repeated_orders":"Repeated_Orders", "change_rate": "Change_Rate", "Follow directions": "Follow_Directions", "Act consistently": "Act_Consistently", "team_dispersion": "Team_Dispersion", "total_orders": "Total_Orders", "path_eff_median": "Carry_Inefficiency", "latency_norm_median": "Effort_Latency", "completion_rate": "Completion_Rate", "Unresponsive": "Responsive", "weight_sum_goal": "Danger_Weight_Goal", "reliability_score": "Human_Reliability", "false_negative_goal": "False_Negatives", "false_positive_goal": "False_Positives", "frac_dangerous_ambiguous": "Danger_Ambiguous", "I think it’s a good idea to rely on automated agents for help": "AI_Approval", 'Frustration: How insecure, discouraged, irritated, stressed, and annoyed were you?': "Frustration", 'Mental Demand: How mentally demanding was the task?': "Mental_Demand", "Function successfully": "Successful_Function", 'Effort: How hard did you have to work to accomplish your level of performance?': "Effort", "Automated agents are reliable": "AI_Reliability2", 'I don’t trust the information I get from automated agents': "Trust_AI", 'I rely on automated agents': "Rely_On_AI", "probability_at_grabbing": "Prob_Grab", "Provide feedback": "Provide_Feedback", "recall_goal": "Recall"}
+
+# -------------------------
+# C2OPA(+E) grouping utilities
+# -------------------------
+
+# Keep C2 as a conceptual set (not necessarily plotted as its own group)
+C2_FACTORS = [
+    "Underspecified", "Completed_Orders", "Completed_Others", "Completion_Rate",
+    "Dispersion_Leader", "Human_Reliability", "Provide_Feedback", "Responsive", "Predictable",
+]
+
+# New: Experience (exogenous priors)
+E_FACTORS = [
+    "Simulation_Exp", "VideoGame_Exp",
+]
+
+# Observation: sensing + belief quality + perceptual errors (no outcomes)
+O_FACTORS = [
+    "Sensed_0", "Sensed_4", "Redundancy", "Prob_Grab", "False_Negatives", "False_Positives",
+]
+
+# Plan Adoption: trust/interaction + plan alignment & uptake (C2 permeates here)
+P_FACTORS = [
+    "Perform_Exactly", "Appropriate_Info", "Rely_On_AI", "AI_Approval",
+    "Successful_Function", "Performance_P", "PTT",
+
+    # C2-permeating, re-homed into P
+    "Human_Reliability", "Provide_Feedback", "Responsive", "Predictable",
+    "Completed_Orders", "Completed_Others", "Completion_Rate", "Underspecified",
+]
+
+# Action: execution efficiency, coordination cost, workload, outcomes (C2 permeates here)
+A_FACTORS = [
+    "Weight_Coverage", "Carry_Inefficiency", "Effort_Latency", "NASA",
+    "Dispersion_Leader",
+    "Precision", "Recall",
+]
+
+# ---- display configuration ----
+# If you want plots grouped as E/O/P/A (recommended for your new figure)
+GROUP_ORDER = ["E", "O", "P", "A"]
+GROUP_LABELS = {
+    "E":  "E",
+    "O":  "O",
+    "P":  "P",
+    "A":  "A",
+}
+
+# If you sometimes want to ALSO show C2 explicitly in plots, flip this True and adjust GROUP_ORDER.
+SHOW_C2_AS_OWN_GROUP = False
+
+# map core factor -> group
+_group_map = {}
+_group_map.update({k: "E" for k in E_FACTORS})
+_group_map.update({k: "O" for k in O_FACTORS})
+_group_map.update({k: "P" for k in P_FACTORS})
+_group_map.update({k: "A" for k in A_FACTORS})
+
+# Optionally let C2 override if you're explicitly plotting C2
+if SHOW_C2_AS_OWN_GROUP:
+    GROUP_ORDER = ["C2", "E", "O", "P", "A"]
+    GROUP_LABELS = {"C2": "C2", **GROUP_LABELS}
+    _group_map.update({k: "C2" for k in C2_FACTORS})
+
+# sets (useful for diagnostics / membership checks)
+C2_SET = set(C2_FACTORS)
+E_SET  = set(E_FACTORS)
+O_SET  = set(O_FACTORS)
+P_SET  = set(P_FACTORS)
+A_SET  = set(A_FACTORS)
+
+
+def _group_of_canonical(lbl: str, translation_map: dict) -> str:
+    """
+    Group based on canonical factor names (after translation_map).
+    """
+    canon = _canonical_feature_name(lbl, translation_map)
+
+    if SHOW_C2_AS_OWN_GROUP and canon in C2_SET:
+        return "C2"
+    if canon in E_SET:
+        return "E"
+    if canon in O_SET:
+        return "O"
+    if canon in P_SET:
+        return "P"
+    if canon in A_SET:
+        return "A"
+    return "Other"
+
+
+def _core_name(lbl: str) -> str:
+    """Strip leader_/nonleader_ prefixes to map to base factor."""
+    s = str(lbl)
+    if s.startswith("leader_"):
+        return s[len("leader_"):]
+    if s.startswith("nonleader_"):
+        return s[len("nonleader_"):]
+    return s
+
+
+def _group_of(lbl: str) -> str:
+    """Return E/O/P/A (and optionally C2) or 'Other'."""
+    return _group_map.get(_core_name(lbl), "Other")
+
+
+def _core_feature_name(lbl: str) -> str:
+    s = str(lbl).strip()
+    if s.startswith("leader_"):
+        s = s[len("leader_"):].strip()
+    elif s.startswith("nonleader_"):
+        s = s[len("nonleader_"):].strip()
+    return s
+
+
+def _canonical_feature_name(lbl: str, translation_map: dict) -> str:
+    """
+    Converts raw feature label -> canonical short code using your translation dict.
+    If not found, returns the raw (prefix-stripped) name.
+    """
+    core = _core_feature_name(lbl)
+    return translation_map.get(core, core)
+
 
 
 table_explanation = {
@@ -1025,8 +1148,9 @@ def write_session_corr_latex_with_meta(
         shared = out[out["same_sign"]].sort_values(["abs_delta_r","min_abs"], ascending=[True, False]).head(top_k_pair)
         dissim_mask = (out["abs_delta_r"] >= diff_thresh_pair) & ((out["abs_r_A"] >= diff_thresh_pair) | (out["abs_r_B"] >= diff_thresh_pair))
         dissim = out[dissim_mask].sort_values(["abs_delta_r","min_abs"], ascending=[False, False]).head(top_k_pair)
-        ignore = ["Age",'Frustration: How insecure, discouraged, irritated, stressed, and annoyed were you?', 'Performance: How successful were you in accomplishing what you were asked to do?', "benign_ratio", "frac_dangerous_ambiguous", "repeated_orders", "reliability_score"]
-        ignore = ["Age",'Frustration: How insecure, discouraged, irritated, stressed, and annoyed were you?', 'Performance: How successful were you in accomplishing what you were asked to do?', "benign_ratio", "frac_dangerous_ambiguous"]
+        ignore = []
+        #ignore = ["Age",'Frustration: How insecure, discouraged, irritated, stressed, and annoyed were you?', 'Performance: How successful were you in accomplishing what you were asked to do?', "benign_ratio", "frac_dangerous_ambiguous", "repeated_orders", "reliability_score"]
+        #ignore = ["Age",'Frustration: How insecure, discouraged, irritated, stressed, and annoyed were you?', 'Performance: How successful were you in accomplishing what you were asked to do?', "benign_ratio", "frac_dangerous_ambiguous"]
         
         dissim_mask2 = dissim["p_diff"] <= 0.05
         dissim_final_list = dissim[dissim_mask2]['feature'].values.tolist()
@@ -1075,7 +1199,8 @@ def write_session_corr_latex_with_meta(
     demographic_questions = ['Age', 'How often do you play first-person video games on average?', 'How many times have you interacted with the TeamCollab simulation environment in the past?', 'How often do you utilize Large Language Models such as ChatGPT, Claude or similar others?']
     
     prefixes = ["leader_","nonleader_"]
-    features_to_remove = [ *[prefix + q for prefix in prefixes for q in ["Age"]], "Age", 'leader_I think it’s a good idea to rely on automated agents for help', 'nonleader_Provide appropriate information', "total_orders", 'Unresponsive', "nonleader_Meet the needs of the mission/task", "reliability_score"]
+    features_to_remove = []
+    features_to_remove = [ *[prefix + q for prefix in prefixes for q in ["Age","NASA"]], "Age", 'leader_Provide appropriate information', 'Provide appropriate information', "latency_norm_median_no_filter", 'leader_Act consistently', 'leader_PTT', 'sensed_2', 'false_positive', 'leader_Frustration: How insecure, discouraged, irritated, stressed, and annoyed were you?', 'precision_metric', 'precision_metric_goal', 'benign_ratio', 'I think it’s a good idea to rely on automated agents for help', 'Unresponsive', 'Automated agents help me solve many problems', 'leader_Automated agents help me solve many problems', 'Mental Demand: How mentally demanding was the task?', "leader_Effort: How hard did you have to work to accomplish your level of performance?", "frac_dangerous_ambiguous", "weight_sum_goal", 'leader_Malfunction', 'Frustration: How insecure, discouraged, irritated, stressed, and annoyed were you?', 'number_ambiguous', 'number_ambigous_dangerous', 'total_benign']
 
     for ftr in features_to_remove:
         if ftr in features_to_plot_final:
@@ -1109,6 +1234,8 @@ def write_session_corr_latex_with_meta(
     '''
     longdf_with_all["session"] = longdf_with_all["session"].replace({i:i+1 for i in range(4)})
     
+    
+    
     pdb.set_trace()
     #pdb.set_trace()
     #longdf_with_all[longdf_with_all["feature"].isin(features_to_plot_final)]
@@ -1117,7 +1244,8 @@ def write_session_corr_latex_with_meta(
         features=features_to_plot_final,
         session_order=["1","2","3","4","ALL"],
         annotate=True,
-        by="session"
+        by="session",
+        x_label="Session Number"
     )
     
     plt.show()
@@ -2595,6 +2723,8 @@ def write_by_leadership_suggestions_latex_with_meta(
     
 
     raw_df2 = pd.read_csv('team_stats_ai.csv')
+    raw_df2["recall_goal"] = raw_df2["true_positive_goal"]/(raw_df2["true_positive_goal"] + raw_df2["false_negative_goal"])
+    raw_df2["completed_other_type"] = float("nan")
     AI_ONLY_LABEL = "AI*"
     #pdb.set_trace()
     # 1) Build the AI-only pooled column from raw_df2
@@ -2621,7 +2751,24 @@ def write_by_leadership_suggestions_latex_with_meta(
     demographic_questions = ['Age', 'How often do you play first-person video games on average?', 'How many times have you interacted with the TeamCollab simulation environment in the past?', 'How often do you utilize Large Language Models such as ChatGPT, Claude or similar others?']
     
     prefixes = ["leader_","nonleader_"]
-    features_to_remove = [*[prefix+ptt for ptt in ptt_questions for prefix in ["leader_","nonleader_", ""]], *[prefix+nasa for nasa in nasa_questions for prefix in ["leader_","nonleader_", ""]], "PTT", "nonleader_NASA", 'nonleader_How often do you utilize Large Language Models such as ChatGPT, Claude or similar others?', "How often do you utilize Large Language Models such as ChatGPT, Claude or similar others?", "nonleader_Dependable", *[prefix + q for prefix in prefixes for q in ["Unresponsive",'Have errors']],'Have errors', 'Perform exactly as instructed', "frac_dangerous_ambiguous", "frac_benign_as_dangerous","uncertainty_at_grabbing",'Follow directions', "leader_Predictable", "nonleader_Act consistently", "nonleader_Perform exactly as instructed", "probability_at_grabbing", "benign_ratio", 'Provide appropriate information', *[prefix + q for prefix in ["leader_","nonleader_", ""] for q in ['How often do you play first-person video games on average?']], "total_orders"]
+    features_to_remove = []
+    #features_to_remove = [*[prefix+ptt for ptt in ptt_questions for prefix in ["leader_","nonleader_", ""]], *[prefix+nasa for nasa in nasa_questions for prefix in ["leader_","nonleader_", ""]], "PTT", "nonleader_NASA", 'nonleader_How often do you utilize Large Language Models such as ChatGPT, Claude or similar others?', "How often do you utilize Large Language Models such as ChatGPT, Claude or similar others?", "nonleader_Dependable", *[prefix + q for prefix in prefixes for q in ["Unresponsive",'Have errors']],'Have errors', 'Perform exactly as instructed', "frac_dangerous_ambiguous", "frac_benign_as_dangerous","uncertainty_at_grabbing",'Follow directions', "leader_Predictable", "nonleader_Act consistently", "nonleader_Perform exactly as instructed", "probability_at_grabbing", "benign_ratio", 'Provide appropriate information', *[prefix + q for prefix in ["leader_","nonleader_", ""] for q in ['How often do you play first-person video games on average?']], "total_orders", "complexity_no_filter", "performance_no_filter", "carried_distance_by_object_no_filter", "dangerous_weighted_work_no_filter", "relative_performance_no_filter", "true_positive", "false_positive", "false_negative", "sensitivity_filter", "weight_sum", "true_positive_goal", "false_positive_goal", "false_negative_goal", "weight_sum_goal", "precision_metric", "recall", "precision_metric_goal", "recall_goal"]
+
+    
+    alpha = 0.05
+
+    # True if a given (feature, group) row is significant
+    sig = longdf_for_plot["p"].lt(alpha)  # NaN -> False (not significant)
+
+    # For each feature: did it ever have a significant result in any group?
+    ever_sig_by_feature = sig.groupby(longdf_for_plot["feature"]).any()
+
+    # Features that are NEVER significant across all groups
+    features_to_remove = ever_sig_by_feature[~ever_sig_by_feature].index.tolist()
+    
+    features_to_remove_extra = ['Dependable', 'drop_per_distance', 'mobility_gini', 'Performance: How successful were you in accomplishing what you were asked to do?', 'precision_metric', 'precision_metric_goal', 'PTT', 'I think it’s a good idea to rely on automated agents for help', 'recall', 'nonleader_I rely on automated agents', 'sensitivity_filter', 'benign_ratio', 'nonleader_NASA', 'nonleader_How many times have you interacted with the TeamCollab simulation environment in the past?', 'nonleader_Dependable', 'nonleader_PTT', "nonleader_I don’t trust the information I get from automated agents", 'nonleader_Automated agents are reliable', 'nonleader_Generally, I trust automated agents', 'leader_Predictable', 'sensed_0', 'team_carrying_composition_AI', 'leader_Frustration: How insecure, discouraged, irritated, stressed, and annoyed were you?', "frac_benign_as_dangerous", "Automated agents are reliable", "false_negative", "false_positive", "frac_dangerous_ambiguous", "leader_I rely on automated agents", "leader_I think it’s a good idea to rely on automated agents for help", "true_positive", 'Frustration: How insecure, discouraged, irritated, stressed, and annoyed were you?', 'leader_I don’t trust the information I get from automated agents', 'number_ambiguous', 'number_ambigous_dangerous', 'total_benign']
+    
+    features_to_remove.extend(features_to_remove_extra)
     
     for ftr in features_to_remove:
         if ftr in features_to_plot.keys():
@@ -2657,13 +2804,20 @@ def write_by_leadership_suggestions_latex_with_meta(
     
     features_to_plot["latency_norm_median"] = 1
     features_to_plot["path_eff_median"] = 1
+    
+    
+    
+    #features_to_plot["team_dispersion"] = 1
+    #features_to_plot["dispersion_to_leader"] = 1
+    
     pdb.set_trace()
     fig, ax = plot_corr_heatmap(
         longdf_for_plot,
         features=features_to_plot,
         annotate=True,
         by="group",
-        session_order=group_order
+        session_order=group_order,
+        x_label="Team Leadership Condition"
     )
     
     
@@ -2801,12 +2955,12 @@ def correlations_by_leadership_and_suggestions(
 
 
     
-def calculation_performance_human_vs_ai(DF):
+def calculation_performance_human_vs_ai(DF, performance_metric):
 
     g = DF.copy()
     #g = g[g["team_id"] != 15]
     #g = g.drop(index=62)
-    g = g.replace({"human":0, "ai":1}).groupby(["team_id","leader_type"])["performance"].mean().unstack()
+    g = g.replace({"human":0, "ai":1}).groupby(["team_id","leader_type"])[performance_metric].mean().unstack()
     order = (g.get(1, pd.Series(index=g.index, dtype=float)) - g.get(0, pd.Series(index=g.index, dtype=float))).sort_values()
 
     
@@ -2983,6 +3137,7 @@ def analyze_ai_advantage_print(
     seed: int = 42,
     save_tables: bool = False,
     out_dir: str = "ai_vs_human_outputs",
+    performance_metric: str = "performance"
 ):
     """
     Prints main results for: 'Does AI help more when human-led performance is worse?'
@@ -3017,7 +3172,7 @@ def analyze_ai_advantage_print(
             p = (
                 df.pivot_table(index=["team_id","layout"],
                                columns="leader_type",
-                               values="performance",
+                               values=performance_metric,
                                aggfunc="mean")
                   .dropna(subset=["human","ai"])
                   .reset_index()
@@ -3030,7 +3185,7 @@ def analyze_ai_advantage_print(
         p = (
             df.pivot_table(index=["team_id"],
                            columns="leader_type",
-                           values="performance",
+                           values=performance_metric,
                            aggfunc="mean")
               .dropna(subset=["human","ai"])
               .reset_index()
@@ -5739,20 +5894,21 @@ def plot_corr_heatmap(
     vmax: float = 1.0,
     cmap: str = "coolwarm",
     by=None,
-    figsize=(10, 8),
+    figsize=(12, 10),
     show_nan_glyph: bool = True,
-    force_columns = None,
-    feature_label_map = None,   # <-- NEW
+    force_columns=None,
+    feature_label_map=None,
+    x_label=""
 ):
-    """
-    Heatmap of feature ↔ performance correlations across groups (or sessions).
-    corr_long must have columns [by, 'feature', 'corr'].
-    feature_label_map: maps *prefix-stripped* labels to display labels.
-                       If original label startswith 'leader_' or 'nonleader_',
-                       we strip that before lookup, then append ' 1' (leader) or ' 2' (nonleader).
-    """
+    import numpy as np
+    import pandas as pd
+    import matplotlib.pyplot as plt
 
-    feature_label_map = translation
+    if by is None:
+        raise ValueError("plot_corr_heatmap: 'by' must be provided (column name).")
+
+    feature_label_map = translation if feature_label_map is None else feature_label_map
+
     required = {by, "feature", "corr"}
     missing = required - set(corr_long.columns)
     if missing:
@@ -5769,9 +5925,12 @@ def plot_corr_heatmap(
         base_for_counts = corr_long
 
     # Keep features that appear in >= min_sessions groups
-    counts = (base_for_counts[[by, "feature"]]
-              .drop_duplicates()
-              .groupby("feature")[by].nunique())
+    counts = (
+        base_for_counts[[by, "feature"]]
+        .drop_duplicates()
+        .groupby("feature")[by]
+        .nunique()
+    )
     keep_feats = counts[counts >= min_sessions].index
     df = df[df["feature"].isin(keep_feats)]
 
@@ -5798,85 +5957,169 @@ def plot_corr_heatmap(
                 session_order.append(c)
 
     # Pivot
-    mat = (df.pivot_table(index="feature", columns=by, values="corr", aggfunc="mean")
-             .reindex(columns=session_order))
+    mat = (
+        df.pivot_table(index="feature", columns=by, values="corr", aggfunc="mean")
+        .reindex(columns=session_order)
+    )
+
+    # Pivot p-values (if present)
+    pmat = None
+    if "p" in df.columns:
+        pmat = (
+            df.pivot_table(index="feature", columns=by, values="p", aggfunc="mean")
+            .reindex(columns=session_order)
+        )
 
     # Warn if some requested columns are entirely NaN
     empty_cols = [c for c in mat.columns if mat[c].notna().sum() == 0]
     if empty_cols:
         print("Heatmap warning — columns with no data:", empty_cols)
 
-    # Order features by mean |corr|
+    # -------------------------
+    # Order features by C2OPA group, then by mean |corr| within group
+    # -------------------------
     if not mat.empty:
-        strength = mat.abs().mean(axis=1).sort_values(ascending=False)
-        mat = mat.loc[strength.index]
+        strength = mat.abs().mean(axis=1)  # per-feature mean |corr|
+        groups = mat.index.to_series().map(lambda x: _group_of_canonical(x, feature_label_map))
 
-    # --- NEW: translate y-axis labels with prefix handling ---
+        group_rank = (
+            groups.map({g: i for i, g in enumerate(GROUP_ORDER)})
+            .fillna(999)
+            .astype(int)
+        )
+
+        sort_df = pd.DataFrame(
+            {"group_rank": group_rank.values, "strength": strength.values},
+            index=mat.index,
+        ).sort_values(["group_rank", "strength"], ascending=[True, False])
+
+        mat = mat.loc[sort_df.index]
+        if pmat is not None:
+            pmat = pmat.reindex(index=mat.index, columns=mat.columns)
+
+    # --- Translate y-axis labels with prefix handling ---
     def _translate_label(lbl: str) -> str:
         if feature_label_map is None:
-            return lbl
+            return str(lbl)
         tag = ""
-        core = lbl
+        core = str(lbl).strip()
         if core.startswith("leader_"):
-            core = core[len("leader_"):]
+            core = core[len("leader_"):].strip()
             tag = "³"
         elif core.startswith("nonleader_"):
-            core = core[len("nonleader_"):]
+            core = core[len("nonleader_"):].strip()
             tag = "²"
-        # translate using map; default to core if not found
         disp = feature_label_map.get(core, core)
+        disp = disp.replace("AI", "Auto")
         return f"{disp}{tag}"
 
+    # -------------------------
+    # Compute group boundaries + centers (for subtitles)
+    # -------------------------
+    row_groups = mat.index.to_series().map(lambda x: _group_of_canonical(x, feature_label_map)).tolist()
+    n_rows = mat.shape[0]
+
+    boundaries = [i for i in range(1, n_rows) if row_groups[i] != row_groups[i - 1]]
+    group_starts = [0] + boundaries
+    group_ends = boundaries + [n_rows]
+
+    group_centers = [(s + (e - 1)) / 2.0 for s, e in zip(group_starts, group_ends)]
+    group_titles = [GROUP_LABELS.get(row_groups[s], row_groups[s]) for s in group_starts]
+
+    # -------------------------
     # Build heatmap
-    import matplotlib.pyplot as plt
+    # -------------------------
     fig, ax = plt.subplots(figsize=figsize)
+    fig.subplots_adjust(left=0.42, right=0.885, top=0.95, bottom=0.10)
     im = ax.imshow(mat.values, aspect="auto", vmin=vmin, vmax=vmax, cmap=cmap)
 
-    # Ticks & labels
+    # X ticks
     ax.set_xticks(np.arange(mat.shape[1]))
-    ax.set_xticklabels([f"{s}" for s in mat.columns], rotation=0, ha="center")
-    ax.set_yticks(np.arange(mat.shape[0]))
-    ax.set_yticklabels([_translate_label(str(x)) for x in mat.index])
+    ax.set_xticklabels([str(s).replace("AI", "Auto") for s in mat.columns], rotation=0, ha="center")
 
-    # Make tick labels bigger and bold
-    ax.tick_params(axis="x", labelsize=20)  # size of x labels
-    ax.tick_params(axis="y", labelsize=20)  # size of y labels
-    for lbl in ax.get_xticklabels() + ax.get_yticklabels():
+    # Y major ticks: factors
+    ax.set_yticks(np.arange(n_rows))
+    ax.set_yticklabels([_translate_label(str(x)) for x in mat.index])
+    ax.tick_params(axis="y", which="major", pad=6)
+
+    # Make room above the first row so the first subtitle isn't clipped
+    ax.set_ylim(n_rows - 0.5, -0.5)
+
+    # -------------------------
+    # Subtitle lane: second y-axis on the LEFT with group titles
+    # -------------------------
+    ax_sub = ax.twinx()
+    ax_sub.set_ylim(ax.get_ylim())  # share y scale
+    ax_sub.set_yticks(group_centers)
+    ax_sub.set_yticklabels(group_titles)
+
+    ax_sub.yaxis.set_ticks_position("left")
+    ax_sub.yaxis.set_label_position("left")
+    ax_sub.spines["left"].set_position(("outward", 260))
+    ax_sub.spines["left"].set_visible(False)
+
+    ax_sub.tick_params(axis="x", bottom=False, labelbottom=False)
+    ax_sub.tick_params(axis="y", length=0, pad=8)
+
+    for t in ax_sub.get_yticklabels():
+        t.set_fontweight("bold")
+        t.set_fontsize(18)
+        t.set_ha("right")
+
+    # Labels
+    if x_label is not None:
+        ax.set_xlabel(x_label, fontsize=22, fontweight="bold", labelpad=12)
+
+    #ax.set_ylabel("Explanatory Factor", fontsize=22, fontweight="bold", labelpad=12)
+
+    # ✅ move ylabel left of subtitle lane (axes coords)
+    # 0 is left edge of axes; negative moves into margin; make it < subtitle lane
+    ax.yaxis.set_label_coords(-0.62, 0.5)
+
+    # Tick styling
+    ax.tick_params(axis="x", labelsize=20)
+    ax.tick_params(axis="y", which="major", labelsize=18)
+    for lbl in ax.get_xticklabels() + ax.get_yticklabels(minor=False):
         lbl.set_fontweight("bold")
 
-    
+    # Dashed separators at group boundaries
+    #for b in boundaries:
+    #    ax.axhline(b - 0.5, color="black", linewidth=2.0, alpha=0.75, linestyle="--")
 
-    # Minor grid
+    # Minor grid (cell boundaries)
     ax.set_xticks(np.arange(-0.5, mat.shape[1], 1), minor=True)
-    ax.set_yticks(np.arange(-0.5, mat.shape[0], 1), minor=True)
+    ax.set_yticks(np.arange(-0.5, n_rows, 1), minor=True)
     ax.grid(which="minor", color="w", linewidth=0.5, alpha=0.5)
-    ax.tick_params(which="minor", bottom=False, left=False)
 
-    # Colorbar
-    cbar = fig.colorbar(im, ax=ax)
+    # -------------------------
+    # ✅ Colorbar: dedicate a separate axis so it NEVER overlaps
+    # -------------------------
+    # Leave room on the right via subplots_adjust (below), then place cbar in that margin.
+    cax = fig.add_axes([0.91, 0.14, 0.02, 0.76])  # thinner + closer
+    cbar = fig.colorbar(im, cax=cax)
     cbar.set_label("Spearman correlation with performance", rotation=90, size=20, weight="bold")
-    
     cbar.ax.set_yticklabels([])
 
+    # Custom tick labels inside colorbar (your original behavior)
     colorbar_fontsize = 18
     ticks = cbar.get_ticks()
     for i, (tick, val) in enumerate(zip(cbar.ax.get_yticks(), ticks)):
         text = f"{val:.1f}"
-        if i == 0:  # bottom extreme
+        if i == 0:
             cbar.ax.text(
-                0.5, tick - 0.005*(ticks[-1]-ticks[0]),  # a bit below the bar
+                0.5, tick - 0.005 * (ticks[-1] - ticks[0]),
                 text, ha="center", va="top",
                 fontsize=colorbar_fontsize, fontweight="bold",
                 transform=cbar.ax.transData
             )
-        elif i == len(ticks)-1:  # top extreme
+        elif i == len(ticks) - 1:
             cbar.ax.text(
-                0.5, tick + 0.005*(ticks[-1]-ticks[0]),  # a bit above the bar
+                0.5, tick + 0.005 * (ticks[-1] - ticks[0]),
                 text, ha="center", va="bottom",
                 fontsize=colorbar_fontsize, fontweight="bold",
                 transform=cbar.ax.transData
             )
-        else:  # middle ticks inside the bar
+        else:
             cbar.ax.text(
                 0.5, tick,
                 text, ha="center", va="center",
@@ -5891,26 +6134,81 @@ def plot_corr_heatmap(
         for j in range(cols):
             val = mat.iat[i, j]
             if pd.notna(val) and annotate:
+                pval = None if pmat is None else pmat.iat[i, j]
+                is_sig = (pval is not None) and pd.notna(pval) and (pval < 0.05)
                 ax.text(
                     j, i,
                     f"{val:{fmt}}",
                     ha="center", va="center",
-                    fontsize=20,          # bigger font size
-                    fontweight="bold",    # bold text
+                    fontsize=20,
+                    fontweight="bold" if is_sig else "normal",
                 )
             elif pd.isna(val) and show_nan_glyph:
                 ax.text(
                     j, i, "–",
                     ha="center", va="center",
                     fontsize=12,
-                    fontweight="bold",
+                    fontweight="normal",
                     alpha=0.45,
                 )
 
-    
-    #ax.set_title("Feature ↔ Performance correlations by group (heatmap)")
-    fig.tight_layout()
+    # Leave margin for subtitle lane (left) + dedicated colorbar (right)
+    #fig.subplots_adjust(left=0.42)
+    #fig.tight_layout()
+
+    from matplotlib.lines import Line2D
+
+    # --- after fig.subplots_adjust(...) ---
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+
+    # right edge: stop at heatmap edge (not into colorbar)
+    ax_pos = ax.get_position()
+    x1 = ax_pos.x1
+
+    # left edge: extend to the leftmost subtitle ticklabel (in figure coords)
+    label_bboxes = [
+        t.get_window_extent(renderer=renderer)
+        for t in ax_sub.get_yticklabels()
+        if t.get_text()
+    ]
+    if label_bboxes:
+        min_x_disp = min(bb.x0 for bb in label_bboxes)  # leftmost pixel among subtitle labels
+        # convert that pixel-x to figure coords
+        x0 = fig.transFigure.inverted().transform((min_x_disp, 0))[0] - 0.01  # small padding
+    else:
+        # fallback if no labels
+        x0 = ax_pos.x0 - 0.20
+
+    # draw dashed separators spanning subtitle lane -> heatmap
+    for b in boundaries:
+        y_disp = ax.transData.transform((0, b - 0.5))[1]
+        y_fig = fig.transFigure.inverted().transform((0, y_disp))[1]
+
+        fig.add_artist(Line2D(
+            [x0, x1], [y_fig, y_fig],
+            transform=fig.transFigure,
+            color="black",
+            linewidth=2.0,
+            alpha=0.75,
+            linestyle="--",
+            zorder=10,
+            clip_on=False
+        ))
+
+    fig.text(
+        0.02, 0.5,                      # x, y in figure coordinates
+        "Explanatory Factor",
+        rotation=90,
+        va="center",
+        ha="center",
+        fontsize=22,
+        fontweight="bold"
+    )
+
     return fig, ax
+
+
 
 
 # --- helper: pooled ("ALL sessions") correlations for features you already plot ---
@@ -6219,6 +6517,274 @@ def print_results(results):
     print("\n== Pairwise Cliff’s δ (effect sizes) ==")
     print(results["cliffs_delta"].round(3))
     
+def mean_human_vs_ai(df, performance_metric):
+
+    # Separate by leader type
+    human_perf = df.loc[df["leader_type"] == "human", performance_metric]
+    ai_perf = df.loc[df["leader_type"] == "ai", performance_metric]
+
+    # Calculate descriptive statistics
+    mean_human = human_perf.mean()
+    std_human = human_perf.std()
+    mean_ai = ai_perf.mean()
+    std_ai = ai_perf.std()
+
+    print(f"Human leader: mean = {mean_human:.3f}, std = {std_human:.3f}, n = {len(human_perf)}")
+    print(f"AI leader:    mean = {mean_ai:.3f}, std = {std_ai:.3f}, n = {len(ai_perf)}")
+
+    # Welch's t-test (unequal variances)
+    t_stat, p_value = stats.ttest_ind(ai_perf, human_perf, equal_var=False)
+
+    print(f"\nWelch’s t-test: t = {t_stat:.3f}, p = {p_value:.4f}")
+
+    # Optional: quick interpretation
+    if p_value < 0.05:
+        print("→ The difference between human-led and AI-led performance is statistically significant (p < 0.05).")
+    else:
+        print("→ No statistically significant difference (p ≥ 0.05).")
+       
+def paired_human_vs_ai(df, performance_metric):
+    # mean per team and leader
+    g = (
+        df.groupby(["team_id", "leader_type"])[performance_metric]
+        .mean()
+        .unstack()
+        .dropna()
+    )
+
+    delta = g["ai"] - g["human"]
+
+    mean_delta = delta.mean()
+    std_delta  = delta.std()
+    n = len(delta)
+
+    print(f"Paired AI−Human Δ: mean = {mean_delta:.3f}, std = {std_delta:.3f}, n = {n}")
+
+    t_stat, p_value = stats.ttest_1samp(delta, 0.0)
+
+    print(f"Paired t-test: t = {t_stat:.3f}, p = {p_value:.4f}")
+
+    # effect size for power
+    dz = mean_delta / std_delta
+    print(f"Cohen’s dz = {dz:.3f}")
+
+    return mean_delta, std_delta, dz
+
+       
+def compare_suggestions(df, performance_metric, suggestions_col="suggestions",
+                        on_value="Yes", off_value="No"):
+    """
+    Compare performance between Suggestions ON vs OFF (two groups).
+    Uses Welch's t-test.
+    """
+    on  = df.loc[df[suggestions_col] == on_value, performance_metric].dropna()
+    off = df.loc[df[suggestions_col] == off_value, performance_metric].dropna()
+
+    mean_on, std_on = on.mean(), on.std()
+    mean_off, std_off = off.mean(), off.std()
+
+    print("=== Suggestions comparison ===")
+    print(f"Suggestions ON:  mean = {mean_on:.3f}, std = {std_on:.3f}, n = {len(on)}")
+    print(f"Suggestions OFF: mean = {mean_off:.3f}, std = {std_off:.3f}, n = {len(off)}")
+
+    t, p = stats.ttest_ind(on, off, equal_var=False)
+    print(f"\nWelch’s t-test (ON vs OFF): t = {t:.3f}, p = {p:.4f}")
+    print("→ " + ("Significant (p < 0.05)." if p < 0.05 else "Not significant (p ≥ 0.05)."))
+
+    return {
+        "mean_on": mean_on, "std_on": std_on, "n_on": len(on),
+        "mean_off": mean_off, "std_off": std_off, "n_off": len(off),
+        "t": t, "p": p
+    }
+
+
+
+
+def compare_suggestions_within_leader_type(
+    df,
+    performance_metric,
+    leader_col="leader_type",
+    suggestions_col="suggestions",
+    leaders=("human", "ai"),
+    on_value="Yes",
+    off_value="No",
+    alpha=0.05,
+):
+    """
+    For each leader_type, compare Suggestions ON vs OFF (Welch t-test).
+
+    Prints per-leader descriptive stats and test results.
+    Returns a dict keyed by leader value.
+    """
+    results = {}
+
+    print("=== Suggestions effect within each leader_type ===")
+    for leader in leaders:
+        d = df[df[leader_col] == leader]
+
+        on = d.loc[d[suggestions_col] == on_value, performance_metric].dropna()
+        off = d.loc[d[suggestions_col] == off_value, performance_metric].dropna()
+
+        mean_on, std_on = on.mean(), on.std()
+        mean_off, std_off = off.mean(), off.std()
+
+        print(f"\n--- leader_type = {leader} ---")
+        print(f"Suggestions ON:  mean = {mean_on:.3f}, std = {std_on:.3f}, n = {len(on)}")
+        print(f"Suggestions OFF: mean = {mean_off:.3f}, std = {std_off:.3f}, n = {len(off)}")
+
+        # Guard: if one group is empty, Welch test isn't defined
+        if len(on) < 2 or len(off) < 2:
+            print("Welch’s t-test: not enough data (need at least 2 samples per group).")
+            t_stat, p_value = float("nan"), float("nan")
+        else:
+            t_stat, p_value = stats.ttest_ind(on, off, equal_var=False)
+            print(f"Welch’s t-test (ON vs OFF): t = {t_stat:.3f}, p = {p_value:.4f}")
+            print("→ " + ("Significant (p < 0.05)." if p_value < alpha else "Not significant (p ≥ 0.05)."))
+
+        results[leader] = {
+            "leader": leader,
+            "mean_on": mean_on, "std_on": std_on, "n_on": len(on),
+            "mean_off": mean_off, "std_off": std_off, "n_off": len(off),
+            "t": t_stat, "p": p_value,
+            "delta_on_minus_off": mean_on - mean_off,
+        }
+
+    return results
+
+    
+
+def compare_leader_suggestions_two_way(df, performance_metric):
+    model = ols(
+        f"{performance_metric} ~ C(leader_type) * C(suggestions)",
+        data=df
+    ).fit()
+
+    anova_table = sm.stats.anova_lm(model, typ=2)
+    print("=== Two-way ANOVA (leader × suggestions) ===")
+    print(anova_table)
+
+    return anova_table
+
+       
+def plot_variable_slot_width_diverging_from_df(
+    df_sorted,
+    order=("Human→Human","Human→Auto","Auto→Human","Auto→Auto"),
+    max_slot_width=0.9,        # width for the transition with the largest n_total
+    gap=0.1,                   # smaller gap = bars closer
+    colors=("tab:orange", "tab:blue"),
+    annotate=True,
+    show_total=False           # <--- option to toggle the top "n=" label
+):
+    """
+    Variable-width diverging bars:
+      - Slot width for transition t:  w_slot[t] ∝ n_total[t] (max_slot_width at max n_total)
+      - Inside the slot:
+          width(↓) = w_slot[t] * (n_dec / n_total)
+          width(↑) = w_slot[t] * (n_inc / n_total)
+      - Heights are conditional means (↓ negative, ↑ positive).
+    """
+    # --- compute per-transition stats directly from df_sorted ---
+    rows = []
+    for t in order:
+        g = df_sorted.loc[df_sorted["transition"] == t, "perf_change"].dropna()
+        n_tot = int(g.size)
+        n_inc = int((g > 0).sum())
+        n_dec = int((g < 0).sum())
+        rows.append(dict(
+            transition=t, n_total=n_tot, n_inc=n_inc, n_dec=n_dec,
+            mean_inc=(g[g > 0].mean() if n_inc > 0 else np.nan),
+            mean_dec=(g[g < 0].mean() if n_dec > 0 else np.nan),
+        ))
+    T = pd.DataFrame(rows).set_index("transition")
+
+    # scale slot widths by total samples
+    n_max = max(1, T["n_total"].max())  # avoid divide-by-zero
+    T["slot_w"] = max_slot_width * (T["n_total"] / n_max)
+
+    # x centers with variable widths + constant gaps
+    centers = []
+    x = 0.0
+    for t in order:
+        w = T.loc[t, "slot_w"]
+        centers.append(x + w/2.0)
+        x += w + gap
+    T["x"] = centers
+
+    # y limits (pad a bit)
+    y_vals = []
+    if T["mean_inc"].notna().any(): y_vals += T["mean_inc"].dropna().tolist()
+    if T["mean_dec"].notna().any(): y_vals += T["mean_dec"].dropna().tolist()
+    y_vals = y_vals or [0.0]
+    y_min, y_max = min(y_vals + [0]), max(y_vals + [0])
+    pad = 0.08 * (y_max - y_min if y_max != y_min else 1.0)
+    y_min, y_max = y_min - pad, y_max + pad
+    y_span = max(1e-9, y_max - y_min)
+
+    dec_color, inc_color = colors
+    fig, ax = plt.subplots(figsize=(10, 6), dpi=120)
+
+    for t in order:
+        if t not in T.index or T.loc[t, "n_total"] == 0:
+            continue
+        x = T.loc[t, "x"]
+        w_slot = T.loc[t, "slot_w"]
+        n_tot  = int(T.loc[t, "n_total"])
+        n_inc  = int(T.loc[t, "n_inc"])
+        n_dec  = int(T.loc[t, "n_dec"])
+        m_inc  = T.loc[t, "mean_inc"]
+        m_dec  = T.loc[t, "mean_dec"]
+
+        # widths inside the slot proportional to their counts
+        w_inc = w_slot * (n_inc / n_tot) if n_tot else 0.0
+        w_dec = w_slot * (n_dec / n_tot) if n_tot else 0.0
+
+        # ↓ decrease (below 0)
+        if n_dec > 0 and pd.notna(m_dec) and (m_dec < 0):
+            ax.add_patch(Rectangle((x - w_dec/2, m_dec), w_dec, -m_dec,
+                                   facecolor=dec_color, edgecolor="black",
+                                   linewidth=0.8, zorder=2))
+            if annotate:
+                ax.text(x, m_dec - 0.02*y_span, f"n↓={n_dec}",
+                        ha="center", va="top", fontsize=14, fontweight="bold")
+
+        # ↑ increase (above 0)
+        if n_inc > 0 and pd.notna(m_inc) and (m_inc > 0):
+            ax.add_patch(Rectangle((x - w_inc/2, 0), w_inc, m_inc,
+                                   facecolor=inc_color, edgecolor="black",
+                                   linewidth=0.8, zorder=3))
+            if annotate:
+                ax.text(x, m_inc + 0.02*y_span, f"n↑={n_inc}",
+                        ha="center", va="bottom", fontsize=14, fontweight="bold")
+
+        # total n (optional)
+        if annotate and show_total:
+            ax.text(x, y_max - 0.04*y_span, f"n={n_tot}", ha="center", va="top", fontsize=14, fontweight="bold")
+
+    # axes cosmetics
+    ax.axhline(0, color="k", linestyle="--", linewidth=1)
+    ax.set_ylim(y_min, y_max)
+    ax.tick_params(axis="y", labelsize=14)
+    last_center = T.loc[order[-1], "x"]
+    last_w = T.loc[order[-1], "slot_w"]
+    ax.set_xlim(T.loc[order[0], "x"] - T.loc[order[0], "slot_w"]/2 - gap/2,
+                last_center + last_w/2 + gap/2)
+
+    ax.set_xticks([T.loc[t, "x"] for t in order])
+    ax.set_xticklabels(order, fontsize=14)
+    ax.set_ylabel("Δ Mean Performance", fontsize=14, fontweight="bold")
+    ax.set_xlabel("Change of Leadership Between Sessions", fontsize=14, fontweight="bold")
+    #ax.set_title("Diverging bars with slot width ∝ total samples; bar width ∝ outcome counts", fontsize=14, fontweight="bold")
+
+
+    handles = [
+        Rectangle((0,0),1,1, facecolor=dec_color, edgecolor="black", label="Mean decrease (width ∝ n↓)"),
+        Rectangle((0,0),1,1, facecolor=inc_color, edgecolor="black", label="Mean increase (width ∝ n↑)"),
+    ]
+    ax.legend(handles=handles, frameon=True, loc="best", fontsize=14)
+    plt.tight_layout()
+    plt.show()
+ 
+        
 demographic_qs = ['Age', 'How often do you play first-person video games on average?', 'How many times have you interacted with the TeamCollab simulation environment in the past?', 'How often do you utilize Large Language Models such as ChatGPT, Claude or similar others?', 'Generally, I trust automated agents', 'Automated agents help me solve many problems', 'I think it’s a good idea to rely on automated agents for help', 'I don’t trust the information I get from automated agents', 'Automated agents are reliable', 'I rely on automated agents']
 
 fe_df_ai = pd.read_csv('team_stats_ai.csv')
@@ -6230,18 +6796,169 @@ tbl_all = correlate_all_rows(fe_df_ai, performance_col="performance", method="sp
 print(tbl_all.head(30))
 '''
 fe_df = pd.read_csv('team_stats.csv')
+legacy_df = pd.read_csv("team_stats_legacy.csv")
 
-pdb.set_trace()
+
+df = legacy_df.copy()
+
+
+
+# Split into (family, variant)
+df[["family", "variant"]] = df["strategy"].str.split(" ", n=1, expand=True)
+
+# If some strategies might have only one word, keep variant safe
+df["variant"] = df["variant"].fillna(df["family"])
+
+# Desired family grouping order
+family_order = ["hierarchy", "complementary", "independent"]
+
+
+parameter = "variant"
+
+# Build an x-axis category that is still unique per strategy,
+# but we will *display* only the variant text as tick labels.
+df["xcat"] = df["family"] + " | " + df[parameter]
+
+# Sort x-axis categories: all complementary first, then hierarchy, then independent
+x_order = (
+    df[["family", parameter, "xcat"]]
+    .drop_duplicates()
+    .assign(
+        family_rank=lambda d: d["family"].map({k:i for i,k in enumerate(family_order)}).fillna(999)
+    )
+    .sort_values(["family_rank", parameter])
+    ["xcat"]
+    .tolist()
+)
+
+plt.figure(figsize=(12, 6))
+ax = sns.boxplot(
+    data=df,
+    x="xcat",
+    y="performance",
+    hue="family",              # legend groups by first word
+    hue_order=family_order,    # legend order
+    order=x_order              # x-axis grouped by family
+)
+
+# Replace x tick labels to show only the variant part
+ax.set_xticklabels([c.split(" | ", 1)[1].replace("AI", "Autonomous") for c in x_order], rotation=45, ha="right")
+
+if parameter == "variant":
+    ax.set_xlabel("Strategy Variant")
+else:
+    ax.set_xlabel("Team Composition")
+ax.set_ylabel("Performance")
+#ax.set_title("Performance by Strategy")
+ax.legend(title="Strategy Family")
+
+plt.tight_layout()
+plt.show()
+
+
+
+for fam, sub in df.groupby("family"):
+    groups = [
+        g["performance"].values
+        for _, g in sub.groupby(parameter)
+    ]
+
+    if len(groups) > 1:
+        stat, p = kruskal(*groups)
+        print(f"{fam}: H={stat:.3f}, p={p:.4f}")
+
+
+
+for fam, sub in df.groupby("family"):
+    print(f"\nPosthoc for {fam}")
+    print(
+        sp.posthoc_dunn(
+            sub,
+            val_col="performance",
+            group_col=parameter,
+            p_adjust="holm"
+        )
+    )
+    
+groups = [
+    g["performance"].values
+    for _, g in df.groupby("family")
+]
+
+
+stat, p = kruskal(*groups)
+print(f"Families comparison: H={stat:.3f}, p={p:.4f}")
+
+
+sp.posthoc_dunn(
+    df,
+    val_col="performance",
+    group_col="family",
+    p_adjust="holm"
+)
+
+
+
+fe_df["precision_metric"] = fe_df["true_positive"]/(fe_df["true_positive"] + fe_df["false_positive"])
+fe_df["recall"] = fe_df["true_positive"]/(fe_df["true_positive"] + fe_df["false_negative"])
+fe_df["precision_metric_goal"] = fe_df["true_positive_goal"]/(fe_df["true_positive_goal"] + fe_df["false_positive_goal"])
+fe_df["recall_goal"] = fe_df["true_positive_goal"]/(fe_df["true_positive_goal"] + fe_df["false_negative_goal"])
+
+fe_df_ai["recall_goal"] = fe_df_ai["true_positive_goal"]/(fe_df_ai["true_positive_goal"] + fe_df_ai["false_negative_goal"])
+
+
+print("Suggestions mean:", fe_df[(fe_df["leader_type"] == "ai") & (fe_df["suggestions"] == "Yes")]["suggestions_exchanged"].mean())
+
+submetric = 'dangerous_weighted_distance'
+for metric in ['performance', 'performance_no_filter']:
+
+    if "no_filter" in metric:
+        submetric += '_no_filter'
+
+        
+    r, p = spearmanr(fe_df[metric], fe_df[submetric], nan_policy='omit')
+    print(f"{metric}: Spearman r={r:.3f}, p={p:.3g}")
+
+#pdb.set_trace()
 #fe_df[(fe_df["leader_type"] == "ai") & (fe_df["suggestions"] == "Yes")]["suggestions_exchanged"].mean()
 
-'''
+
 demographic_condition = 'How often do you play first-person video games on average?'
 std_age = fe_df.drop_duplicates(subset=["team_id", "leader_" + demographic_condition, "nonleader_" + demographic_condition])[["leader_" + demographic_condition, "nonleader_" + demographic_condition]].stack().std()
 mean_age = fe_df.drop_duplicates(subset=["team_id", "leader_" + demographic_condition, "nonleader_" + demographic_condition])[["leader_" + demographic_condition, "nonleader_" + demographic_condition]].stack().mean()
 
 print(mean_age, std_age)
+
+demographic_condition = 'How often do you utilize Large Language Models such as ChatGPT, Claude or similar others?'
+
+# Build the stacked 1D series once
+s = (
+    fe_df
+    .drop_duplicates(
+        subset=["team_id",
+                "leader_" + demographic_condition,
+                "nonleader_" + demographic_condition]
+    )[
+        ["leader_" + demographic_condition,
+         "nonleader_" + demographic_condition]
+    ]
+    .stack()
+    .dropna()
+)
+
+mean_val = s.mean()
+std_val  = s.std()
+
+# Percentage whose response > 1
+pct_gt_1 = (s > 1).mean() * 100
+
+print(f"Mean: {mean_val:.2f}")
+print(f"Std: {std_val:.2f}")
+print(f"% > 1: {pct_gt_1:.1f}%")
+
+
 pdb.set_trace()
-'''
+
 
 '''
 # filter for AI leader
@@ -6278,390 +6995,555 @@ for feat in features:
 results_df = pd.DataFrame(results)
 print(results_df.sort_values("p_ttest"))
 '''
+performance_metric = "performance"
 
-'''
-trans_df, results = analyze_all_transitions(fe_df)
-print_results(results)
-
-
-tbl_all = correlate_all_rows(fe_df, performance_col="performance", method="spearman")
-print(tbl_all.head(30))
-'''
-mean_ai_performance = fe_df_ai["performance"].mean()
-
-##### Trajectory perfomance
-
-
-fe_df_copy = fe_df.copy()
-fe_df_copy["session"] = fe_df_copy["session"] + 1
-fe_df_copy["leader_type"] = fe_df_copy["leader_type"].replace({"human": "Human", "ai": "AI"})
-fe_df_copy = fe_df_copy.rename(columns={"session":"Session", "performance":"Performance", "leader_type": "Leader"})
-
-sns.lineplot(
-    data=fe_df_copy,
-    x="Session", y="Performance",
-    hue="Leader", ci="sd", estimator="mean"
-)
+#fe_df = fe_df[fe_df["team_id"] != 15]
+#fe_df = fe_df.drop(62)
 
-# Add striped line for mean_performance_ai
-plt.axhline(y=mean_ai_performance, color="red", linestyle="--", linewidth=1.5, label="AI*")
-plt.xlabel("Session", fontsize=14, fontweight="bold")
-plt.ylabel("Performance", fontsize=14, fontweight="bold")
-plt.tick_params(axis="both", which="major", labelsize=12) 
-
-# Force x-axis to show integers
-plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
-plt.legend(fontsize=12, title_fontsize=13)
-#plt.title("Performance Trajectories by Leadership Style")
-plt.show()
+#pdb.set_trace()
 
+base_results = True
 
-fe_df_copy = fe_df.copy()
+df = fe_df[(fe_df["suggestions"] == "Yes") & (fe_df["leader_type"] == "human")].dropna(subset=['How many times have you interacted with the TeamCollab simulation environment in the past?', 'nonleader_How often do you play first-person video games on average?'])
 
+rho, p = spearmanr(df['How many times have you interacted with the TeamCollab simulation environment in the past?'], df['nonleader_How often do you play first-person video games on average?'])
 
-g = fe_df_copy.groupby(["team_id","leader_type"])["performance"].mean().unstack()
-order = (g.get("ai", pd.Series(index=g.index, dtype=float)) -
-         g.get("human", pd.Series(index=g.index, dtype=float))).sort_values()
+print(f"Spearman rho = {rho:.3f}, p = {p:.4g}")
 
-plt.figure()
-ypos = range(len(order))
+if base_results:
+    trans_df, results = analyze_all_transitions(fe_df, perf_col=performance_metric)
+    print_results(results)
 
-ai_color    = "orange" #sc_a.get_facecolor()[0]
 
-# scatter points
-sc_h = plt.scatter(g.loc[order.index, "human"], ypos, marker='o', label="Hᵀ")
-sc_a = plt.scatter(g.loc[order.index, "ai"], ypos, color=ai_color, marker='s', label="AIᵀ")
-
-'''
-g_mean = fe_df_copy.groupby(["team_id","leader_type"])["performance"].mean().unstack()
-g_std  = fe_df_copy.groupby(["team_id","leader_type"])["performance"].std().unstack()
-# scatter points with error bars (eyes)
-sc_h = plt.errorbar(
-    g_mean.loc[order.index, "human"], ypos,
-    xerr=g_std.loc[order.index, "human"],
-    fmt='o', capsize=4, elinewidth=1, label="Human"
-)
-sc_a = plt.errorbar(
-    g_mean.loc[order.index, "ai"], ypos,
-    xerr=g_std.loc[order.index, "ai"],
-    fmt='s', capsize=4, elinewidth=1, label="AI"
-)
-'''
-# connecting lines
-for i, t in enumerate(order.index):
-    x_h = g.loc[t, "human"] if "human" in g.columns and t in g.index else np.nan
-    x_a = g.loc[t, "ai"] if "ai" in g.columns and t in g.index else np.nan
-    if pd.notna(x_h) and pd.notna(x_a):
-        plt.plot([x_h, x_a], [i, i], color='0.6', linewidth=1)
-
-
-human_color = sc_h.get_facecolor()[0]  # (r, g, b, a)
-
-'''
-human_color = "tab:blue"
-ai_color = "tab:orange"
-'''
-
-
-
-# vertical dashed line for overall mean AI performance
-mean_ai = fe_df_copy.loc[(fe_df_copy["leader_type"]=="ai"),"performance"].mean()
-mean_ai_yes = fe_df_copy.loc[(fe_df_copy["leader_type"]=="ai") & (fe_df_copy["suggestions"]=="Yes"),"performance"].mean()
-mean_ai_no = fe_df_copy.loc[(fe_df_copy["leader_type"]=="ai") & (fe_df_copy["suggestions"]=="No"),"performance"].mean()
-mean_human = fe_df_copy.loc[fe_df_copy["leader_type"]=="human","performance"].mean()
-mean_human_yes = fe_df_copy.loc[(fe_df_copy["leader_type"]=="human") & (fe_df_copy["suggestions"]=="Yes"),"performance"].mean()
-mean_human_no = fe_df_copy.loc[(fe_df_copy["leader_type"]=="human") & (fe_df_copy["suggestions"]=="No"),"performance"].mean()
-plt.axvline(x=mean_ai_performance, color="red", linestyle="--", linewidth=1.5, label="AI*")
-plt.axvline(x=mean_human, color=human_color, linestyle="--", linewidth=1.5, label="H")
-plt.axvline(x=mean_ai, color=ai_color, linestyle="--", linewidth=1.5, label="AI")
-plt.axvline(x=mean_ai_yes, color=ai_color, linestyle="-.", linewidth=1.5, label="AI¹")
-plt.axvline(x=mean_ai_no, color=ai_color, linestyle=":", linewidth=1.5, label="AI°")
-plt.axvline(x=mean_human_yes, color=human_color, linestyle="-.", linewidth=1.5, label="H¹")
-plt.axvline(x=mean_human_no, color=human_color, linestyle=":", linewidth=1.5, label="H°")
-
-# labels and styling with larger fonts
-plt.yticks(ypos, order.index, fontsize=12)  
-plt.xlabel("Mean performance", fontsize=14, fontweight="bold")
-plt.ylabel("Team #", fontsize=14, fontweight="bold")
-plt.tick_params(axis="both", which="major", labelsize=12)
-plt.legend(fontsize=12, title_fontsize=13)
-
-
-plt.tight_layout()
-plt.show()
-
-
-means = fe_df.groupby(["team_id", "leader_type"])["performance"].mean().unstack()
-missing_cols = [c for c in ["ai", "human"] if c not in means.columns]
-if missing_cols:
-    raise ValueError(f"leader_type must include both 'AI' and 'Human' (missing: {missing_cols})")
-
-human_better_ids = means.index[means["human"] > means["ai"]].tolist()
-ai_better_ids    = means.index[means["ai"] > means["human"]].tolist()
-
-
-
-'''
-res = test_ai_vs_human_per_layout(fe_df, performance_col="performance",
-                                  leader_col="leader_type",
-                                  layout_col="layout",
-                                  team_col="team_id",      # set to None if you don't have it
-                                  session_col=None,   # optional
-                                  agg="median",
-                                  min_n=4)
-print(res)
-'''
-
-
-
-
-'''
-# --- 2) pairwise_df ---
-# Build from your tables (or read from CSV you exported). Must include columns listed in docstring.
-# Example tiny mock (DELETE once you pass real data):
-
-
-# Pick any pair label you have results for:
-plot_top_deltas_for_pair(pairwise_df,
-                         pair_label='0 vs 3',
-                         k=12,
-                         out_png='figure_top_deltas_0v3.png',
-                         title_prefix="Largest |Δr| between sessions")
-'''
-'''
-#Check diffence between when humans outperform AIs, do they improve or not
-rng = np.random.default_rng(42)
-
-# ---------- Helper effect sizes ----------
-def cohens_d(x, y):
-    x, y = np.asarray(x), np.asarray(y)
-    nx, ny = len(x), len(y)
-    if nx < 2 or ny < 2:
-        return np.nan
-    vx, vy = x.var(ddof=1), y.var(ddof=1)
-    # pooled SD (Welch’s variant)
-    s = np.sqrt(((nx - 1) * vx + (ny - 1) * vy) / (nx + ny - 2)) if (nx+ny-2)>0 else np.nan
-    return (x.mean() - y.mean()) / s if s and np.isfinite(s) else np.nan
-
-def cliffs_delta(x, y):
-    # δ = P(X>Y) - P(X<Y)
-    x, y = np.asarray(x), np.asarray(y)
-    n, m = len(x), len(y)
-    if n == 0 or m == 0: return np.nan
-    more = 0; less = 0
-    for xi in x:
-        more += np.sum(xi > y)
-        less += np.sum(xi < y)
-    return (more - less) / (n * m)
-
-# ---------- 1) Identify Human-better vs AI-better teams ----------
-means = fe_df.groupby(["team_id", "leader_type"])["performance"].mean().unstack()
-missing_cols = [c for c in ["ai", "human"] if c not in means.columns]
-if missing_cols:
-    raise ValueError(f"leader_type must include both 'AI' and 'Human' (missing: {missing_cols})")
-
-human_better_ids = means.index[means["human"] > means["ai"]].tolist()
-ai_better_ids    = means.index[means["ai"] > means["human"]].tolist()
-ties_ids         = means.index[means["human"] == means["ai"]].tolist()
-
-print("Human-better teams:", human_better_ids)
-print("AI-better teams   :", ai_better_ids)
-if len(ties_ids):
-    print("Ties (ignored here):", ties_ids)
-
-# ---------- 2) Build per-team Human-led change (last - first) ----------
-def human_delta_for_team(df_team):
-    # df_team: rows for a single team, Human-led only
-    if df_team.empty: return None
-    # ensure ordered by session; get first and last Human-led sessions for that team
-    df_team = df_team.sort_values("session")
-    first = df_team.iloc[0]["performance"]
-    last  = df_team.iloc[-1]["performance"]
-    return float(last - first)
-
-rows = []
-for tid in fe_df["team_id"].unique():
-    df_h = fe_df[(fe_df["team_id"] == tid) & (fe_df["leader_type"] == "human")]
-    d = human_delta_for_team(df_h)
-    if d is None or np.isnan(d): 
-        continue
-    group = "Human-better" if tid in human_better_ids else ("AI-better" if tid in ai_better_ids else "Tie")
-    rows.append({"team_id": tid, "group": group, "delta_human": d})
-
-delta_df = pd.DataFrame(rows)
-delta_df = delta_df[delta_df["group"].isin(["Human-better","AI-better"])].copy()
-delta_df["improved"] = (delta_df["delta_human"] > 0).astype(int)
-print("\nPer-team Human-led Δ (last−first):\n", delta_df.sort_values(["group","team_id"]))
-
-# ---------- 3) Group splits ----------
-hb = delta_df[delta_df["group"]=="Human-better"]["delta_human"].to_numpy()
-ab = delta_df[delta_df["group"]=="AI-better"]["delta_human"].to_numpy()
-print(f"\nCounts — Human-better n={len(hb)}, AI-better n={len(ab)}")
-
-# ---------- 4) Fisher’s exact on improvement proportions ----------
-hb_imp = int((hb > 0).sum()); hb_not = len(hb) - hb_imp
-ab_imp = int((ab > 0).sum()); ab_not = len(ab) - ab_imp
-table = np.array([[hb_imp, hb_not],
-                  [ab_imp, ab_not]])
-oddsratio, p_fisher = fisher_exact(table, alternative="two-sided")
-print("\nFisher’s exact (Improved vs Not):")
-print("Contingency [[HB_improve, HB_not], [AB_improve, AB_not]] =", table.tolist())
-print(f"Odds ratio = {oddsratio:.3f}, p = {p_fisher:.4f}")
-
-# ---------- 5) Mean Δ comparison: Welch t-test + Mann–Whitney + effect sizes ----------
-tt = ttest_ind(hb, ab, equal_var=False, alternative="greater")  # HB mean Δ > AB mean Δ ?
-u  = mannwhitneyu(hb, ab, alternative="greater")                # nonparametric
-d  = cohens_d(hb, ab)
-cd = cliffs_delta(hb, ab)
-
-print("\nMean Δ(Human-led) comparison (HB > AB?):")
-print(f"Welch t-test: t = {tt.statistic:.3f}, p = {tt.pvalue:.4f}")
-print(f"Mann–Whitney U: U = {u.statistic:.1f}, p = {u.pvalue:.4f}")
-print(f"Effect sizes: Cohen’s d = {d:.3f}, Cliff’s δ = {cd:.3f}")
-print(f"Group means: HB = {hb.mean():.3f} (n={len(hb)}), AB = {ab.mean():.3f} (n={len(ab)})")
-
-# ---------- 6) Logistic regression: improved ~ group ----------
-# Encode group: HB=1, AB=0
-logit_df = delta_df.copy()
-logit_df["HB"] = (logit_df["group"]=="Human-better").astype(int)
-# Optional control: initial Human-led performance per team
-init_h = (fe_df[fe_df["leader_type"]=="human"]
-          .sort_values(["team_id","session"])
-          .groupby("team_id").first()["performance"].rename("human_first"))
-logit_df = logit_df.merge(init_h, left_on="team_id", right_index=True, how="left")
-
-# Model A: improved ~ HB
-mdlA = sm.Logit(logit_df["improved"], sm.add_constant(logit_df[["HB"]])).fit(disp=False)
-print("\nLogistic regression A (improved ~ HB):")
-print(mdlA.summary())
-# Model B: improved ~ HB + human_first (control for starting point)
-mdlB = sm.Logit(logit_df["improved"], sm.add_constant(logit_df[["HB","human_first"]])).fit(disp=False)
-print("\nLogistic regression B (improved ~ HB + human_first):")
-print(mdlB.summary())
-
-# ---------- 7) Permutation tests ----------
-B = 5000  # iterations
-hb_mask = (delta_df["group"]=="Human-better").to_numpy()
-deltas = delta_df["delta_human"].to_numpy()
-impr   = delta_df["improved"].to_numpy()
-
-obs_mean_gap = deltas[hb_mask].mean() - deltas[~hb_mask].mean()
-obs_rate_gap = impr[hb_mask].mean()   - impr[~hb_mask].mean()
-
-perm_mean_gaps = np.empty(B)
-perm_rate_gaps = np.empty(B)
-
-for b in range(B):
-    perm_mask = rng.permutation(hb_mask)  # shuffle group labels
-    perm_mean_gaps[b] = deltas[perm_mask].mean() - deltas[~perm_mask].mean()
-    perm_rate_gaps[b] = impr[perm_mask].mean()   - impr[~perm_mask].mean()
-
-p_perm_mean = (np.sum(perm_mean_gaps >= obs_mean_gap) + 1) / (B + 1)
-p_perm_rate = (np.sum(perm_rate_gaps >= obs_rate_gap) + 1) / (B + 1)
-
-print("\nPermutation tests (HB > AB):")
-print(f"Mean Δ gap: observed = {obs_mean_gap:.3f}, p_perm = {p_perm_mean:.4f}")
-print(f"Improvement-rate gap: observed = {obs_rate_gap:.3f}, p_perm = {p_perm_rate:.4f}")
-
-
-
-
-# ---------- 2) Build per-team ai-led change (last - first) ----------
-def ai_delta_for_team(df_team):
-    if df_team.empty:
-        return None
-    df_team = df_team.sort_values("session")
-    first = df_team.iloc[0]["performance"]
-    last  = df_team.iloc[-1]["performance"]
-    return float(last - first)
-
-rows = []
-for tid in fe_df["team_id"].unique():
-    df_a = fe_df[(fe_df["team_id"] == tid) & (fe_df["leader_type"] == "ai")]
-    d = ai_delta_for_team(df_a)
-    if d is None or np.isnan(d):
-        continue
-    group = "ai_better" if tid in ai_better_ids else ("human_better" if tid in human_better_ids else "tie")
-    rows.append({"team_id": tid, "group": group, "delta_ai": d})
-
-delta_df = pd.DataFrame(rows)
-delta_df = delta_df[delta_df["group"].isin(["ai_better","human_better"])].copy()
-delta_df["improved"] = (delta_df["delta_ai"] > 0).astype(int)
-print("\nai-led Δ (last−first) per team:\n", delta_df.sort_values(["group","team_id"]))
-
-# ---------- 3) Group splits ----------
-ab = delta_df[delta_df["group"]=="ai_better"]["delta_ai"].to_numpy()
-hb = delta_df[delta_df["group"]=="human_better"]["delta_ai"].to_numpy()
-print(f"\nCounts — ai_better n={len(ab)}, human_better n={len(hb)}")
-
-# ---------- 4) Fisher’s exact on improvement proportions ----------
-ab_imp = int((ab > 0).sum()); ab_not = len(ab) - ab_imp
-hb_imp = int((hb > 0).sum()); hb_not = len(hb) - hb_imp
-table = np.array([[ab_imp, ab_not],
-                  [hb_imp, hb_not]])
-oddsratio, p_fisher = fisher_exact(table, alternative="two-sided")
-print("\nFisher’s exact (Improved vs Not) [rows: ai_better, human_better]:")
-print("Contingency =", table.tolist())
-print(f"Odds ratio = {oddsratio:.3f}, p = {p_fisher:.4f}")
-
-# ---------- 5) Mean Δ comparison: Welch t-test + Mann–Whitney + effect sizes ----------
-# Test if ai_better mean Δ > human_better mean Δ
-tt = ttest_ind(ab, hb, equal_var=False, alternative="greater")
-u  = mannwhitneyu(ab, hb, alternative="greater")
-d  = cohens_d(ab, hb)
-cd = cliffs_delta(ab, hb)
-
-print("\nMean Δ(ai-led) comparison (ai_better > human_better?):")
-print(f"Welch t-test: t = {tt.statistic:.3f}, p = {tt.pvalue:.4f}")
-print(f"Mann–Whitney U: U = {u.statistic:.1f}, p = {u.pvalue:.4f}")
-print(f"Effect sizes: Cohen’s d = {d:.3f}, Cliff’s δ = {cd:.3f}")
-print(f"Group means: ai_better = {ab.mean():.3f} (n={len(ab)}), human_better = {hb.mean():.3f} (n={len(hb)})")
-
-# ---------- 6) Logistic regression: improved ~ group (ai_better=1) ----------
-logit_df = delta_df.copy()
-logit_df["AB"] = (logit_df["group"]=="ai_better").astype(int)
-
-# Optional control: initial ai-led performance per team
-init_a = (fe_df[fe_df["leader_type"]=="ai"]
-          .sort_values(["team_id","session"])
-          .groupby("team_id").first()["performance"].rename("ai_first"))
-logit_df = logit_df.merge(init_a, left_on="team_id", right_index=True, how="left")
-
-# Model A: improved ~ AB
-mdlA = sm.Logit(logit_df["improved"], sm.add_constant(logit_df[["AB"]])).fit(disp=False)
-print("\nLogistic regression A (improved ~ AB):")
-print(mdlA.summary())
-
-# Model B: improved ~ AB + ai_first (control for starting point)
-mdlB = sm.Logit(logit_df["improved"], sm.add_constant(logit_df[["AB","ai_first"]])).fit(disp=False)
-print("\nLogistic regression B (improved ~ AB + ai_first):")
-print(mdlB.summary())
-
-# ---------- 7) Permutation tests (robustness) ----------
-B = 5000
-ab_mask = (delta_df["group"]=="ai_better").to_numpy()
-deltas  = delta_df["delta_ai"].to_numpy()
-impr    = delta_df["improved"].to_numpy()
-
-obs_mean_gap = deltas[ab_mask].mean() - deltas[~ab_mask].mean()   # ai_better - human_better
-obs_rate_gap = impr[ab_mask].mean()   - impr[~ab_mask].mean()
-
-perm_mean_gaps = np.empty(B)
-perm_rate_gaps = np.empty(B)
-
-for b in range(B):
-    perm_mask = rng.permutation(ab_mask)  # shuffle group labels
-    perm_mean_gaps[b] = deltas[perm_mask].mean() - deltas[~perm_mask].mean()
-    perm_rate_gaps[b] = impr[perm_mask].mean()   - impr[~perm_mask].mean()
-
-p_perm_mean = (np.sum(perm_mean_gaps >= obs_mean_gap) + 1) / (B + 1)
-p_perm_rate = (np.sum(perm_rate_gaps >= obs_rate_gap) + 1) / (B + 1)
-
-print("\nPermutation tests (ai_better > human_better):")
-print(f"Mean Δ gap: observed = {obs_mean_gap:.3f}, p_perm = {p_perm_mean:.4f}")
-print(f"Improvement-rate gap: observed = {obs_rate_gap:.3f}, p_perm = {p_perm_rate:.4f}")
-
-'''
+    #tbl_all = correlate_all_rows(fe_df, performance_col="performance", method="spearman")
+    #print(tbl_all.head(30))
+
+    mean_ai_performance = fe_df_ai["performance"].mean()
+
+
+    #pdb.set_trace()
+
+
+
+
+    ##### Trajectory perfomance
+
+
+
+    mean_human_vs_ai(fe_df, performance_metric)
+    paired_human_vs_ai(fe_df, performance_metric)
+    compare_suggestions(fe_df, performance_metric)
+    compare_suggestions_within_leader_type(fe_df, performance_metric)
+    calculation_performance_human_vs_ai(fe_df, performance_metric)
+
+
+    fe_df_copy = fe_df.copy()
+    fe_df_copy["session"] = fe_df_copy["session"] + 1
+    fe_df_copy["leader_type"] = fe_df_copy["leader_type"].replace({"human": "Human-led", "ai": "Auto-led"})
+    fe_df_copy = fe_df_copy.rename(columns={"session":"Session", performance_metric:"Performance", "leader_type": "Leader"})
+
+    plt.figure(figsize=(10, 6), dpi=120) 
+    sns.lineplot(
+        data=fe_df_copy,
+        x="Session", y="Performance",
+        hue="Leader", ci="sd", estimator="mean"
+    )
+
+    # Add striped line for mean_performance_ai
+    if "performance" in performance_metric:
+        plt.axhline(y=mean_ai_performance, color="red", linestyle="--", linewidth=1.5, label="Auto-only")
+    plt.xlabel("Session", fontsize=14, fontweight="bold")
+    plt.ylabel("Performance", fontsize=14, fontweight="bold")
+    plt.tick_params(axis="both", which="major", labelsize=12) 
+
+    # Force x-axis to show integers
+    plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
+    plt.legend(fontsize=12, title_fontsize=13)
+    #plt.title("Performance Trajectories by Leadership Style")
+    plt.show()
+
+
+    fe_df_copy = fe_df.copy()
+
+
+    g = fe_df_copy.groupby(["team_id","leader_type"])[performance_metric].mean().unstack()
+    order = (g.get("ai", pd.Series(index=g.index, dtype=float)) -
+             g.get("human", pd.Series(index=g.index, dtype=float))).sort_values()
+
+    plt.figure(figsize=(10, 6), dpi=120) 
+    ypos = range(len(order))
+
+    ai_color    = "orange" #sc_a.get_facecolor()[0]
+
+    # scatter points
+    sc_h = plt.scatter(g.loc[order.index, "human"], ypos, marker='o', label="Human-led")
+    sc_a = plt.scatter(g.loc[order.index, "ai"], ypos, color=ai_color, marker='s', label="Auto-led")
+
+    '''
+    g_mean = fe_df_copy.groupby(["team_id","leader_type"])["performance"].mean().unstack()
+    g_std  = fe_df_copy.groupby(["team_id","leader_type"])["performance"].std().unstack()
+    # scatter points with error bars (eyes)
+    sc_h = plt.errorbar(
+        g_mean.loc[order.index, "human"], ypos,
+        xerr=g_std.loc[order.index, "human"],
+        fmt='o', capsize=4, elinewidth=1, label="Human"
+    )
+    sc_a = plt.errorbar(
+        g_mean.loc[order.index, "ai"], ypos,
+        xerr=g_std.loc[order.index, "ai"],
+        fmt='s', capsize=4, elinewidth=1, label="AI"
+    )
+    '''
+    # connecting lines
+    for i, t in enumerate(order.index):
+        x_h = g.loc[t, "human"] if "human" in g.columns and t in g.index else np.nan
+        x_a = g.loc[t, "ai"] if "ai" in g.columns and t in g.index else np.nan
+        if pd.notna(x_h) and pd.notna(x_a):
+            plt.plot([x_h, x_a], [i, i], color='0.6', linewidth=1)
+
+
+    human_color = sc_h.get_facecolor()[0]  # (r, g, b, a)
+
+    '''
+    human_color = "tab:blue"
+    ai_color = "tab:orange"
+    '''
+
+
+
+    # vertical dashed line for overall mean AI performance
+    mean_ai = fe_df_copy.loc[(fe_df_copy["leader_type"]=="ai"),performance_metric].mean()
+    mean_ai_yes = fe_df_copy.loc[(fe_df_copy["leader_type"]=="ai") & (fe_df_copy["suggestions"]=="Yes"),performance_metric].mean()
+    mean_ai_no = fe_df_copy.loc[(fe_df_copy["leader_type"]=="ai") & (fe_df_copy["suggestions"]=="No"),performance_metric].mean()
+    mean_human = fe_df_copy.loc[fe_df_copy["leader_type"]=="human",performance_metric].mean()
+    mean_human_yes = fe_df_copy.loc[(fe_df_copy["leader_type"]=="human") & (fe_df_copy["suggestions"]=="Yes"),performance_metric].mean()
+    mean_human_no = fe_df_copy.loc[(fe_df_copy["leader_type"]=="human") & (fe_df_copy["suggestions"]=="No"),performance_metric].mean()
+
+    line_ai_only = None
+    if "performance" in performance_metric:
+        line_ai_only = plt.axvline(
+            x=mean_ai_performance,
+            color="red", linestyle="--", linewidth=1.5,
+            label="Auto-only"
+        )
+
+    line_human      = plt.axvline(x=mean_human,      color=human_color, linestyle="--", linewidth=1.5, label="Human-led")
+    line_ai         = plt.axvline(x=mean_ai,         color=ai_color,    linestyle="--", linewidth=1.5, label="Auto-led")
+    line_ai_yes     = plt.axvline(x=mean_ai_yes,     color=ai_color,    linestyle="-.", linewidth=1.5, label="Auto-led w/ sugg.")
+    line_ai_no      = plt.axvline(x=mean_ai_no,      color=ai_color,    linestyle=":",  linewidth=1.5, label="Auto-led w/o sugg.")
+    line_human_yes  = plt.axvline(x=mean_human_yes,  color=human_color, linestyle="-.", linewidth=1.5, label="H-led w/ sugg.")
+    line_human_no   = plt.axvline(x=mean_human_no,   color=human_color, linestyle=":",  linewidth=1.5, label="H-led w/o sugg.")
+    # --- Legend 1: POINTS ---
+    leg_points = plt.legend(
+        handles=[sc_h, sc_a],
+        title="Points",
+        loc="upper left",
+        fontsize=12,
+        title_fontsize=13,
+        frameon=True
+    )
+
+    # --- Legend 2: MEANS ---
+    mean_handles = [
+        h for h in [
+            line_ai_only,
+            line_human,
+            line_ai,
+            line_ai_yes,
+            line_ai_no,
+            line_human_yes,
+            line_human_no,
+        ] if h is not None
+    ]
+
+    leg_means = plt.legend(
+        handles=mean_handles,
+        title="Means",
+        loc="lower left",
+        fontsize=12,
+        title_fontsize=13,
+        frameon=True
+    )
+
+    # Keep both legends
+    plt.gca().add_artist(leg_points)
+
+
+
+    # labels and styling with larger fonts
+    plt.yticks(ypos, order.index, fontsize=12)  
+    plt.xlabel("Mean Performance", fontsize=14, fontweight="bold")
+    plt.ylabel("Team #", fontsize=14, fontweight="bold")
+    plt.tick_params(axis="both", which="major", labelsize=12)
+    #plt.legend(fontsize=12, title_fontsize=13)
+
+    print(mean_ai, mean_human)
+
+    plt.tight_layout()
+    plt.show()
+
+
+    means = fe_df.groupby(["team_id", "leader_type"])[performance_metric].mean().unstack()
+    missing_cols = [c for c in ["ai", "human"] if c not in means.columns]
+    if missing_cols:
+        raise ValueError(f"leader_type must include both 'AI' and 'Human' (missing: {missing_cols})")
+
+    human_better_ids = means.index[means["human"] > means["ai"]].tolist()
+    ai_better_ids    = means.index[means["ai"] > means["human"]].tolist()
+
+
+
+    '''
+    res = test_ai_vs_human_per_layout(fe_df, performance_col="performance",
+                                      leader_col="leader_type",
+                                      layout_col="layout",
+                                      team_col="team_id",      # set to None if you don't have it
+                                      session_col=None,   # optional
+                                      agg="median",
+                                      min_n=4)
+    print(res)
+    '''
+
+
+
+
+    '''
+    # --- 2) pairwise_df ---
+    # Build from your tables (or read from CSV you exported). Must include columns listed in docstring.
+    # Example tiny mock (DELETE once you pass real data):
+
+
+    # Pick any pair label you have results for:
+    plot_top_deltas_for_pair(pairwise_df,
+                             pair_label='0 vs 3',
+                             k=12,
+                             out_png='figure_top_deltas_0v3.png',
+                             title_prefix="Largest |Δr| between sessions")
+    '''
+
+
+    #Check diffence between when humans outperform AIs, do they improve or not
+    rng = np.random.default_rng(42)
+
+    # ---------- Helper effect sizes ----------
+    def cohens_d(x, y):
+        x, y = np.asarray(x), np.asarray(y)
+        nx, ny = len(x), len(y)
+        if nx < 2 or ny < 2:
+            return np.nan
+        vx, vy = x.var(ddof=1), y.var(ddof=1)
+        # pooled SD (Welch’s variant)
+        s = np.sqrt(((nx - 1) * vx + (ny - 1) * vy) / (nx + ny - 2)) if (nx+ny-2)>0 else np.nan
+        return (x.mean() - y.mean()) / s if s and np.isfinite(s) else np.nan
+
+    def cliffs_delta(x, y):
+        # δ = P(X>Y) - P(X<Y)
+        x, y = np.asarray(x), np.asarray(y)
+        n, m = len(x), len(y)
+        if n == 0 or m == 0: return np.nan
+        more = 0; less = 0
+        for xi in x:
+            more += np.sum(xi > y)
+            less += np.sum(xi < y)
+        return (more - less) / (n * m)
+
+    # ---------- 1) Identify Human-better vs AI-better teams ----------
+    means = fe_df.groupby(["team_id", "leader_type"])[performance_metric].mean().unstack()
+    missing_cols = [c for c in ["ai", "human"] if c not in means.columns]
+    if missing_cols:
+        raise ValueError(f"leader_type must include both 'AI' and 'Human' (missing: {missing_cols})")
+
+    human_better_ids = means.index[means["human"] > means["ai"]].tolist()
+    ai_better_ids    = means.index[means["ai"] > means["human"]].tolist()
+    ties_ids         = means.index[means["human"] == means["ai"]].tolist()
+
+    print("Human-better teams:", human_better_ids)
+    print("AI-better teams   :", ai_better_ids)
+    if len(ties_ids):
+        print("Ties (ignored here):", ties_ids)
+
+    # ---------- 2) Build per-team Human-led change (last - first) ----------
+    def human_delta_for_team(df_team):
+        # df_team: rows for a single team, Human-led only
+        if df_team.empty: return None
+        # ensure ordered by session; get first and last Human-led sessions for that team
+        df_team = df_team.sort_values("session")
+        first = df_team.iloc[0][performance_metric]
+        last  = df_team.iloc[-1][performance_metric]
+        return float(last - first)
+
+    rows = []
+    for tid in fe_df["team_id"].unique():
+        df_h = fe_df[(fe_df["team_id"] == tid) & (fe_df["leader_type"] == "human")]
+        d = human_delta_for_team(df_h)
+        if d is None or np.isnan(d): 
+            continue
+        group = "Human-better" if tid in human_better_ids else ("AI-better" if tid in ai_better_ids else "Tie")
+        rows.append({"team_id": tid, "group": group, "delta_human": d})
+
+    delta_df = pd.DataFrame(rows)
+    delta_df = delta_df[delta_df["group"].isin(["Human-better","AI-better"])].copy()
+    delta_df["improved"] = (delta_df["delta_human"] > 0).astype(int)
+    print("\nPer-team Human-led Δ (last−first):\n", delta_df.sort_values(["group","team_id"]))
+
+    # ---------- 3) Group splits ----------
+    hb = delta_df[delta_df["group"]=="Human-better"]["delta_human"].to_numpy()
+    ab = delta_df[delta_df["group"]=="AI-better"]["delta_human"].to_numpy()
+    print(f"\nCounts — Human-better n={len(hb)}, AI-better n={len(ab)}")
+
+    # ---------- 4) Fisher’s exact on improvement proportions ----------
+    hb_imp = int((hb > 0).sum()); hb_not = len(hb) - hb_imp
+    ab_imp = int((ab > 0).sum()); ab_not = len(ab) - ab_imp
+    table = np.array([[hb_imp, hb_not],
+                      [ab_imp, ab_not]])
+    oddsratio, p_fisher = fisher_exact(table, alternative="two-sided")
+    print("\nFisher’s exact (Improved vs Not):")
+    print("Contingency [[HB_improve, HB_not], [AB_improve, AB_not]] =", table.tolist())
+    print(f"Odds ratio = {oddsratio:.3f}, p = {p_fisher:.4f}")
+
+    try:
+        # ---------- 5) Mean Δ comparison: Welch t-test + Mann–Whitney + effect sizes ----------
+        tt = ttest_ind(hb, ab, equal_var=False, alternative="greater")  # HB mean Δ > AB mean Δ ?
+        u  = mannwhitneyu(hb, ab, alternative="greater")                # nonparametric
+        d  = cohens_d(hb, ab)
+        cd = cliffs_delta(hb, ab)
+
+        print("\nMean Δ(Human-led) comparison (HB > AB?):")
+        print(f"Welch t-test: t = {tt.statistic:.3f}, p = {tt.pvalue:.4f}")
+        print(f"Mann–Whitney U: U = {u.statistic:.1f}, p = {u.pvalue:.4f}")
+        print(f"Effect sizes: Cohen’s d = {d:.3f}, Cliff’s δ = {cd:.3f}")
+        print(f"Group means: HB = {hb.mean():.3f} (n={len(hb)}), AB = {ab.mean():.3f} (n={len(ab)})")
+    except:
+        print("Error Mean Δ comparison")
+
+    # ---------- 6) Logistic regression: improved ~ group ----------
+    # Encode group: HB=1, AB=0
+    logit_df = delta_df.copy()
+    logit_df["HB"] = (logit_df["group"]=="Human-better").astype(int)
+    # Optional control: initial Human-led performance per team
+    init_h = (fe_df[fe_df["leader_type"]=="human"]
+              .sort_values(["team_id","session"])
+              .groupby("team_id").first()[performance_metric].rename("human_first"))
+    logit_df = logit_df.merge(init_h, left_on="team_id", right_index=True, how="left")
+
+    # Model A: improved ~ HB
+    mdlA = sm.Logit(logit_df["improved"], sm.add_constant(logit_df[["HB"]])).fit(disp=False)
+    print("\nLogistic regression A (improved ~ HB):")
+    print(mdlA.summary())
+    # Model B: improved ~ HB + human_first (control for starting point)
+    try:
+        mdlB = sm.Logit(logit_df["improved"], sm.add_constant(logit_df[["HB","human_first"]])).fit(disp=False)
+        print("\nLogistic regression B (improved ~ HB + human_first):")
+        print(mdlB.summary())
+    except:
+        print("Error regression B 1")
+
+    # ---------- 7) Permutation tests ----------
+    B = 5000  # iterations
+    hb_mask = (delta_df["group"]=="Human-better").to_numpy()
+    deltas = delta_df["delta_human"].to_numpy()
+    impr   = delta_df["improved"].to_numpy()
+
+    obs_mean_gap = deltas[hb_mask].mean() - deltas[~hb_mask].mean()
+    obs_rate_gap = impr[hb_mask].mean()   - impr[~hb_mask].mean()
+
+    perm_mean_gaps = np.empty(B)
+    perm_rate_gaps = np.empty(B)
+
+    for b in range(B):
+        perm_mask = rng.permutation(hb_mask)  # shuffle group labels
+        perm_mean_gaps[b] = deltas[perm_mask].mean() - deltas[~perm_mask].mean()
+        perm_rate_gaps[b] = impr[perm_mask].mean()   - impr[~perm_mask].mean()
+
+    p_perm_mean = (np.sum(perm_mean_gaps >= obs_mean_gap) + 1) / (B + 1)
+    p_perm_rate = (np.sum(perm_rate_gaps >= obs_rate_gap) + 1) / (B + 1)
+
+    print("\nPermutation tests (HB > AB):")
+    print(f"Mean Δ gap: observed = {obs_mean_gap:.3f}, p_perm = {p_perm_mean:.4f}")
+    print(f"Improvement-rate gap: observed = {obs_rate_gap:.3f}, p_perm = {p_perm_rate:.4f}")
+
+
+
+
+    # ---------- 2) Build per-team ai-led change (last - first) ----------
+    def ai_delta_for_team(df_team):
+        if df_team.empty:
+            return None
+        df_team = df_team.sort_values("session")
+        first = df_team.iloc[0][performance_metric]
+        last  = df_team.iloc[-1][performance_metric]
+        return float(last - first)
+
+    rows = []
+    for tid in fe_df["team_id"].unique():
+        df_a = fe_df[(fe_df["team_id"] == tid) & (fe_df["leader_type"] == "ai")]
+        d = ai_delta_for_team(df_a)
+        if d is None or np.isnan(d):
+            continue
+        group = "ai_better" if tid in ai_better_ids else ("human_better" if tid in human_better_ids else "tie")
+        rows.append({"team_id": tid, "group": group, "delta_ai": d})
+
+    delta_df = pd.DataFrame(rows)
+    delta_df = delta_df[delta_df["group"].isin(["ai_better","human_better"])].copy()
+    delta_df["improved"] = (delta_df["delta_ai"] > 0).astype(int)
+    print("\nai-led Δ (last−first) per team:\n", delta_df.sort_values(["group","team_id"]))
+
+    # ---------- 3) Group splits ----------
+    ab = delta_df[delta_df["group"]=="ai_better"]["delta_ai"].to_numpy()
+    hb = delta_df[delta_df["group"]=="human_better"]["delta_ai"].to_numpy()
+    print(f"\nCounts — ai_better n={len(ab)}, human_better n={len(hb)}")
+
+    # ---------- 4) Fisher’s exact on improvement proportions ----------
+    ab_imp = int((ab > 0).sum()); ab_not = len(ab) - ab_imp
+    hb_imp = int((hb > 0).sum()); hb_not = len(hb) - hb_imp
+    table = np.array([[ab_imp, ab_not],
+                      [hb_imp, hb_not]])
+    oddsratio, p_fisher = fisher_exact(table, alternative="two-sided")
+    print("\nFisher’s exact (Improved vs Not) [rows: ai_better, human_better]:")
+    print("Contingency =", table.tolist())
+    print(f"Odds ratio = {oddsratio:.3f}, p = {p_fisher:.4f}")
+
+    try:
+        # ---------- 5) Mean Δ comparison: Welch t-test + Mann–Whitney + effect sizes ----------
+        # Test if ai_better mean Δ > human_better mean Δ
+        tt = ttest_ind(ab, hb, equal_var=False, alternative="greater")
+        u  = mannwhitneyu(ab, hb, alternative="greater")
+        d  = cohens_d(ab, hb)
+        cd = cliffs_delta(ab, hb)
+
+        print("\nMean Δ(ai-led) comparison (ai_better > human_better?):")
+        print(f"Welch t-test: t = {tt.statistic:.3f}, p = {tt.pvalue:.4f}")
+        print(f"Mann–Whitney U: U = {u.statistic:.1f}, p = {u.pvalue:.4f}")
+        print(f"Effect sizes: Cohen’s d = {d:.3f}, Cliff’s δ = {cd:.3f}")
+        print(f"Group means: ai_better = {ab.mean():.3f} (n={len(ab)}), human_better = {hb.mean():.3f} (n={len(hb)})")
+
+    except:
+        print("Error Mean Δ comparison 2")
+    # ---------- 6) Logistic regression: improved ~ group (ai_better=1) ----------
+    logit_df = delta_df.copy()
+    logit_df["AB"] = (logit_df["group"]=="ai_better").astype(int)
+
+    # Optional control: initial ai-led performance per team
+    init_a = (fe_df[fe_df["leader_type"]=="ai"]
+              .sort_values(["team_id","session"])
+              .groupby("team_id").first()[performance_metric].rename("ai_first"))
+    logit_df = logit_df.merge(init_a, left_on="team_id", right_index=True, how="left")
+
+    try:
+        # Model A: improved ~ AB
+        mdlA = sm.Logit(logit_df["improved"], sm.add_constant(logit_df[["AB"]])).fit(disp=False)
+        print("\nLogistic regression A (improved ~ AB):")
+        print(mdlA.summary())
+    except:
+        print("Error logistic regression A")
+    try:
+        # Model B: improved ~ AB + ai_first (control for starting point)
+        mdlB = sm.Logit(logit_df["improved"], sm.add_constant(logit_df[["AB","ai_first"]])).fit(disp=False)
+        print("\nLogistic regression B (improved ~ AB + ai_first):")
+        print(mdlB.summary())
+    except:
+        print("Error logistic regression B")
+
+    # ---------- 7) Permutation tests (robustness) ----------
+    B = 5000
+    ab_mask = (delta_df["group"]=="ai_better").to_numpy()
+    deltas  = delta_df["delta_ai"].to_numpy()
+    impr    = delta_df["improved"].to_numpy()
+
+    obs_mean_gap = deltas[ab_mask].mean() - deltas[~ab_mask].mean()   # ai_better - human_better
+    obs_rate_gap = impr[ab_mask].mean()   - impr[~ab_mask].mean()
+
+    perm_mean_gaps = np.empty(B)
+    perm_rate_gaps = np.empty(B)
+
+    for b in range(B):
+        perm_mask = rng.permutation(ab_mask)  # shuffle group labels
+        perm_mean_gaps[b] = deltas[perm_mask].mean() - deltas[~perm_mask].mean()
+        perm_rate_gaps[b] = impr[perm_mask].mean()   - impr[~perm_mask].mean()
+
+    p_perm_mean = (np.sum(perm_mean_gaps >= obs_mean_gap) + 1) / (B + 1)
+    p_perm_rate = (np.sum(perm_rate_gaps >= obs_rate_gap) + 1) / (B + 1)
+
+    print("\nPermutation tests (ai_better > human_better):")
+    print(f"Mean Δ gap: observed = {obs_mean_gap:.3f}, p_perm = {p_perm_mean:.4f}")
+    print(f"Improvement-rate gap: observed = {obs_rate_gap:.3f}, p_perm = {p_perm_rate:.4f}")
+
+
+
+    ###Calculate session performance
+
+    try:
+        # Function for Cliff's delta
+        def cliffs_delta(x, y):
+            n, m = len(x), len(y)
+            more = sum([1 for xi in x for yi in y if xi > yi])
+            less = sum([1 for xi in x for yi in y if xi < yi])
+            return (more - less) / (n * m)
+
+        # Function for Cohen's d (paired)
+        def cohens_d(x, y):
+            diff = y - x
+            return diff.mean() / diff.std(ddof=1)
+
+        results = []
+        sessions = sorted(fe_df["session"].unique())
+
+        for leader in fe_df["leader_type"].unique():
+            df_sub = fe_df[fe_df["leader_type"] == leader]
+
+            for i in range(len(sessions)-1):
+                s1, s2 = sessions[i], sessions[i+1]
+
+                perf1 = df_sub[df_sub.session == s1].sort_values("team_id")[performance_metric].reset_index(drop=True)
+                perf2 = df_sub[df_sub.session == s2].sort_values("team_id")[performance_metric].reset_index(drop=True)
+
+                min_len = min(len(perf1), len(perf2))
+                perf1, perf2 = perf1[:min_len], perf2[:min_len]
+
+                stat, p = wilcoxon(perf1, perf2)
+
+                results.append({
+                    "leader_type": leader,
+                    "comparison": f"{s1}→{s2}",
+                    "mean_diff": (perf2 - perf1).mean(),
+                    "median_diff": (perf2 - perf1).median(),
+                    "wilcoxon_stat": stat,
+                    "p_value": p,
+                    "cliffs_delta": cliffs_delta(perf2, perf1),
+                    "cohens_d": cohens_d(perf1, perf2)
+                })
+
+        res_df = pd.DataFrame(results)
+        print(res_df)
+    except:
+        print("Error calculate session performance")
+
+    analyze_ai_advantage_print(fe_df, performance_metric=performance_metric, grain="team")
+
+
+    df_sorted = fe_df.sort_values(["team_id","session"]).copy()
+    df_sorted["perf_next"]   = df_sorted.groupby("team_id")["performance"].shift(-1)
+    df_sorted["leader_next"] = df_sorted.groupby("team_id")["leader_type"].shift(-1)
+    df_sorted["perf_change"] = df_sorted["perf_next"] - df_sorted["performance"]
+    df_sorted = df_sorted.dropna(subset=["leader_next","perf_change"]).copy()
+    df_sorted["leader_type"] = df_sorted["leader_type"].map({
+        "human": "Human",
+        "ai": "Auto",
+    })
+    df_sorted["leader_next"] = df_sorted["leader_next"].map({
+        "human": "Human",
+        "ai": "Auto",
+    })
+
+    # Make a readable transition label: 0→0, 0→1, 1→0, 1→1 (0=Human, 1=AI)
+    # Make a readable transition label: human→human, human→ai, ai→human, ai→ai
+    df_sorted["transition"] = df_sorted["leader_type"].astype(str) + "→" + df_sorted["leader_next"].astype(str)
+    plot_variable_slot_width_diverging_from_df(df_sorted, gap=0.01, show_total=False)
+
+
+
+pdb.set_trace()
+
 # ---- Run it ----
 #first_last_predictiveness(fe_df)
 
@@ -6703,7 +7585,7 @@ write_per_layout_latex_with_meta_and_stats(
 )
 '''
 
-
+"""
 compare_ai_vs_human(fe_df, target="performance", leader_col="leader_type", top_n=60)
 #compare_ai_vs_human(fe_df, target="performance", leader_col="leader_type", top_n=60,control_mode="layout")
 #compare_ai_vs_human(fe_df, target="performance", leader_col="leader_type", top_n=60, control_mode="complexity")
@@ -6731,54 +7613,6 @@ res = compare_suggestions_within_each_leader_by_feature(fe_df, top_n=60)
 #fe_df = fe_df[fe_df["team_id"] != 15]
 
 
-###Calculate session performance
-'''
-# Function for Cliff's delta
-def cliffs_delta(x, y):
-    n, m = len(x), len(y)
-    more = sum([1 for xi in x for yi in y if xi > yi])
-    less = sum([1 for xi in x for yi in y if xi < yi])
-    return (more - less) / (n * m)
-
-# Function for Cohen's d (paired)
-def cohens_d(x, y):
-    diff = y - x
-    return diff.mean() / diff.std(ddof=1)
-
-results = []
-sessions = sorted(fe_df["session"].unique())
-
-for leader in fe_df["leader_type"].unique():
-    df_sub = fe_df[fe_df["leader_type"] == leader]
-
-    for i in range(len(sessions)-1):
-        s1, s2 = sessions[i], sessions[i+1]
-
-        perf1 = df_sub[df_sub.session == s1].sort_values("team_id")["performance"].reset_index(drop=True)
-        perf2 = df_sub[df_sub.session == s2].sort_values("team_id")["performance"].reset_index(drop=True)
-
-        min_len = min(len(perf1), len(perf2))
-        perf1, perf2 = perf1[:min_len], perf2[:min_len]
-
-        stat, p = wilcoxon(perf1, perf2)
-
-        results.append({
-            "leader_type": leader,
-            "comparison": f"{s1}→{s2}",
-            "mean_diff": (perf2 - perf1).mean(),
-            "median_diff": (perf2 - perf1).median(),
-            "wilcoxon_stat": stat,
-            "p_value": p,
-            "cliffs_delta": cliffs_delta(perf2, perf1),
-            "cohens_d": cohens_d(perf1, perf2)
-        })
-
-res_df = pd.DataFrame(results)
-print(res_df)
-'''
-
-pdb.set_trace()
-
 
 res = per_team_performance_analysis_with_globals(
     fe_df,
@@ -6796,6 +7630,7 @@ print_global_drivers(res, top_k=12)
 # 3) See each team’s top drivers relative to those rules
 print_team_vs_global(res, fe_df, top_k=10)
 
+"""
 '''
 survey_keys = [
     'Dependable', 'Reliable', 'Unresponsive', 'Predictable', 'Act consistently',
@@ -7269,8 +8104,10 @@ def per_team_driver_report_single_row(
     return reports
 
 
-
+"""
 df = ensure_outcomes(fe_df)
+
+
 
 outcomes = [c for c in ["delta_perf","mean_perf","std_perf"] if c in df.columns]
 if not outcomes:
@@ -7339,44 +8176,49 @@ for (tid, lt), rep in reports.items():
     print(f"\n=== Team {tid} | Leader: {lt} ===")
     print(rep[['kind','feature','z','r','score']].round(3).to_string(index=False))
 '''
+"""
 
-# 2) previous
-res_fixed_any = raw_delta_descriptives_flexible(
-    fe_df,
-    pair_mode="fixed",
-    same_leadership_only=False,   # compare only within same leader type
-    keep_flats=False             # drop ~0 changes for cleaner contrasts
-)
+session_corrs_enabled = True
+
+if session_corrs_enabled:
+
+    # 2) previous
+    res_fixed_any = raw_delta_descriptives_flexible(
+        fe_df,
+        pair_mode="fixed",
+        same_leadership_only=False,   # compare only within same leader type
+        keep_flats=False             # drop ~0 changes for cleaner contrasts
+    )
 
 
 
-write_fixed_transition_latex_with_meta(
-    res_fixed_any,
-    out_tex="fixed_transition_corr_tables.tex",
-    note_excluded="fixed pairs; excluding dangerous_weighted_distance",
-    top_k_meta=50,
-    abs_thresh_pair=0.0,
-    diff_thresh_pair=0.4,
-    top_k_pair=50,
-    top_k_contrast=50,
-    strength_thresh=0.0
-)
+    write_fixed_transition_latex_with_meta(
+        res_fixed_any,
+        out_tex="fixed_transition_corr_tables.tex",
+        note_excluded="fixed pairs; excluding dangerous_weighted_distance",
+        top_k_meta=50,
+        abs_thresh_pair=0.0,
+        diff_thresh_pair=0.4,
+        top_k_pair=50,
+        top_k_contrast=50,
+        strength_thresh=0.0
+    )
 
-write_session_corr_latex_with_meta(
-    res_any=res_fixed_any,
-    out_tex="session_corr_tables.tex",
-    note_excluded="per-session correlations; excludes ids & Δ_*",
-    exclude_features=[
-        # optional: drop tautologies/noisy stuff here
-        # "dangerous_weighted_distance", "dangerous_weighted_work",
-    ],
-    abs_thresh_single=0.0,   # only show |r|>=.30 in per-session tables & meta
-    top_k_meta=50,
-    abs_thresh_pair=0.0,     # keep |r|>=.30 in BOTH sessions before testing
-    strength_thresh=0.0,     # and require |r|>=.40 in BOTH for pair outputs
-    diff_thresh_pair=0.5,    # call “dissimilar” if same-sign but |Δr|>=.40
-    top_k_pair=50
-)
+    write_session_corr_latex_with_meta(
+        res_any=res_fixed_any,
+        out_tex="session_corr_tables.tex",
+        note_excluded="per-session correlations; excludes ids & Δ_*",
+        exclude_features=[
+            # optional: drop tautologies/noisy stuff here
+            # "dangerous_weighted_distance", "dangerous_weighted_work",
+        ],
+        abs_thresh_single=0.0,   # only show |r|>=.30 in per-session tables & meta
+        top_k_meta=50,
+        abs_thresh_pair=0.0,     # keep |r|>=.30 in BOTH sessions before testing
+        strength_thresh=0.0,     # and require |r|>=.40 in BOTH for pair outputs
+        diff_thresh_pair=0.5,    # call “dissimilar” if same-sign but |Δr|>=.40
+        top_k_pair=50
+    )
 
 '''
 res_same_prev['delta_df'].to_csv("team_flexible_transitions_samelead.csv", index=False)
@@ -7539,7 +8381,7 @@ print(f"LaTeX tables written to: {OUT_TEX}")
 
 #LATEX ENDs
 '''
-
+"""
 # df_sessions already built in your script (list of dicts -> DataFrame)
 res = correlations_per_layout_no_transitions(
     df_sessions=fe_df,
@@ -7552,6 +8394,7 @@ write_per_layout_latex_with_meta(res['corr_by_layout'], out_tex="layout_session_
 # optional heatmap
 plot_layout_heatmap(res['corr_by_layout'], top_k=10, out_png="layout_corr_heatmap.png")
 
+"""
 
 corrs = correlations_by_leadership_and_suggestions(fe_df)
 
@@ -7577,6 +8420,9 @@ write_by_leadership_suggestions_latex_with_meta(
     top_k_pair=50,
     raw_df=fe_df
 )
+
+
+
 results_delta = correlations_by_transition(fe_df, use_delta=True)  # correlations to Δperformance
 for trans, corr_df in results_delta.items():
     print(f"\n=== {trans} — correlations w.r.t. Δperformance ===")
